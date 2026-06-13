@@ -1,0 +1,136 @@
+import type { Inspection } from '@/lib/types'
+
+export const INSPECTIONS: Inspection[] = [
+  {
+    id: 'INS-001',
+    unit_id: 'U-101',
+    unit_label: 'Block A – Unit 101',
+    lease_id: 'LSE-001',
+    inspection_type: 'periodic',
+    status: 'completed',
+    scheduled_date: '2024-05-15',
+    completed_date: '2024-05-15',
+    inspector_name: 'James Mwenye',
+    resident_present: true,
+    resident_name: 'James Mwangi',
+    overall_condition: 4,
+    rooms: [
+      {
+        name: 'Living Room',
+        condition: 4,
+        notes: 'Well maintained. One scuff mark on south wall.',
+        defects: [
+          { id: 'DEF-001', room: 'Living Room', description: 'Scuff mark on south wall near door', severity: 'minor', chargeable: false, status: 'open' },
+        ],
+      },
+      {
+        name: 'Kitchen',
+        condition: 4,
+        notes: 'Clean. Extractor fan slightly noisy.',
+        defects: [
+          { id: 'DEF-002', room: 'Kitchen', description: 'Extractor fan noisy — possible bearing wear', severity: 'minor', chargeable: false, status: 'open' },
+        ],
+      },
+      {
+        name: 'Master Bedroom',
+        condition: 5,
+        defects: [],
+      },
+      {
+        name: 'Bathroom',
+        condition: 4,
+        notes: 'Grouting slightly discoloured.',
+        defects: [
+          { id: 'DEF-003', room: 'Bathroom', description: 'Grout discolouration between tiles near shower', severity: 'minor', chargeable: false, status: 'open' },
+        ],
+      },
+    ],
+    general_notes: 'Tenant is maintaining the unit well. Kitchen fan to be logged as maintenance.',
+    signed_off_date: '2024-05-15',
+    signed_off_by: 'James Mwenye',
+  },
+  {
+    id: 'INS-002',
+    unit_id: 'U-205',
+    unit_label: 'Block B – Unit 205',
+    lease_id: 'LSE-004',
+    inspection_type: 'move_out',
+    status: 'completed',
+    scheduled_date: '2024-04-28',
+    completed_date: '2024-04-28',
+    inspector_name: 'James Mwenye',
+    resident_present: true,
+    resident_name: 'Beatrice Achieng',
+    overall_condition: 2,
+    rooms: [
+      {
+        name: 'Living Room',
+        condition: 2,
+        notes: 'Large stain on carpet. Deep scratch on wall.',
+        defects: [
+          { id: 'DEF-004', room: 'Living Room', description: 'Large red wine stain on carpet (approx 40cm diameter)', severity: 'moderate', chargeable: true, estimated_cost: 8000, status: 'open' },
+          { id: 'DEF-005', room: 'Living Room', description: 'Deep scratch on east wall, paint required', severity: 'moderate', chargeable: true, estimated_cost: 3500, status: 'open' },
+        ],
+      },
+      {
+        name: 'Kitchen',
+        condition: 3,
+        notes: 'Oven tray missing. Fridge has minor scratches.',
+        defects: [
+          { id: 'DEF-006', room: 'Kitchen', description: 'Oven baking tray missing', severity: 'minor', chargeable: true, estimated_cost: 1200, status: 'open' },
+        ],
+      },
+      {
+        name: 'Bedroom',
+        condition: 3,
+        defects: [],
+      },
+      {
+        name: 'Bathroom',
+        condition: 2,
+        notes: 'Cracked toilet seat. Mould above shower.',
+        defects: [
+          { id: 'DEF-007', room: 'Bathroom', description: 'Cracked toilet seat — needs replacement', severity: 'moderate', chargeable: true, estimated_cost: 4000, status: 'open' },
+          { id: 'DEF-008', room: 'Bathroom', description: 'Mould growth above shower — deep clean required', severity: 'major', chargeable: true, estimated_cost: 6000, status: 'open' },
+        ],
+      },
+    ],
+    general_notes: 'Significant damage in living room and bathroom. Total chargeable deductions to be processed against deposit.',
+    signed_off_date: '2024-04-28',
+    signed_off_by: 'James Mwenye',
+  },
+  {
+    id: 'INS-003',
+    unit_id: 'U-301',
+    unit_label: 'Block C – Unit 301',
+    inspection_type: 'move_in',
+    status: 'scheduled',
+    scheduled_date: '2024-06-30',
+    inspector_name: 'James Mwenye',
+    resident_present: false,
+    overall_condition: 5,
+    rooms: [],
+    general_notes: 'Pre-tenancy inspection scheduled for incoming tenant.',
+  },
+  {
+    id: 'INS-004',
+    unit_id: 'U-102',
+    unit_label: 'Block A – Unit 102',
+    lease_id: 'LSE-002',
+    inspection_type: 'periodic',
+    status: 'in_progress',
+    scheduled_date: '2024-06-12',
+    inspector_name: 'James Mwenye',
+    resident_present: true,
+    resident_name: 'Grace Njoroge',
+    overall_condition: 4,
+    rooms: [
+      {
+        name: 'Living Room',
+        condition: 4,
+        defects: [],
+      },
+    ],
+    general_notes: 'Inspection in progress — remaining rooms not yet assessed.',
+  },
+]
