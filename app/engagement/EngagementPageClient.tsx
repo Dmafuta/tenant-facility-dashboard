@@ -211,7 +211,7 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
         </div>
 
         {/* Type selector */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {([
             { value: 'poll',     icon: '📊', label: 'Poll',         desc: 'Quick question, named responses' },
             { value: 'vote',     icon: '🗳️', label: 'Formal Vote',  desc: 'Weighted, quorum, binding'       },
@@ -235,7 +235,7 @@ function CreateEngagementModal({ open, onClose }: { open: boolean; onClose: () =
         <div className="space-y-3">
           <input className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text text-sm" placeholder="Title…" />
           <textarea className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text text-sm h-20 resize-none" placeholder="Description (optional)…" />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-text-muted mb-1">Opens</label>
               <input type="date" className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text text-sm" />

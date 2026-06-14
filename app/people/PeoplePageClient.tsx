@@ -522,9 +522,12 @@ export function PeoplePageClient() {
   const [showRegMenu,   setShowRegMenu]   = useState(false)
   const [showExit,      setShowExit]      = useState(false)
 
-  const owners  = useMemo(() => PEOPLE.filter(p => p.type === 'resident_owner' || p.type === 'non_resident_owner'), [])
-  const tenants = useMemo(() => PEOPLE.filter(p => p.type === 'tenant' || p.type === 'short_stay_guest'), [])
-  const staff   = useMemo(() => PEOPLE.filter(p => ['permanent_staff','casual_staff','outsourced'].includes(p.type)), [])
+  const [people, setPeople] = useState<Person[]>(PEOPLE)
+  const addPerson = (p: Person) => setPeople(prev => [p, ...prev])
+
+  const owners  = useMemo(() => people.filter(p => p.type === 'resident_owner' || p.type === 'non_resident_owner'), [people])
+  const tenants = useMemo(() => people.filter(p => p.type === 'tenant' || p.type === 'short_stay_guest'), [people])
+  const staff   = useMemo(() => people.filter(p => ['permanent_staff','casual_staff','outsourced'].includes(p.type)), [people])
 
   const filterPeople = (list: Person[]) => {
     const q = search.toLowerCase()
@@ -540,7 +543,7 @@ export function PeoplePageClient() {
     <>
     <div className="flex flex-1 overflow-hidden min-h-0">
       {/* Left panel */}
-      <div className="w-80 flex-shrink-0 border-r border-surface-border dark:border-dark-border flex flex-col">
+      <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
         <div className="p-3 border-b border-surface-border dark:border-dark-border space-y-2">
           <SearchInput placeholder="Search people..." value={search} onChange={setSearch} />
           {/* Register dropdown */}
@@ -599,7 +602,15 @@ export function PeoplePageClient() {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div className={cn('flex-1 overflow-hidden flex-col', selected ? 'flex' : 'hidden lg:flex')}>
+        {selected && (
+          <div className="lg:hidden flex items-center px-4 pt-3 pb-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+            <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
+              Back to list
+            </button>
+          </div>
+        )}
         {selected ? (
           <PersonDetail person={selected} onExit={() => setShowExit(true)} />
         ) : (
@@ -616,10 +627,10 @@ export function PeoplePageClient() {
       </div>
     </div>
 
-    <RegisterTenantModal         open={showTenant}    onClose={() => setShowTenant(false)}    />
-    <RegisterOwnerModal          open={showOwner}     onClose={() => setShowOwner(false)}     />
-    <RegisterCorporateOwnerModal open={showCorporate} onClose={() => setShowCorporate(false)} />
-    <RegisterStaffModal          open={showStaff}     onClose={() => setShowStaff(false)}     />
+    <RegisterTenantModal         open={showTenant}    onClose={() => setShowTenant(false)}    onRegister={addPerson} />
+    <RegisterOwnerModal          open={showOwner}     onClose={() => setShowOwner(false)}     onRegister={addPerson} />
+    <RegisterCorporateOwnerModal open={showCorporate} onClose={() => setShowCorporate(false)} onRegister={addPerson} />
+    <RegisterStaffModal          open={showStaff}     onClose={() => setShowStaff(false)}     onRegister={addPerson} />
 
     {/* Exit modals — conditional on selected person type */}
     {selected?.type === 'tenant' && (

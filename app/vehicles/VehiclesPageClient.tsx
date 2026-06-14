@@ -1,4 +1,5 @@
 'use client'
+import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
@@ -43,7 +44,7 @@ function VehicleRegistry() {
 
   return (
     <div className="flex flex-1 overflow-hidden min-h-0">
-      <div className="w-80 flex-shrink-0 border-r border-surface-border dark:border-dark-border flex flex-col">
+      <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
         <div className="p-3 border-b border-surface-border dark:border-dark-border flex gap-2 items-center">
           <div className="flex-1">
             <SearchInput value={search} onChange={setSearch} placeholder="Search plate, name, unit…" />
@@ -77,7 +78,15 @@ function VehicleRegistry() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className={cn('flex-1 flex flex-col', !selected && 'hidden lg:flex')}>
+        {selected && (
+          <div className="lg:hidden flex items-center px-4 pt-3 pb-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+            <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
+              Back to list
+            </button>
+          </div>
+        )}
         {!selected ? (
           <div className="flex items-center justify-center h-full text-sm text-text-muted">Select a vehicle to view</div>
         ) : (

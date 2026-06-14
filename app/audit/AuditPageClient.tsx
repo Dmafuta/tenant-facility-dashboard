@@ -1,4 +1,5 @@
 'use client'
+import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
@@ -74,7 +75,7 @@ export function AuditPageClient() {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* list */}
-          <div className="w-96 flex-shrink-0 border-r border-surface-border dark:border-dark-border flex flex-col">
+          <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-96' : 'flex w-full lg:w-96')}>
             <div className="p-3 space-y-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
               <SearchInput value={search} onChange={setSearch} placeholder="Search events, users, entities…" />
               <div className="flex gap-2">
@@ -130,7 +131,7 @@ export function AuditPageClient() {
                   <p className="text-sm text-text">{selected.description}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { label: 'Timestamp', value: selected.timestamp.replace('T',' ') },
                     { label: 'User',      value: `${selected.user_name} (${selected.user_role})` },

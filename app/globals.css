@@ -24,6 +24,19 @@
   --primary-light:#042f2e;
 }
 
+/* ── Responsive layout content margin ────────────────────────────────── */
+/* Mobile: no margin (sidebar is an overlay drawer)                       */
+/* Desktop (lg+): margin-left tracks the sidebar width CSS variable       */
+.layout-content {
+  margin-left: 0;
+  transition: margin-left 0.3s ease;
+}
+@media (min-width: 1024px) {
+  .layout-content {
+    margin-left: var(--sidebar-offset, 240px);
+  }
+}
+
 /* ── Base ─────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 
@@ -83,9 +96,4 @@ body {
 /* ── Charge type badges ───────────────────────────────────────────────────── */
 .badge-rent              { @apply bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400; }
 .badge-utility           { @apply bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400; }
-.badge-service-charge    { @apply bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400; }
-.badge-fine              { @apply bg-danger/10 text-danger; }
-.badge-penalty           { @apply bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400; }
-.badge-advertisement     { @apply bg-pink-50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400; }
-.badge-deposit           { @apply bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400; }
-.badge-other             { @apply bg-surface-border; color: var(--text-muted); }
+.badge-service-charge    { @apply bg-violet-50 text-violet-7

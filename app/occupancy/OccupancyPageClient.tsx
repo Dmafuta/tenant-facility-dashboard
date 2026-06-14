@@ -1,4 +1,5 @@
 'use client'
+import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
@@ -151,7 +152,7 @@ export function OccupancyPageClient() {
 
           {/* detail panel */}
           {selected && (
-            <div className="w-72 flex-shrink-0 border-l border-surface-border dark:border-dark-border overflow-y-auto bg-surface dark:bg-dark-surface">
+            <div className={cn('flex-shrink-0 border-l border-surface-border dark:border-dark-border overflow-y-auto bg-surface dark:bg-dark-surface', selected ? 'w-full lg:w-72' : 'hidden lg:block lg:w-72')}>
               <div className="p-4 border-b border-surface-border dark:border-dark-border flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-text">{selected.block} · Unit {selected.number}</h3>
                 <button onClick={() => setSelected(null)} className="text-text-muted hover:text-text text-lg">✕</button>
@@ -162,7 +163,7 @@ export function OccupancyPageClient() {
                   {useTypeBadge(selected.use_type)}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
                     { label: 'Bedrooms',    value: `${selected.bedrooms} BR` },
                     { label: 'Bathrooms',   value: `${selected.bathrooms} BA` },

@@ -1,4 +1,5 @@
 'use client'
+import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
@@ -108,7 +109,7 @@ export function OnboardingPageClient() {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* list */}
-          <div className="w-72 flex-shrink-0 border-r border-surface-border dark:border-dark-border flex flex-col overflow-y-auto">
+          <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col overflow-y-auto', selected ? 'hidden lg:flex lg:w-72' : 'flex w-full lg:w-72')}>
             {inProgress.length > 0 && (
               <>
                 <p className="px-4 pt-4 pb-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">In Progress</p>
@@ -176,7 +177,7 @@ export function OnboardingPageClient() {
                 </div>
 
                 {/* contact */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { label: 'Email',  value: selected.applicant_email },
                     { label: 'Phone',  value: selected.applicant_phone },

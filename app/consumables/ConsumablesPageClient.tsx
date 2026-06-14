@@ -79,7 +79,7 @@ function IssuanceRunTab() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Total Units', value: rows.length, icon: '🏠' },
           { label: 'Issued',      value: totalIssued,   icon: '✅', color: 'text-success' },
@@ -114,7 +114,7 @@ function IssuanceRunTab() {
           value={search}
           onChange={setSearch}
           placeholder="Search unit or resident…"
-          containerClassName="w-64"
+          containerClassName="w-full sm:w-64"
         />
         <select
           value={typeFilter}
@@ -223,7 +223,7 @@ function ConsumableTypesTab() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search consumable types…" containerClassName="w-64" />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search consumable types…" containerClassName="w-full sm:w-64" />
         <Button variant="primary" size="sm" className="ml-auto">+ Add Type</Button>
       </div>
 
@@ -256,7 +256,7 @@ function ConsumableTypeCard({ type }: { type: ConsumableType }) {
             <p className="text-sm text-text-muted mb-3">{type.description}</p>
           )}
 
-          <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
             <div>
               <p className="text-xs text-text-muted mb-0.5">Issue Unit</p>
               <p className="font-medium text-text capitalize">{type.unit_of_issue}</p>
@@ -375,7 +375,7 @@ export function ConsumablesPageClient() {
   return (
     <main className="flex-1 overflow-y-auto p-6 space-y-6">
       {/* Header KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Consumable Types', value: CONSUMABLE_TYPES.filter(t => t.active).length, icon: '📦', sub: 'active' },
           { label: 'Pending Issuance', value: pendingCount, icon: '⏳', sub: 'this month', color: pendingCount > 0 ? 'text-warning' : 'text-text' },

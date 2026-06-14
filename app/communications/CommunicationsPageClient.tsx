@@ -1,4 +1,5 @@
 'use client'
+import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
@@ -165,7 +166,7 @@ export function CommunicationsPageClient() {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* list */}
-          <div className="w-80 flex-shrink-0 border-r border-surface-border dark:border-dark-border flex flex-col">
+          <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
             <div className="p-3 border-b border-surface-border dark:border-dark-border">
               <SearchInput value={search} onChange={setSearch} placeholder="Search messages…" />
             </div>
@@ -203,7 +204,7 @@ export function CommunicationsPageClient() {
 
                 {/* stats */}
                 {selected.delivery_stats && selected.status === 'sent' && (
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                       { label: 'Sent',      value: selected.delivery_stats.sent },
                       { label: 'Delivered', value: selected.delivery_stats.delivered },

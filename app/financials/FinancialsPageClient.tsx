@@ -115,7 +115,7 @@ function AddChargeModal({ open, onClose }: { open: boolean; onClose: () => void 
   return (
     <Modal open={open} onClose={onClose} title="Add Charge" size="md">
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">Unit</label>
             <input
@@ -149,7 +149,7 @@ function AddChargeModal({ open, onClose }: { open: boolean; onClose: () => void 
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES)</label>
             <input

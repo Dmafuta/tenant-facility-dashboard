@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import type { KycDocumentType } from '@/lib/types'
+import type { KycDocumentType, Person } from '@/lib/types'
 import { cn } from '@/lib/cn'
 
 // ── Shared primitives ──────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ function VehiclesStep({
           <Field label="Number Plate" required>
             <input className={INPUT} value={draft.plate} onChange={setD('plate')} placeholder="e.g. KCA 123A" />
           </Field>
-          <Field label="Make & Model" required>
+          <Field label="Make &amp; Model" required>
             <input className={INPUT} value={draft.make_model} onChange={setD('make_model')} placeholder="e.g. Toyota Fielder" />
           </Field>
           <Field label="Colour" optional>
@@ -292,7 +292,9 @@ function VehiclesStep({
 // 1. Register Tenant
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function RegisterTenantModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RegisterTenantModal({ open, onClose, onRegister }: {
+  open: boolean; onClose: () => void; onRegister?: (p: Person) => void
+}) {
   const [step, setStep]           = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]           = useState<Record<string, File>>({})
@@ -327,7 +329,22 @@ export function RegisterTenantModal({ open, onClose }: { open: boolean; onClose:
   }
 
   function handleSubmit() {
-    alert('Tenant registered (demo). Portal invite will be sent to ' + form.email)
+    const today = new Date().toISOString()
+    const person: Person = {
+      id: `P-${Date.now()}`,
+      type: 'tenant',
+      first_name: form.first_name,
+      last_name: form.last_name,
+      email: form.email,
+      phone: form.phone,
+      national_id: form.national_id || undefined,
+      unit_ids: form.unit_id ? [form.unit_id] : [],
+      status: 'pending_verification',
+      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+      phone_verified_at: phoneVerified ? today : undefined,
+      joined_date: form.move_in_date || today.slice(0, 10),
+    }
+    onRegister?.(person)
     onClose(); reset()
   }
 
@@ -383,7 +400,7 @@ export function RegisterTenantModal({ open, onClose }: { open: boolean; onClose:
               <input className={INPUT} type="number" value={form.monthly_rent} onChange={set('monthly_rent')} placeholder="e.g. 45 000" />
             </Field>
 
-            <SectionDivider title="Employment & Guarantor" />
+            <SectionDivider title="Employment &amp; Guarantor" />
             <Field label="Employer / Company" optional>
               <input className={INPUT} value={form.employer} onChange={set('employer')} placeholder="e.g. Safaricom PLC" />
             </Field>
@@ -481,7 +498,9 @@ export function RegisterTenantModal({ open, onClose }: { open: boolean; onClose:
 // 2. Register Individual Owner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function RegisterOwnerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RegisterOwnerModal({ open, onClose, onRegister }: {
+  open: boolean; onClose: () => void; onRegister?: (p: Person) => void
+}) {
   const [step, setStep]           = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]           = useState<Record<string, File>>({})
@@ -511,7 +530,22 @@ export function RegisterOwnerModal({ open, onClose }: { open: boolean; onClose: 
   }
 
   function handleSubmit() {
-    alert('Owner registered (demo). Portal invite will be sent to ' + (form.email || 'email not provided'))
+    const today = new Date().toISOString()
+    const person: Person = {
+      id: `P-${Date.now()}`,
+      type: form.is_resident === 'true' ? 'resident_owner' : 'non_resident_owner',
+      first_name: form.first_name,
+      last_name: form.last_name,
+      email: form.email,
+      phone: form.phone,
+      national_id: form.national_id || undefined,
+      unit_ids: form.unit_id ? [form.unit_id] : [],
+      status: 'pending_verification',
+      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+      phone_verified_at: phoneVerified ? today : undefined,
+      joined_date: today.slice(0, 10),
+    }
+    onRegister?.(person)
     onClose(); reset()
   }
 
@@ -643,7 +677,9 @@ export function RegisterOwnerModal({ open, onClose }: { open: boolean; onClose: 
 // 3. Register Corporate Owner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function RegisterCorporateOwnerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
+  open: boolean; onClose: () => void; onRegister?: (p: Person) => void
+}) {
   const [step, setStep]           = useState(0)
   const [repPhoneVerified, setRepPhoneVerified] = useState(false)
   const [docs, setDocs]           = useState<Record<string, File>>({})
@@ -682,7 +718,24 @@ export function RegisterCorporateOwnerModal({ open, onClose }: { open: boolean; 
   }
 
   function handleSubmit() {
-    alert(`Corporate owner "${company.company_name}" registered (demo).`)
+    const today = new Date().toISOString()
+    // Authorized rep becomes the Person record; company name stored in agency_name for display
+    const person: Person = {
+      id: `P-${Date.now()}`,
+      type: 'non_resident_owner',
+      first_name: rep.first_name,
+      last_name: rep.last_name,
+      email: rep.email || company.email,
+      phone: rep.phone,
+      national_id: rep.national_id || undefined,
+      unit_ids: company.unit_id ? [company.unit_id] : [],
+      status: 'pending_verification',
+      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+      phone_verified_at: repPhoneVerified ? today : undefined,
+      joined_date: today.slice(0, 10),
+      agency_name: company.company_name,   // surfaces as "Company" in the detail panel
+    }
+    onRegister?.(person)
     onClose(); reset()
   }
 
@@ -849,7 +902,9 @@ const DEPT_LABELS: Record<string, string> = {
   'DEP-01': 'Security', 'DEP-02': 'Maintenance', 'DEP-03': 'Cleaning', 'DEP-04': 'Admin & Reception',
 }
 
-export function RegisterStaffModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RegisterStaffModal({ open, onClose, onRegister }: {
+  open: boolean; onClose: () => void; onRegister?: (p: Person) => void
+}) {
   const [step, setStep]               = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]               = useState<Record<string, File>>({})
@@ -895,11 +950,29 @@ export function RegisterStaffModal({ open, onClose }: { open: boolean; onClose: 
   }
 
   function handleSubmit() {
-    alert(
-      isOutsourced
-        ? `${fullName} registered as outsourced staff (demo). Gate access only — no portal.`
-        : `${fullName} registered as direct staff (demo). Portal invite will be sent.`
-    )
+    const today = new Date().toISOString()
+    const personType = isOutsourced
+      ? 'outsourced'
+      : form.contract_type === 'permanent' ? 'permanent_staff' : 'casual_staff'
+    const person: Person = {
+      id: `P-${Date.now()}`,
+      type: personType,
+      first_name: form.first_name,
+      last_name: form.last_name,
+      email: form.email,
+      phone: form.phone,
+      national_id: form.national_id || undefined,
+      unit_ids: [],
+      status: 'pending_verification',
+      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+      phone_verified_at: phoneVerified ? today : undefined,
+      joined_date: form.start_date || today.slice(0, 10),
+      is_outsourced: isOutsourced,
+      agency_name:           isOutsourced ? form.agency_name           : undefined,
+      agency_contact:        isOutsourced ? form.agency_contact        : undefined,
+      agency_clearance_ref:  isOutsourced ? form.agency_clearance_ref  : undefined,
+    }
+    onRegister?.(person)
     onClose(); reset()
   }
 
@@ -968,7 +1041,7 @@ export function RegisterStaffModal({ open, onClose }: { open: boolean; onClose: 
             />
             <FooterNav>
               <Button variant="ghost" onClick={() => setStep(0)}>← Back</Button>
-              {phoneVerified && <Button onClick={() => setStep(2)}>Next: Access & Docs →</Button>}
+              {phoneVerified && <Button onClick={() => setStep(2)}>Next: Access &amp; Docs →</Button>}
             </FooterNav>
           </div>
         )}
@@ -993,7 +1066,7 @@ export function RegisterStaffModal({ open, onClose }: { open: boolean; onClose: 
             </div>
             <FooterNav>
               <Button variant="ghost" onClick={() => setStep(0)}>← Back</Button>
-              <Button onClick={() => setStep(2)}>Next: Access & Docs →</Button>
+              <Button onClick={() => setStep(2)}>Next: Access &amp; Docs →</Button>
             </FooterNav>
           </div>
         )}
@@ -1041,7 +1114,7 @@ export function RegisterStaffModal({ open, onClose }: { open: boolean; onClose: 
             <p className="text-xs text-text-muted">
               This creates the employment record in HR. The identity record was set in Step 1.
             </p>
-            <SectionDivider title="Role & Department" />
+            <SectionDivider title="Role &amp; Department" />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Department" required>
                 <select className={INPUT} value={form.department_id} onChange={set('department_id')}>

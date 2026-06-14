@@ -183,7 +183,7 @@ export default function PropertyPageClient() {
         open={!!selected}
         onClose={() => setSelected(null)}
         title={selected ? `Unit ${selected.block}-${selected.number}` : ''}
-        width="w-[520px]"
+        width="w-full sm:w-[520px]"
       >
         {selected && (
           <div className="p-5">

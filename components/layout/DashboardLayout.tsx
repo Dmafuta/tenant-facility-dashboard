@@ -1,19 +1,29 @@
+'use client'
 import { Sidebar } from './Sidebar'
+import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
 
-interface DashboardLayoutProps {
-  children: React.ReactNode
-}
+function LayoutInner({ children }: { children: React.ReactNode }) {
+  const { collapsed } = useSidebar()
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
+    <div
+      className="flex h-screen overflow-hidden bg-[var(--bg)]"
+      // CSS variable drives the desktop margin via globals.css
+      style={{ '--sidebar-offset': collapsed ? '64px' : '240px' } as React.CSSProperties}
+    >
       <Sidebar />
-      <div
-        className="flex-1 flex flex-col overflow-hidden"
-        style={{ marginLeft: 'var(--sidebar-w)' }}
-      >
+      {/* .layout-content picks up --sidebar-offset only at lg+ via globals.css */}
+      <div className="layout-content flex-1 flex flex-col overflow-hidden transition-all duration-300">
         {children}
       </div>
     </div>
+  )
+}
+
+export function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <SidebarProvider>
+      <LayoutInner>{children}</LayoutInner>
+    </SidebarProvider>
   )
 }

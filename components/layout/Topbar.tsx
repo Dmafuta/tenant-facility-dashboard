@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { cn } from '@/lib/cn'
+import { useSidebar } from '@/lib/sidebar-context'
 import { ALERT_NOTIFICATIONS } from '@/lib/mock-data'
 import type { AlertNotification, AlertSeverity } from '@/lib/types'
 
@@ -11,9 +12,9 @@ interface TopbarProps {
 }
 
 const SEVERITY_STYLE: Record<AlertSeverity, { dot: string; bg: string; border: string }> = {
-  critical: { dot: 'bg-red-500',    bg: 'bg-red-50',    border: 'border-red-100' },
-  warning:  { dot: 'bg-amber-400',  bg: 'bg-amber-50',  border: 'border-amber-100' },
-  info:     { dot: 'bg-blue-400',   bg: 'bg-blue-50',   border: 'border-blue-100' },
+  critical: { dot: 'bg-red-500',   bg: 'bg-red-50',   border: 'border-red-100'   },
+  warning:  { dot: 'bg-amber-400', bg: 'bg-amber-50', border: 'border-amber-100' },
+  info:     { dot: 'bg-blue-400',  bg: 'bg-blue-50',  border: 'border-blue-100'  },
 }
 
 const CATEGORY_ICON: Record<AlertNotification['category'], string> = {
@@ -38,14 +39,12 @@ function NotificationBell() {
   function markRead(id: string) {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
   }
-
   function markAllRead() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
   }
 
   return (
     <div className="relative">
-      {/* Bell button */}
       <button
         onClick={() => setOpen(o => !o)}
         className="relative flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
@@ -64,14 +63,11 @@ function NotificationBell() {
         )}
       </button>
 
-      {/* Dropdown */}
       {open && (
         <>
-          {/* Backdrop */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-
-          <div className="absolute right-0 top-10 z-50 w-96 rounded-xl border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface shadow-xl overflow-hidden">
-            {/* Header */}
+          {/* Notification dropdown — full width on mobile, fixed width on desktop */}
+          <div className="absolute right-0 top-10 z-50 w-[calc(100vw-2rem)] sm:w-96 max-w-sm rounded-xl border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface shadow-xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border dark:border-dark-border">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-text">Alerts</h3>
@@ -82,32 +78,27 @@ function NotificationBell() {
                 )}
               </div>
               {unread.length > 0 && (
-                <button
-                  onClick={markAllRead}
-                  className="text-xs text-teal-600 hover:underline"
-                >
+                <button onClick={markAllRead} className="text-xs text-teal-600 hover:underline">
                   Mark all read
                 </button>
               )}
             </div>
 
-            {/* Notification list */}
-            <div className="overflow-y-auto max-h-[420px] divide-y divide-surface-border dark:divide-dark-border">
+            <div className="overflow-y-auto max-h-[60vh] divide-y divide-surface-border dark:divide-dark-border">
               {notifications.length === 0 ? (
                 <div className="py-10 text-center text-sm text-text-muted">
-                  <p className="text-2xl mb-2">🔔</p>
-                  No alerts
+                  <p className="text-2xl mb-2">🔔</p>No alerts
                 </div>
               ) : notifications.map(n => {
                 const style = SEVERITY_STYLE[n.severity]
                 return (
                   <div
                     key={n.id}
+                    onClick={() => markRead(n.id)}
                     className={cn(
                       'flex gap-3 px-4 py-3 transition-colors cursor-pointer',
                       !n.read ? `${style.bg} ${style.border}` : 'hover:bg-surface-muted dark:hover:bg-dark-hover'
                     )}
-                    onClick={() => markRead(n.id)}
                   >
                     <div className="flex-shrink-0 pt-0.5">
                       <span className="text-base">{CATEGORY_ICON[n.category]}</span>
@@ -127,11 +118,7 @@ function NotificationBell() {
                         <span className="text-[10px] text-text-muted">
                           {new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>
-                        <a
-                          href={n.link_href}
-                          onClick={e => e.stopPropagation()}
-                          className="text-[11px] font-medium text-teal-600 hover:underline"
-                        >
+                        <a href={n.link_href} onClick={e => e.stopPropagation()} className="text-[11px] font-medium text-teal-600 hover:underline">
                           {n.link_label} →
                         </a>
                       </div>
@@ -141,7 +128,6 @@ function NotificationBell() {
               })}
             </div>
 
-            {/* Footer */}
             <div className="px-4 py-2.5 border-t border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card">
               <a href="/audit" className="block text-center text-xs text-teal-600 hover:underline">
                 View full audit trail →
@@ -155,12 +141,28 @@ function NotificationBell() {
 }
 
 export function Topbar({ title, subtitle, actions }: TopbarProps) {
+  const { toggleMobile } = useSidebar()
+
   return (
-    <header className="h-14 bg-white dark:bg-dark-surface border-b border-surface-border dark:border-dark-border flex items-center px-6 gap-4 flex-shrink-0">
+    <header className="h-14 bg-white dark:bg-dark-surface border-b border-surface-border dark:border-dark-border flex items-center px-4 gap-3 flex-shrink-0">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={toggleMobile}
+        className="lg:hidden flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
+        aria-label="Open menu"
+      >
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      {/* Title */}
       <div className="flex-1 min-w-0">
         <h1 className="text-base font-semibold text-text truncate">{title}</h1>
-        {subtitle && <p className="text-xs text-text-muted">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-text-muted truncate">{subtitle}</p>}
       </div>
+
+      {/* Actions + bell */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {actions && <div className="flex items-center gap-2">{actions}</div>}
         <NotificationBell />

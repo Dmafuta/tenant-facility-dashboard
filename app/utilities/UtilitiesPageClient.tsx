@@ -1048,7 +1048,7 @@ function InventoryTab({ onAssign }: { onAssign?: (m: MeterExtended) => void }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <SearchInput value={search} onChange={setSearch} placeholder="Serial number, make, model…" containerClassName="w-64" />
+        <SearchInput value={search} onChange={setSearch} placeholder="Serial number, make, model…" containerClassName="w-full sm:w-64" />
         <Select
           value={catFilter}
           onChange={v => setCatFilter(v as MeterCategory | 'all')}

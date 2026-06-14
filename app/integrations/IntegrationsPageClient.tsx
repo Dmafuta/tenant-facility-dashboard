@@ -66,7 +66,7 @@ function ConfigField({
 
 function MpesaConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'mpesa_daraja' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="Environment" value={config.environment} />
       <ConfigField label="Shortcode Type" value={config.shortcode_type} />
       <ConfigField label="Shortcode (Paybill / Till)" value={config.shortcode} />
@@ -83,7 +83,7 @@ function MpesaConfigPanel({ config }: { config: Extract<IntegrationProvider['con
 
 function ATConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'africas_talking' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="Environment" value={config.environment} />
       <ConfigField label="Username" value={config.username} />
       <ConfigField label="API Key" value={config.api_key} secret />
@@ -94,7 +94,7 @@ function ATConfigPanel({ config }: { config: Extract<IntegrationProvider['config
 
 function TwilioConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'twilio' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="Account SID" value={config.account_sid} />
       <ConfigField label="Auth Token" value={config.auth_token} secret />
       <ConfigField label="From Number" value={config.from_number} />
@@ -107,7 +107,7 @@ function TwilioConfigPanel({ config }: { config: Extract<IntegrationProvider['co
 
 function VonageConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'vonage' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="API Key" value={config.api_key} secret />
       <ConfigField label="API Secret" value={config.api_secret} secret />
       <ConfigField label="Sender Name" value={config.from_name} />
@@ -117,7 +117,7 @@ function VonageConfigPanel({ config }: { config: Extract<IntegrationProvider['co
 
 function WhatsAppMetaPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'whatsapp_meta' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="Phone Number ID" value={config.phone_number_id} />
       <ConfigField label="WhatsApp Business Account ID" value={config.waba_id} />
       <ConfigField label="Access Token" value={config.access_token} secret />
@@ -129,7 +129,7 @@ function WhatsAppMetaPanel({ config }: { config: Extract<IntegrationProvider['co
 
 function TelegramConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'telegram' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="Bot Token" value={config.bot_token} secret />
       <ConfigField label="Bot Username" value={config.bot_username} />
       <ConfigField label="Management Chat ID" value={config.management_chat_id || ''} hint="Telegram group/channel ID for management alerts" />
@@ -140,7 +140,7 @@ function TelegramConfigPanel({ config }: { config: Extract<IntegrationProvider['
 
 function SendGridConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'sendgrid' }> }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <ConfigField label="API Key" value={config.api_key} secret />
       <ConfigField label="From Email" value={config.from_email} />
       <ConfigField label="From Name" value={config.from_name} />

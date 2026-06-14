@@ -66,7 +66,7 @@ function StaffCard({
         {staffTypeBadge(member.staff_type)}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 text-xs text-text-muted">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 text-xs text-text-muted">
         <span>Since: {member.start_date}</span>
         {member.end_date        && <span className="text-warning">Ends: {member.end_date}</span>}
         {member.probation_end_date && <span className="text-warning col-span-2">Probation ends: {member.probation_end_date}</span>}
@@ -127,7 +127,7 @@ function DepartmentCard({
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 border-t border-surface-border dark:border-dark-border">
+      <div className="grid grid-cols-1 sm:grid-cols-3 border-t border-surface-border dark:border-dark-border">
         {[
           { label: 'Direct Staff',  value: staff.length },
           { label: 'Vendor Contracts', value: vendors.length },
