@@ -30,16 +30,17 @@ export default function LoginPage() {
       if (err) { setError(err.message); return }
       setMagicSent(true)
     } else {
-      const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
       setLoading(false)
       if (err) { setError(err.message); return }
+      if (!data.user) { setError('Invalid email or password.'); return }
       window.location.href = '/dashboard'
     }
   }
 
   return (
     <div className="min-h-screen flex">
-      {/* Left panel — branding */}
+      {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary-600 flex-col justify-between p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
@@ -81,12 +82,12 @@ export default function LoginPage() {
 
         <div className="relative">
           <p className="text-primary-200 text-xs">
-            © {new Date().getFullYear()} Green Valley Estate. All rights reserved.
+            &copy; {new Date().getFullYear()} Green Valley Estate. All rights reserved.
           </p>
         </div>
       </div>
 
-      {/* Right panel — form */}
+      {/* Right panel */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
 
@@ -100,39 +101,38 @@ export default function LoginPage() {
             <p className="text-sm text-text-muted">Sign in to your facility portal</p>
           </div>
 
-          {/* Mode toggle */}
           <div className="flex rounded-xl border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-hover p-1 mb-6">
             <button
               onClick={() => { setMode('password'); setMagicSent(false); setError('') }}
               className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${mode === 'password' ? 'bg-surface dark:bg-dark-card text-text shadow-sm' : 'text-text-muted hover:text-text'}`}
             >
-              🔑 Password
+              Password
             </button>
             <button
               onClick={() => { setMode('magic'); setMagicSent(false); setError('') }}
               className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${mode === 'magic' ? 'bg-surface dark:bg-dark-card text-text shadow-sm' : 'text-text-muted hover:text-text'}`}
             >
-              ✨ Magic Link
+              Magic Link
             </button>
           </div>
 
           {magicSent ? (
             <div className="text-center py-6">
-              <div className="w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-3xl mx-auto mb-4">📬</div>
+              <div className="w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-3xl mx-auto mb-4">{'📬'}</div>
               <h2 className="text-base font-semibold text-text mb-2">Check your inbox</h2>
               <p className="text-sm text-text-muted mb-6 leading-relaxed">
-                We sent a sign-in link to <strong className="text-text">{email}</strong>. Click it to sign in instantly — or enter the 6-digit code below.
+                We sent a sign-in link to <strong className="text-text">{email}</strong>. Click it to sign in instantly, or enter the 6-digit code below.
               </p>
               <Link
                 href={`/verify?email=${encodeURIComponent(email)}`}
                 className="inline-block px-5 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm mb-4"
               >
-                Enter code instead →
+                Enter code instead
               </Link>
               <br />
               <button
                 onClick={() => { setMagicSent(false); setEmail('') }}
-                className="text-sm text-primary-600 hover:underline"
+                className="text-sm text-primary-600 hover:underline mt-3"
               >
                 Use a different email
               </button>
@@ -172,7 +172,7 @@ export default function LoginPage() {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text text-sm"
                       tabIndex={-1}
                     >
-                      {showPass ? '🙈' : '👁'}
+                      {showPass ? 'Hide' : 'Show'}
                     </button>
                   </div>
                 </div>
@@ -188,9 +188,9 @@ export default function LoginPage() {
                 className="w-full py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm flex items-center justify-center gap-2"
               >
                 {loading ? (
-                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {mode === 'magic' ? 'Sending link…' : 'Signing in…'}</>
+                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{' '}{mode === 'magic' ? 'Sending link...' : 'Signing in...'}</>
                 ) : (
-                  mode === 'magic' ? '✨ Send Magic Link' : '→ Sign In'
+                  mode === 'magic' ? 'Send Magic Link' : 'Sign In'
                 )}
               </button>
 
@@ -204,7 +204,7 @@ export default function LoginPage() {
 
           <div className="mt-8 pt-6 border-t border-surface-border dark:border-dark-border">
             <p className="text-center text-xs text-text-muted leading-relaxed">
-              🔒 Secured with 256-bit encryption · Access is restricted to authorised personnel only.
+              Secured with 256-bit encryption. Access is restricted to authorised personnel only.
             </p>
           </div>
         </div>
