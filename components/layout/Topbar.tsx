@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/cn'
 import { useSidebar } from '@/lib/sidebar-context'
 import { ALERT_NOTIFICATIONS } from '@/lib/mock-data'
+import { createClient } from '@/lib/supabase/client'
 import type { AlertNotification, AlertSeverity } from '@/lib/types'
 
 interface TopbarProps {
@@ -140,6 +141,35 @@ function NotificationBell() {
   )
 }
 
+function SignOutButton() {
+  const [loading, setLoading] = useState(false)
+
+  async function handleSignOut() {
+    setLoading(true)
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    window.location.href = '/login'
+  }
+
+  return (
+    <button
+      onClick={handleSignOut}
+      disabled={loading}
+      title="Sign out"
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors disabled:opacity-50"
+      aria-label="Sign out"
+    >
+      {loading ? (
+        <span className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+      ) : (
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 export function Topbar({ title, subtitle, actions }: TopbarProps) {
   const { toggleMobile } = useSidebar()
 
@@ -166,6 +196,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
       <div className="flex items-center gap-2 flex-shrink-0">
         {actions && <div className="flex items-center gap-2">{actions}</div>}
         <NotificationBell />
+        <SignOutButton />
       </div>
     </header>
   )

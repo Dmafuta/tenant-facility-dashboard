@@ -1,8 +1,11 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
 import { PeoplePageClient } from './PeoplePageClient'
+import { getPeople } from '@/lib/supabase/queries'
 
-export default function PeoplePage() {
+export default async function PeoplePage() {
+  const people = await getPeople()
+
   return (
     <DashboardLayout>
       <Topbar
@@ -10,7 +13,7 @@ export default function PeoplePage() {
         subtitle="Owners, tenants, staff — with household, vehicles and personal staff"
       />
       <main className="flex-1 overflow-hidden flex">
-        <PeoplePageClient />
+        <PeoplePageClient initialPeople={people} />
       </main>
     </DashboardLayout>
   )

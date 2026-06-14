@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
 type Mode = 'password' | 'magic'
 
@@ -13,27 +14,33 @@ export default function LoginPage() {
   const [magicSent, setMagicSent] = useState(false)
   const [error, setError]         = useState('')
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
-    // TODO: wire to Supabase Auth
-    setTimeout(() => {
+
+    const supabase = createClient()
+
+    if (mode === 'magic') {
+      const { error: err } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false },
+      })
       setLoading(false)
-      if (mode === 'magic') {
-        setMagicSent(true)
-      } else {
-        // redirect to /verify for 2FA
-        window.location.href = '/verify'
-      }
-    }, 1200)
+      if (err) { setError(err.message); return }
+      setMagicSent(true)
+    } else {
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+      setLoading(false)
+      if (err) { setError(err.message); return }
+      window.location.href = '/dashboard'
+    }
   }
 
   return (
     <div className="min-h-screen flex">
       {/* Left panel — branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary-600 flex-col justify-between p-12 relative overflow-hidden">
-        {/* Background pattern */}
         <div className="absolute inset-0 opacity-10">
           <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -45,7 +52,6 @@ export default function LoginPage() {
           </svg>
         </div>
 
-        {/* Logo */}
         <div className="relative flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-white font-bold text-xl">G</div>
           <div>
@@ -54,7 +60,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Middle content */}
         <div className="relative space-y-6">
           <div className="space-y-3">
             {[
@@ -74,7 +79,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="relative">
           <p className="text-primary-200 text-xs">
             © {new Date().getFullYear()} Green Valley Estate. All rights reserved.
@@ -86,7 +90,6 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
 
-          {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center gap-2.5 mb-8">
             <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg shadow">G</div>
             <span className="text-base font-semibold text-text">Green Valley Estate</span>
@@ -113,14 +116,20 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Magic link sent state */}
           {magicSent ? (
             <div className="text-center py-6">
               <div className="w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-3xl mx-auto mb-4">📬</div>
               <h2 className="text-base font-semibold text-text mb-2">Check your inbox</h2>
               <p className="text-sm text-text-muted mb-6 leading-relaxed">
-                We sent a magic link to <strong className="text-text">{email}</strong>. Click the link to sign in instantly.
+                We sent a sign-in link to <strong className="text-text">{email}</strong>. Click it to sign in instantly — or enter the 6-digit code below.
               </p>
+              <Link
+                href={`/verify?email=${encodeURIComponent(email)}`}
+                className="inline-block px-5 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm mb-4"
+              >
+                Enter code instead →
+              </Link>
+              <br />
               <button
                 onClick={() => { setMagicSent(false); setEmail('') }}
                 className="text-sm text-primary-600 hover:underline"
@@ -130,7 +139,6 @@ export default function LoginPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Email */}
               <div>
                 <label className="block text-xs font-semibold text-text-muted mb-1.5">Email address</label>
                 <input
@@ -143,7 +151,6 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Password (only for password mode) */}
               {mode === 'password' && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -171,12 +178,10 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Error */}
               {error && (
                 <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{error}</p>
               )}
 
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={loading}
@@ -191,13 +196,12 @@ export default function LoginPage() {
 
               {mode === 'password' && (
                 <p className="text-center text-xs text-text-muted pt-1">
-                  You will be asked to verify your identity with a code.
+                  Secured with 256-bit encryption. Authorised personnel only.
                 </p>
               )}
             </form>
           )}
 
-          {/* Divider & security note */}
           <div className="mt-8 pt-6 border-t border-surface-border dark:border-dark-border">
             <p className="text-center text-xs text-text-muted leading-relaxed">
               🔒 Secured with 256-bit encryption · Access is restricted to authorised personnel only.

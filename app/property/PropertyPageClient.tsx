@@ -30,19 +30,20 @@ const STATUS_BADGE: Record<UnitStatus, { variant: 'primary'|'warning'|'danger'|'
 const TH = 'px-4 py-2.5 text-left text-xs font-medium text-text-muted whitespace-nowrap'
 const TD = 'px-4 py-2 text-sm text-text whitespace-nowrap'
 
-export default function PropertyPageClient() {
+export default function PropertyPageClient({ initialUnits }: { initialUnits?: Unit[] } = {}) {
   const [search,      setSearch]      = useState('')
   const [block,       setBlock]       = useState('all')
   const [useType,     setUseType]     = useState('all')
   const [status,      setStatus]      = useState('all')
   const [selected,    setSelected]    = useState<Unit | null>(null)
+  const units = initialUnits ?? UNITS
   const [showAddUnit, setShowAddUnit] = useState(false)
 
-  const blocks = [...new Set(UNITS.map(u => u.block))].sort()
+  const blocks = [...new Set(units.map(u => u.block))].sort()
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return UNITS.filter(u => {
+    return units.filter(u => {
       if (block   !== 'all' && u.block    !== block)   return false
       if (useType !== 'all' && u.use_type !== useType) return false
       if (status  !== 'all' && u.status   !== status)  return false
@@ -58,7 +59,7 @@ export default function PropertyPageClient() {
     <DashboardLayout>
       <Topbar
         title="Property"
-        subtitle={`${UNITS.length} units across ${blocks.length} blocks`}
+        subtitle={`${units.length} units across ${blocks.length} blocks`}
         actions={
           <CanDo action="write" resource={{ type: 'unit' }} fallback={
             <Button variant="primary" size="sm" disabled>+ Add Unit</Button>

@@ -1,15 +1,37 @@
+import { createClient } from '@/lib/supabase/server'
 import type { Subject } from '@/lib/abac/types'
 
-const PERSONAS: Record<string, Subject> = {
-  facility_manager:      { id: 'u1', role: 'facility_manager',      name: 'Alice Kamau' },
-  finance_officer:       { id: 'u2', role: 'finance_officer',       name: 'Bob Ochieng' },
-  maintenance_supervisor:{ id: 'u3', role: 'maintenance_supervisor', name: 'Carol Mwangi' },
-  security_officer:      { id: 'u4', role: 'security_officer',       name: 'Dan Otieno' },
-  receptionist:          { id: 'u5', role: 'receptionist',           name: 'Eve Ndung\'u' },
-  owner:                 { id: 'u6', role: 'owner',                  name: 'Frank Mutua', unit_ids: ['U-101','U-205'] },
+type Role = Subject['role']
+
+const ROLE_MAP: Record<string, Role> = {
+  facility_manager:       'facility_manager',
+  finance_officer:        'finance_officer',
+  maintenance_supervisor: 'maintenance_supervisor',
+  security_officer:       'security_officer',
+  receptionist:           'receptionist',
+  owner:                  'owner',
 }
 
 export async function getSubjectFromSession(): Promise<Subject> {
-  const persona = process.env.DEMO_PERSONA ?? 'facility_manager'
-  return PERSONAS[persona] ?? PERSONAS['facility_manager']
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error } = await supabase.auth.getUser()
+
+    if (error || !user) {
+      // Fallback for dev / unauthenticated server renders
+      return { id: 'anon', role: 'facility_manager', name: 'Guest' }
+    }
+
+    const meta = user.user_metadata ?? {}
+    const role: Role = ROLE_MAP[meta.role as string] ?? 'facility_manager'
+
+    return {
+      id:       user.id,
+      role,
+      name:     meta.full_name ?? meta.name ?? user.email ?? 'User',
+      unit_ids: meta.unit_ids ?? undefined,
+    }
+  } catch {
+    return { id: 'anon', role: 'facility_manager', name: 'Guest' }
+  }
 }

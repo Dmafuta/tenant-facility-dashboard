@@ -511,7 +511,7 @@ function PersonRow({ person, selected, onClick }: { person: Person; selected: bo
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export function PeoplePageClient() {
+export function PeoplePageClient({ initialPeople }: { initialPeople?: import('@/lib/types').Person[] } = {}) {
   const [search, setSearch]     = useState('')
   const [selected, setSelected] = useState<Person | null>(null)
 
@@ -522,7 +522,7 @@ export function PeoplePageClient() {
   const [showRegMenu,   setShowRegMenu]   = useState(false)
   const [showExit,      setShowExit]      = useState(false)
 
-  const [people, setPeople] = useState<Person[]>(PEOPLE)
+  const [people, setPeople] = useState<Person[]>(initialPeople ?? PEOPLE)
   const addPerson = (p: Person) => setPeople(prev => [p, ...prev])
 
   const owners  = useMemo(() => people.filter(p => p.type === 'resident_owner' || p.type === 'non_resident_owner'), [people])
