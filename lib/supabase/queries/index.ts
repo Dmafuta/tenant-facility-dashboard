@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import type { Person, Unit } from '@/lib/types'
+import type { Person, Unit, UnitUseType, UnitStatus } from '@/lib/types'
 import { PEOPLE as MOCK_PEOPLE } from '@/lib/mock-data/people'
 import { UNITS as MOCK_UNITS } from '@/lib/mock-data/units'
 
-// ── People ──────────────────────────────────────────────────────────────
+// -- People ------------------------------------------------------------------
 
 export async function getPeople(): Promise<Person[]> {
   try {
@@ -40,7 +40,7 @@ export async function insertPerson(person: Omit<Person, 'id'>): Promise<Person |
   }
 }
 
-// ── Units ────────────────────────────────────────────────────────────────
+// -- Units -------------------------------------------------------------------
 
 export async function getUnits(): Promise<Unit[]> {
   try {
@@ -55,7 +55,24 @@ export async function getUnits(): Promise<Unit[]> {
       return MOCK_UNITS
     }
 
-    return data as Unit[]
+    // Transform DB rows into the Unit display type.
+    // The units table has monthly_rent; the Unit type expects monthly_rate.
+    // use_type is added in migration 003; owners/occupant are not on this row.
+    return data.map((row) => ({
+      id:               row.id,
+      block:            row.block ?? '',
+      floor:            row.floor ?? 0,
+      number:           row.number ?? '',
+      size_sqm:         Number(row.size_sqm ?? 0),
+      bedrooms:         row.bedrooms ?? 0,
+      bathrooms:        Number(row.bathrooms ?? 0),
+      use_type:         (row.use_type ?? 'residential') as UnitUseType,
+      status:           (row.status ?? 'vacant') as UnitStatus,
+      monthly_rate:     Number(row.monthly_rent ?? 0),
+      owners:           [] as Unit['owners'],
+      current_occupant: undefined,
+      lease_end:        undefined,
+    })) as Unit[]
   } catch {
     return MOCK_UNITS
   }

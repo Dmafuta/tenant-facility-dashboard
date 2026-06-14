@@ -76,16 +76,16 @@ async function seed() {
 
   // ── Units ──────────────────────────────────────────────────────────────
   const units = [
-    { id:'U-101', block:'A', floor:1, number:'101', size_sqm:65, bedrooms:2, bathrooms:1, status:'occupied',    monthly_rent:45000 },
-    { id:'U-102', block:'A', floor:1, number:'102', size_sqm:65, bedrooms:2, bathrooms:1, status:'occupied',    monthly_rent:45000 },
-    { id:'U-103', block:'A', floor:1, number:'103', size_sqm:55, bedrooms:1, bathrooms:1, status:'vacant',      monthly_rent:38000 },
-    { id:'U-201', block:'A', floor:2, number:'201', size_sqm:80, bedrooms:3, bathrooms:2, status:'occupied',    monthly_rent:60000 },
-    { id:'U-202', block:'A', floor:2, number:'202', size_sqm:80, bedrooms:3, bathrooms:2, status:'occupied',    monthly_rent:8000  },
-    { id:'U-203', block:'A', floor:2, number:'203', size_sqm:75, bedrooms:3, bathrooms:2, status:'occupied',    monthly_rent:70000 },
-    { id:'U-301', block:'A', floor:3, number:'301', size_sqm:90, bedrooms:3, bathrooms:2, status:'maintenance', monthly_rent:65000 },
-    { id:'U-302', block:'A', floor:3, number:'302', size_sqm:90, bedrooms:3, bathrooms:2, status:'occupied',    monthly_rent:65000 },
-    { id:'SHP-01', block:'S', floor:0, number:'S01', size_sqm:40, bedrooms:0, bathrooms:1, status:'occupied',   monthly_rent:80000 },
-    { id:'SHP-02', block:'S', floor:0, number:'S02', size_sqm:35, bedrooms:0, bathrooms:1, status:'vacant',     monthly_rent:75000 },
+    { id:'U-101',  block:'A', floor:1, number:'101', size_sqm:65, bedrooms:2, bathrooms:1, use_type:'residential', status:'occupied',    monthly_rent:45000 },
+    { id:'U-102',  block:'A', floor:1, number:'102', size_sqm:65, bedrooms:2, bathrooms:1, use_type:'residential', status:'occupied',    monthly_rent:45000 },
+    { id:'U-103',  block:'A', floor:1, number:'103', size_sqm:55, bedrooms:1, bathrooms:1, use_type:'residential', status:'vacant',      monthly_rent:38000 },
+    { id:'U-201',  block:'A', floor:2, number:'201', size_sqm:80, bedrooms:3, bathrooms:2, use_type:'residential', status:'occupied',    monthly_rent:60000 },
+    { id:'U-202',  block:'A', floor:2, number:'202', size_sqm:80, bedrooms:3, bathrooms:2, use_type:'bnb',         status:'occupied',    monthly_rent:8000  },
+    { id:'U-203',  block:'A', floor:2, number:'203', size_sqm:75, bedrooms:3, bathrooms:2, use_type:'office',      status:'occupied',    monthly_rent:70000 },
+    { id:'U-301',  block:'A', floor:3, number:'301', size_sqm:90, bedrooms:3, bathrooms:2, use_type:'residential', status:'maintenance', monthly_rent:65000 },
+    { id:'U-302',  block:'A', floor:3, number:'302', size_sqm:90, bedrooms:3, bathrooms:2, use_type:'residential', status:'occupied',    monthly_rent:65000 },
+    { id:'SHP-01', block:'S', floor:0, number:'S01', size_sqm:40, bedrooms:0, bathrooms:1, use_type:'commercial',  status:'occupied',    monthly_rent:80000 },
+    { id:'SHP-02', block:'S', floor:0, number:'S02', size_sqm:35, bedrooms:0, bathrooms:1, use_type:'commercial',  status:'vacant',      monthly_rent:75000 },
   ]
   await upsert('units', units)
   console.log(`✓ units (${units.length})`)
