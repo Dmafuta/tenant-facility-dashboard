@@ -1,16 +1,44 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { getAllowedPaths, ROLE_HOME, NAV } from '@/lib/nav-config'
 
 const BACKEND      = process.env.BACKEND_URL ?? 'http://localhost:8081'
 const PUBLIC_PATHS = ['/login', '/verify', '/auth/magic', '/api/backend/auth', '/api/auth']
 
+// All first-level nav paths (used to decide whether to apply the role guard)
+const NAV_PATHS = NAV.flatMap(g => g.items).map(i => i.href)
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(base64)) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
 function getTokenExpiry(token: string): number {
   try {
-    const base64  = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    const payload = JSON.parse(atob(base64)) as { exp?: number }
+    const payload = decodeJwtPayload(token) as { exp?: number }
     return (payload.exp ?? 0) * 1000
   } catch {
     return 0
   }
+}
+
+function applyRouteGuard(request: NextRequest, token: string): NextResponse {
+  const { pathname } = request.nextUrl
+  // Only guard top-level nav pages, not API routes or sub-paths of non-nav pages
+  if (pathname.startsWith('/api/')) return NextResponse.next()
+  const isNavPage = NAV_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
+  if (!isNavPage) return NextResponse.next()
+
+  const role    = (decodeJwtPayload(token).role as string) ?? 'facility_manager'
+  const allowed = getAllowedPaths(role)
+  const canAccess = allowed.some(p => pathname === p || pathname.startsWith(p + '/'))
+  if (canAccess) return NextResponse.next()
+
+  const home = ROLE_HOME[role] ?? '/dashboard'
+  return NextResponse.redirect(new URL(home, request.url))
 }
 
 export async function middleware(request: NextRequest) {
@@ -29,9 +57,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Access token valid → allow through
+  // Access token valid → check role-based route guard then allow through
   if (accessToken && getTokenExpiry(accessToken) > Date.now() + 5_000) {
-    return NextResponse.next()
+    return applyRouteGuard(request, accessToken)
   }
 
   // Access token expired or missing — try silent refresh
@@ -47,7 +75,7 @@ export async function middleware(request: NextRequest) {
     })
     if (!res.ok) throw new Error('refresh failed')
     const data = await res.json() as { accessToken: string; refreshToken?: string }
-    const response = NextResponse.next()
+    const response = applyRouteGuard(request, data.accessToken)
     response.cookies.set('access_token', data.accessToken, {
       httpOnly: true, secure: true, sameSite: 'strict', path: '/',
     })

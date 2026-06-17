@@ -59,7 +59,7 @@ function VerifyForm() {
     setError('')
     try {
       await verifyOtp(email, code)
-      window.location.href = '/dashboard'
+      window.location.href = '/'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid code.')
       setDigits(Array(CODE_LENGTH).fill(''))

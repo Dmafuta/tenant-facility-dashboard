@@ -33,7 +33,7 @@ export default function LoginPage() {
           })
           window.location.href = `/verify?${params.toString()}`
         } else {
-          window.location.href = '/dashboard'
+          window.location.href = '/'
         }
       }
     } catch (err) {

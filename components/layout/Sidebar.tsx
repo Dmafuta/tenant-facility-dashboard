@@ -3,85 +3,24 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/cn'
 import { useSidebar } from '@/lib/sidebar-context'
-
-interface NavItem  { label: string; href: string; icon: string; premium?: boolean }
-interface NavGroup { group: string; items: NavItem[] }
-
-const NAV: NavGroup[] = [
-  {
-    group: 'Overview',
-    items: [
-      { label: 'Dashboard', href: '/dashboard', icon: '🏠' },
-      { label: 'Occupancy', href: '/occupancy', icon: '🗺' },
-    ],
-  },
-  {
-    group: 'Facility',
-    items: [
-      { label: 'Property',    href: '/property',    icon: '🏢' },
-      { label: 'People',      href: '/people',      icon: '👥' },
-      { label: 'Utilities',   href: '/utilities',   icon: '💧' },
-      { label: 'Consumables', href: '/consumables', icon: '📦' },
-    ],
-  },
-  {
-    group: 'Leasing',
-    items: [
-      { label: 'Leases',      href: '/leases',      icon: '📑' },
-      { label: 'Onboarding',  href: '/onboarding',  icon: '🎉' },
-      { label: 'Inspections', href: '/inspections', icon: '🔍' },
-      { label: 'Visitors',    href: '/visitors',    icon: '🚪' },
-    ],
-  },
-  {
-    group: 'Operations',
-    items: [
-      { label: 'Financials',  href: '/financials',  icon: '💰' },
-      { label: 'Maintenance', href: '/maintenance', icon: '🔧' },
-      { label: 'HR & Staff',  href: '/hr',          icon: '💼' },
-    ],
-  },
-  {
-    group: 'Compliance',
-    items: [
-      { label: 'Rules & Breaches', href: '/rules',     icon: '⚖' },
-      { label: 'Notices',          href: '/notices',   icon: '📬' },
-      { label: 'Documents',        href: '/documents', icon: '📁' },
-    ],
-  },
-  {
-    group: 'Communication',
-    items: [
-      { label: 'Communications', href: '/communications', icon: '📢' },
-    ],
-  },
-  {
-    group: 'Community',
-    items: [
-      { label: 'Engagement', href: '/engagement', icon: '🗳️' },
-    ],
-  },
-  {
-    group: 'Premium',
-    items: [
-      { label: 'Short-Stay',     href: '/short-stay', icon: '🛎',  premium: true },
-      { label: 'Access Control', href: '/access',     icon: '🔐' },
-      { label: 'Vehicles',       href: '/vehicles',   icon: '🚗',  premium: true },
-    ],
-  },
-  {
-    group: 'Admin',
-    items: [
-      { label: 'Reports',     href: '/reports',  icon: '📊' },
-      { label: 'Audit Trail', href: '/audit',    icon: '🕵' },
-      { label: 'Settings',    href: '/settings', icon: '⚙' },
-    ],
-  },
-]
+import { useAbac } from '@/lib/abac/context'
+import { NAV, getInitials, formatRole } from '@/lib/nav-config'
 
 export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, mobileOpen, toggleCollapsed, closeMobile } = useSidebar()
+  const { subject } = useAbac()
+
+  // Filter nav to only items this role can see; drop empty groups
+  const visibleNav = NAV
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => !item.roles || item.roles.includes(subject.role)),
+    }))
+    .filter(group => group.items.length > 0)
+
+  const initials  = getInitials(subject.name)
+  const roleLabel = formatRole(subject.role)
 
   const sidebarContent = (
     <aside
@@ -104,7 +43,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 space-y-4 px-2">
-        {NAV.map(({ group, items }) => (
+        {visibleNav.map(({ group, items }) => (
           <div key={group}>
             {!collapsed && (
               <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
@@ -163,18 +102,21 @@ export function Sidebar() {
         {!collapsed && (
           <div className="flex items-center gap-2.5 mb-3">
             <div className="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-300 text-xs font-bold flex-shrink-0">
-              FM
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-text truncate">Facility Manager</p>
-              <p className="text-[10px] text-text-muted truncate">Green Valley Estate</p>
+              <p className="text-xs font-medium text-text truncate">{subject.name}</p>
+              <p className="text-[10px] text-text-muted truncate">{roleLabel}</p>
             </div>
           </div>
         )}
         {collapsed && (
           <div className="flex justify-center mb-3">
-            <div className="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-300 text-xs font-bold" title="Facility Manager">
-              FM
+            <div
+              className="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-300 text-xs font-bold"
+              title={`${subject.name} — ${roleLabel}`}
+            >
+              {initials}
             </div>
           </div>
         )}
