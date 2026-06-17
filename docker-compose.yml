@@ -18,7 +18,7 @@ services:
 
   # ── Spring Boot API ──────────────────────────────────────────────────────────
   backend:
-    image: ghcr.io/dmafuta/tenant-portal-api:latest
+    image: ghcr.io/dmafuta/tenant-facility-api:latest
     restart: unless-stopped
     depends_on:
       postgres:
