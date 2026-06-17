@@ -68,21 +68,26 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
+    // The backend reads the refresh token from the Cookie header — send it that way
     const res = await fetch(`${BACKEND}/api/auth/refresh`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ refreshToken }),
+      headers: { 'Cookie': `refresh_token=${refreshToken}` },
     })
     if (!res.ok) throw new Error('refresh failed')
-    const data = await res.json() as { accessToken: string; refreshToken?: string }
-    const response = applyRouteGuard(request, data.accessToken)
-    response.cookies.set('access_token', data.accessToken, {
-      httpOnly: true, secure: true, sameSite: 'strict', path: '/',
-    })
-    if (data.refreshToken) {
-      response.cookies.set('refresh_token', data.refreshToken, {
-        httpOnly: true, secure: true, sameSite: 'strict', path: '/',
-      })
+
+    // Parse the new access token out of the Set-Cookie headers the backend issued
+    const setCookies = res.headers.getSetCookie()
+    let newAccessToken = ''
+    for (const c of setCookies) {
+      const m = c.match(/^access_token=([^;]+)/)
+      if (m) { newAccessToken = m[1]; break }
+    }
+    if (!newAccessToken) throw new Error('no access token in refresh response')
+
+    // Apply the route guard with the new token, then forward all Set-Cookie headers to the browser
+    const response = applyRouteGuard(request, newAccessToken)
+    for (const c of setCookies) {
+      response.headers.append('Set-Cookie', c)
     }
     return response
   } catch {
