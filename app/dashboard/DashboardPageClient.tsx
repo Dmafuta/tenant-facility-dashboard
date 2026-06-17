@@ -79,14 +79,17 @@ function OccupancyRing({ pct }: { pct: number }) {
   )
 }
 
-export default function DashboardPageClient() {
+export default function DashboardPageClient({ unitStats }: {
+  unitStats?: { total: number; occupied: number; vacant: number; maintenance: number } | null
+}) {
   const today = new Date('2026-06-13')
 
-  // ── Occupancy ────────────────────────────────────────────────────────────
-  const total    = UNITS.length
-  const occupied = UNITS.filter(u => u.status === 'occupied').length
-  const vacant   = UNITS.filter(u => u.status === 'vacant').length
-  const occPct   = Math.round((occupied / total) * 100)
+  // ── Occupancy — live from server props, fallback to mock ──────────────────
+  const total    = unitStats?.total       ?? UNITS.length
+  const occupied = unitStats?.occupied    ?? UNITS.filter(u => u.status === 'occupied').length
+  const vacant   = unitStats?.vacant      ?? UNITS.filter(u => u.status === 'vacant').length
+  const maintenance = unitStats?.maintenance ?? UNITS.filter(u => u.status === 'maintenance').length
+  const occPct   = total > 0 ? Math.round((occupied / total) * 100) : 0
 
   // ── Financials ───────────────────────────────────────────────────────────
   const overdueCharges  = CHARGES.filter(c => c.status === 'overdue')
@@ -194,9 +197,9 @@ export default function DashboardPageClient() {
               <OccupancyRing pct={occPct} />
               <div className="space-y-2 flex-1">
                 {([
-                  { label: 'Occupied',     count: occupied,              color: 'bg-teal-500' },
-                  { label: 'Vacant',       count: vacant,                color: 'bg-gray-300' },
-                  { label: 'Maintenance',  count: UNITS.filter(u => u.status === 'maintenance').length, color: 'bg-amber-400' },
+                  { label: 'Occupied',     count: occupied,     color: 'bg-teal-500' },
+                  { label: 'Vacant',       count: vacant,       color: 'bg-gray-300' },
+                  { label: 'Maintenance',  count: maintenance,  color: 'bg-amber-400' },
                 ] as { label: string; count: number; color: string }[]).map(({ label, count, color }) => (
                   <div key={label} className="flex items-center gap-2 text-xs">
                     <div className={`h-2 w-2 rounded-full flex-shrink-0 ${color}`} />

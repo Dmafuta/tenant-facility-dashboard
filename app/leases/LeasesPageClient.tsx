@@ -1,17 +1,19 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
-import { LEASES, LEASE_APPLICATIONS, ONBOARDING_APPLICATIONS } from '@/lib/mock-data'
-import type { Lease, LeaseApplication, OnboardingApplication, OnboardingStage, BillingCycle } from '@/lib/types'
+import { LEASE_APPLICATIONS, ONBOARDING_APPLICATIONS } from '@/lib/mock-data'
+import { getAllLeases, updateLease } from '@/lib/api/leases'
+import type { LeaseData } from '@/lib/api/leases'
+import type { LeaseApplication, OnboardingApplication, OnboardingStage, BillingCycle } from '@/lib/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-function leaseStatusBadge(status: Lease['status']) {
+function leaseStatusBadge(status: string) {
   const map: Record<string, 'success'|'warning'|'danger'|'default'|'blue'> = {
     active:       'success',
     notice_given: 'warning',
@@ -19,7 +21,7 @@ function leaseStatusBadge(status: Lease['status']) {
     terminated:   'danger',
     draft:        'blue',
   }
-  return <Badge variant={map[status] ?? 'default'}>{status.replace('_', ' ')}</Badge>
+  return <Badge variant={map[status] ?? 'default'}>{status.replace(/_/g, ' ')}</Badge>
 }
 
 function appStatusBadge(status: LeaseApplication['status']) {
@@ -33,63 +35,123 @@ function appStatusBadge(status: LeaseApplication['status']) {
   return <Badge variant={map[status] ?? 'default'}>{status.replace('_', ' ')}</Badge>
 }
 
+const BILLING_CYCLE_LABELS: Record<BillingCycle, string> = {
+  monthly:     'Monthly',
+  quarterly:   'Quarterly (3 months)',
+  semi_annual: 'Semi-Annual (6 months)',
+  annual:      'Annual',
+}
+
 const STAGE_ORDER: OnboardingStage[] = [
   'applied','under_review','approved','lease_signing',
   'deposit_payment','move_in_inspection','key_handover','active',
 ]
 const STAGE_LABELS: Record<OnboardingStage, string> = {
-  applied: 'Applied',
-  under_review: 'Under Review',
-  approved: 'Approved',
-  lease_signing: 'Lease Signing',
-  deposit_payment: 'Deposit',
-  move_in_inspection: 'Inspection',
-  key_handover: 'Key Handover',
-  active: 'Active',
+  applied: 'Applied', under_review: 'Under Review', approved: 'Approved',
+  lease_signing: 'Lease Signing', deposit_payment: 'Deposit',
+  move_in_inspection: 'Inspection', key_handover: 'Key Handover', active: 'Active',
 }
 
-// ── Active Leases list ────────────────────────────────────────────────────────
-function ActiveLeases() {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [selected, setSelected] = useState<Lease | null>(null)
-  const [renewTarget, setRenewTarget] = useState<Lease | null>(null)
-  const [showRenew, setShowRenew] = useState(false)
+function fmtDate(d: string | null | undefined) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
-  const filtered = LEASES.filter(l => {
+// ── KPI Bar ───────────────────────────────────────────────────────────────────
+function KPIBar({ leases }: { leases: LeaseData[] }) {
+  const active      = leases.filter(l => l.status === 'active').length
+  const noticeGiven = leases.filter(l => l.status === 'notice_given').length
+  const pendingApps = LEASE_APPLICATIONS.filter(a => a.status === 'submitted' || a.status === 'under_review').length
+  const inOnboarding = ONBOARDING_APPLICATIONS.filter(a => a.status === 'in_progress').length
+
+  return (
+    <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+      {[
+        { label: 'Active Leases',        value: active,       color: 'text-green-600' },
+        { label: 'Notice Given',         value: noticeGiven,  color: 'text-amber-600' },
+        { label: 'Pending Applications', value: pendingApps,  color: 'text-blue-600' },
+        { label: 'In Onboarding',        value: inOnboarding, color: 'text-primary-600' },
+      ].map(k => (
+        <div key={k.label} className="flex-1 bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl p-4">
+          <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
+          <p className="text-xs text-text-muted mt-0.5">{k.label}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Active Leases ─────────────────────────────────────────────────────────────
+function ActiveLeases({ initialLeases }: { initialLeases: LeaseData[] }) {
+  const [leases,       setLeases]       = useState<LeaseData[]>(initialLeases)
+  const [loading,      setLoading]      = useState(false)
+  const [search,       setSearch]       = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [selected,     setSelected]     = useState<LeaseData | null>(null)
+  const [renewTarget,  setRenewTarget]  = useState<LeaseData | null>(null)
+  const [showRenew,    setShowRenew]    = useState(false)
+  const [generating,   setGenerating]   = useState(false)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try { setLeases(await getAllLeases()) } catch { /* keep current */ }
+    finally { setLoading(false) }
+  }, [])
+
+  const filtered = leases.filter(l => {
     const q = search.toLowerCase()
-    const matchQ = l.tenant_name.toLowerCase().includes(q) || l.unit_label.toLowerCase().includes(q)
+    const name  = (l.tenant_name ?? '').toLowerCase()
+    const label = (l.unit_label  ?? '').toLowerCase()
+    const matchQ = name.includes(q) || label.includes(q)
     const matchS = statusFilter === 'all' || l.status === statusFilter
     return matchQ && matchS
-  })
+  }).sort((a, b) => (b.start_date ?? '').localeCompare(a.start_date ?? ''))
 
-  const daysUntilExpiry = (end: string) => {
-    const diff = new Date(end).getTime() - Date.now()
-    return Math.ceil(diff / 86400000)
+  const daysLeft = (end: string | null) => {
+    if (!end) return null
+    return Math.ceil((new Date(end).getTime() - Date.now()) / 86400000)
+  }
+
+  function openDocument() {
+    if (!selected) return
+    setGenerating(true)
+    window.open(`/api/leases/${selected.id}/document`, '_blank')
+    setTimeout(() => setGenerating(false), 1500)
   }
 
   return (
     <>
     <div className="flex flex-1 overflow-hidden min-h-0">
-      {/* list */}
-      <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border overflow-y-auto', selected ? 'hidden lg:flex lg:w-80' : 'flex flex-col w-full lg:w-80')}>
+      {/* ── List panel ── */}
+      <div className={cn(
+        'flex-shrink-0 border-r border-surface-border dark:border-dark-border overflow-y-auto',
+        selected ? 'hidden lg:flex lg:flex-col lg:w-80' : 'flex flex-col w-full lg:w-80'
+      )}>
         <div className="p-3 space-y-2 border-b border-surface-border dark:border-dark-border">
           <SearchInput value={search} onChange={setSearch} placeholder="Search tenant or unit…" />
           <Select
             value={statusFilter}
             onChange={setStatusFilter}
             options={[
-              { value: 'all', label: 'All statuses' },
-              { value: 'active', label: 'Active' },
+              { value: 'all',          label: 'All statuses' },
+              { value: 'active',       label: 'Active' },
+              { value: 'draft',        label: 'Draft' },
               { value: 'notice_given', label: 'Notice Given' },
-              { value: 'expired', label: 'Expired' },
-              { value: 'terminated', label: 'Terminated' },
+              { value: 'expired',      label: 'Expired' },
+              { value: 'terminated',   label: 'Terminated' },
             ]}
           />
         </div>
+
+        {loading && (
+          <div className="flex items-center justify-center py-6">
+            <span className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
         <div className="divide-y divide-surface-border dark:divide-dark-border">
           {filtered.map(l => {
-            const days = daysUntilExpiry(l.end_date)
+            const days = daysLeft(l.end_date)
             return (
               <button
                 key={l.id}
@@ -97,30 +159,30 @@ function ActiveLeases() {
                 className={`w-full text-left px-4 py-3 hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors ${selected?.id === l.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}
               >
                 <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-sm font-medium text-text">{l.unit_label}</span>
+                  <span className="text-sm font-medium text-text">{l.unit_label ?? '—'}</span>
                   {leaseStatusBadge(l.status)}
                 </div>
-                <p className="text-xs text-text-muted">{l.tenant_name}</p>
+                <p className="text-xs text-text-muted">{l.tenant_name ?? '—'}</p>
                 <p className="text-xs text-text-muted mt-0.5">
-                  {l.start_date} → {l.end_date}
-                  {days < 60 && days > 0 && (
+                  {fmtDate(l.start_date)} → {fmtDate(l.end_date)}
+                  {days !== null && days < 60 && days > 0 && (
                     <span className="ml-1.5 text-amber-600 font-medium">({days}d left)</span>
                   )}
-                  {days <= 0 && l.status !== 'terminated' && (
+                  {days !== null && days <= 0 && l.status !== 'terminated' && (
                     <span className="ml-1.5 text-red-500 font-medium">(expired)</span>
                   )}
                 </p>
               </button>
             )
           })}
-          {filtered.length === 0 && (
+          {!loading && filtered.length === 0 && (
             <p className="px-4 py-8 text-sm text-text-muted text-center">No leases found.</p>
           )}
         </div>
       </div>
 
-      {/* detail */}
-      <div className={cn('flex-1 flex flex-col', !selected && 'hidden lg:flex')}>
+      {/* ── Detail panel ── */}
+      <div className={cn('flex-1 flex flex-col overflow-y-auto', !selected && 'hidden lg:flex')}>
         {selected && (
           <div className="lg:hidden flex items-center px-4 pt-3 pb-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
             <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors">
@@ -129,6 +191,7 @@ function ActiveLeases() {
             </button>
           </div>
         )}
+
         {!selected ? (
           <div className="flex items-center justify-center h-full text-text-muted text-sm">
             Select a lease to view details
@@ -136,13 +199,27 @@ function ActiveLeases() {
         ) : (
           <div className="p-6 space-y-6">
             {/* header */}
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
-                <h2 className="text-lg font-semibold text-text">{selected.unit_label}</h2>
-                <p className="text-text-muted text-sm">{selected.tenant_name} · {selected.id}</p>
+                <h2 className="text-lg font-semibold text-text">{selected.unit_label ?? '—'}</h2>
+                <p className="text-text-muted text-sm">{selected.tenant_name ?? '—'}</p>
+                <p className="text-xs text-text-muted font-mono mt-0.5">{selected.id}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {leaseStatusBadge(selected.status)}
+
+                {/* Generate Lease Document */}
+                <button
+                  onClick={openDocument}
+                  disabled={generating}
+                  className="px-3 py-1.5 text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {generating
+                    ? <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    : '📄'}
+                  Generate Lease
+                </button>
+
                 {selected.status === 'active' && (
                   <>
                     <button
@@ -162,12 +239,13 @@ function ActiveLeases() {
             {/* key terms */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { label: 'Monthly Rent', value: `KES ${selected.monthly_rent.toLocaleString()}` },
-                { label: 'Deposit Held', value: `KES ${selected.deposit.toLocaleString()}` },
-                { label: 'Lease Start', value: selected.start_date },
-                { label: 'Lease End', value: selected.end_date },
-                { label: 'Billing Cycle', value: BILLING_CYCLE_LABELS[(selected as (typeof selected & { billing_cycle?: BillingCycle })).billing_cycle ?? 'monthly'] },
-                ...(selected.notice_date ? [{ label: 'Notice Date', value: selected.notice_date }] : []),
+                { label: 'Monthly Rent',   value: selected.monthly_rent  != null ? `KES ${selected.monthly_rent.toLocaleString()}` : '—' },
+                { label: 'Deposit Held',   value: selected.deposit       != null ? `KES ${selected.deposit.toLocaleString()}`       : '—' },
+                { label: 'Lease Start',    value: fmtDate(selected.start_date) },
+                { label: 'Lease End',      value: fmtDate(selected.end_date) },
+                { label: 'Billing Cycle',  value: BILLING_CYCLE_LABELS[(selected.billing_cycle ?? 'monthly') as BillingCycle] ?? selected.billing_cycle ?? '—' },
+                ...(selected.notice_date   ? [{ label: 'Notice Date',     value: fmtDate(selected.notice_date) }]    : []),
+                ...(selected.next_billing_date ? [{ label: 'Next Billing', value: fmtDate(selected.next_billing_date) }] : []),
               ].map(item => (
                 <div key={item.label} className="bg-surface rounded-lg p-3 border border-surface-border dark:border-dark-border dark:bg-dark-surface">
                   <p className="text-xs text-text-muted mb-0.5">{item.label}</p>
@@ -176,7 +254,7 @@ function ActiveLeases() {
               ))}
             </div>
 
-            {/* deposit status */}
+            {/* deposit ledger */}
             <div>
               <h3 className="text-sm font-semibold text-text mb-3">Deposit Ledger</h3>
               <div className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg overflow-hidden">
@@ -191,16 +269,18 @@ function ActiveLeases() {
                   <tbody>
                     <tr className="border-t border-surface-border dark:border-dark-border">
                       <td className="px-4 py-2.5 text-text">Initial Deposit</td>
-                      <td className="px-4 py-2.5 text-text font-medium">KES {selected.deposit.toLocaleString()}</td>
+                      <td className="px-4 py-2.5 text-text font-medium">
+                        {selected.deposit != null ? `KES ${selected.deposit.toLocaleString()}` : '—'}
+                      </td>
                       <td className="px-4 py-2.5"><Badge variant="success">Received</Badge></td>
                     </tr>
-                    {selected.status === 'terminated' || selected.status === 'expired' ? (
+                    {(selected.status === 'terminated' || selected.status === 'expired') && selected.deposit && (
                       <tr className="border-t border-surface-border dark:border-dark-border">
                         <td className="px-4 py-2.5 text-text">Refund</td>
                         <td className="px-4 py-2.5 text-text font-medium">KES {Math.round(selected.deposit * 0.85).toLocaleString()}</td>
                         <td className="px-4 py-2.5"><Badge variant="blue">Processed</Badge></td>
                       </tr>
-                    ) : null}
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -211,31 +291,179 @@ function ActiveLeases() {
               <h3 className="text-sm font-semibold text-text mb-3">Lease Timeline</h3>
               <div className="space-y-2">
                 {[
-                  { date: selected.start_date, label: 'Lease commenced', icon: '✅' },
-                  ...(selected.notice_date ? [{ date: selected.notice_date, label: 'Notice to vacate issued', icon: '📨' }] : []),
-                  ...(selected.status === 'terminated' ? [{ date: selected.end_date, label: 'Lease terminated', icon: '🔴' }] : []),
-                  ...(selected.status === 'expired' ? [{ date: selected.end_date, label: 'Lease expired', icon: '⏰' }] : []),
-                ].map((ev, i) => (
+                  { date: selected.start_date,  label: 'Lease commenced',          icon: '✅', show: true },
+                  { date: selected.notice_date, label: 'Notice to vacate issued',   icon: '📨', show: !!selected.notice_date },
+                  { date: selected.end_date,    label: 'Lease terminated',          icon: '🔴', show: selected.status === 'terminated' },
+                  { date: selected.end_date,    label: 'Lease expired',             icon: '⏰', show: selected.status === 'expired' },
+                ].filter(e => e.show).map((ev, i) => (
                   <div key={i} className="flex items-center gap-3 text-sm">
                     <span className="text-base">{ev.icon}</span>
-                    <span className="text-text-muted w-24 flex-shrink-0">{ev.date}</span>
+                    <span className="text-text-muted w-28 flex-shrink-0">{fmtDate(ev.date)}</span>
                     <span className="text-text">{ev.label}</span>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* notes */}
+            {selected.notes && (
+              <div className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-4">
+                <p className="text-xs font-semibold text-text-muted mb-1">Notes</p>
+                <p className="text-sm text-text">{selected.notes}</p>
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
-    <RenewLeaseModal lease={renewTarget} open={showRenew} onClose={() => setShowRenew(false)} />
+
+    <RenewLeaseModal
+      lease={renewTarget}
+      open={showRenew}
+      onClose={() => setShowRenew(false)}
+      onRenewed={async (updated) => {
+        setShowRenew(false)
+        setRenewTarget(null)
+        await refresh()
+        setSelected(updated)
+      }}
+    />
     </>
   )
 }
 
-// ── Applications ──────────────────────────────────────────────────────────────
+// ── Renew Lease Modal ─────────────────────────────────────────────────────────
+function RenewLeaseModal({ lease, open, onClose, onRenewed }: {
+  lease: LeaseData | null
+  open: boolean
+  onClose: () => void
+  onRenewed: (updated: LeaseData) => void
+}) {
+  const [escalationPct, setEscalationPct] = useState(5)
+  const [newEndDate,    setNewEndDate]    = useState('')
+  const [cycle,         setCycle]         = useState<BillingCycle>('monthly')
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState('')
+
+  useEffect(() => {
+    if (open && lease) {
+      setEscalationPct(5)
+      setNewEndDate('')
+      setCycle((lease.billing_cycle as BillingCycle) ?? 'monthly')
+      setError('')
+    }
+  }, [open, lease])
+
+  if (!open || !lease) return null
+
+  const newRent     = lease.monthly_rent != null ? Math.round(lease.monthly_rent * (1 + escalationPct / 100)) : 0
+  const rentIncrease = lease.monthly_rent != null ? newRent - lease.monthly_rent : 0
+
+  async function handleRenew() {
+    if (!newEndDate || !lease) return
+    setSaving(true); setError('')
+    try {
+      const updated = await updateLease(lease.unit_id, lease.id, {
+        endDate:      newEndDate,
+        monthlyRent:  newRent,
+        billingCycle: cycle,
+        status:       'active',
+      })
+      onRenewed(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to renew lease')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white dark:bg-dark-surface rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-border dark:border-dark-border">
+          <div>
+            <h3 className="text-sm font-semibold text-text">Renew Lease — {lease.unit_label}</h3>
+            <p className="text-xs text-text-muted mt-0.5">{lease.tenant_name} · Currently ends {fmtDate(lease.end_date)}</p>
+          </div>
+          <button onClick={onClose} className="text-text-muted hover:text-text text-lg">✕</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">New Lease End Date</label>
+            <input
+              type="date" value={newEndDate} min={lease.end_date ?? undefined}
+              onChange={e => setNewEndDate(e.target.value)}
+              className="w-full rounded-lg border border-surface-border dark:border-dark-border px-3 py-2 text-sm bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1.5">Billing Cycle</label>
+            <select
+              value={cycle} onChange={e => setCycle(e.target.value as BillingCycle)}
+              className="w-full rounded-lg border border-surface-border dark:border-dark-border px-3 py-2 text-sm bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {(Object.keys(BILLING_CYCLE_LABELS) as BillingCycle[]).map(c => (
+                <option key={c} value={c}>{BILLING_CYCLE_LABELS[c]}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-text-muted">Rent Escalation</label>
+              <span className="text-xs font-semibold text-text">{escalationPct}%</span>
+            </div>
+            <input
+              type="range" min={0} max={20} step={0.5}
+              value={escalationPct} onChange={e => setEscalationPct(Number(e.target.value))}
+              className="w-full accent-teal-600"
+            />
+            <div className="flex justify-between text-[11px] text-text-muted mt-1">
+              <span>0% (no increase)</span><span>20%</span>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-100 p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-text-muted">Current rent</span>
+              <span className="font-medium text-text">KES {lease.monthly_rent?.toLocaleString() ?? '—'}/mo</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">New rent ({escalationPct}% increase)</span>
+              <span className="font-bold text-teal-700">KES {newRent.toLocaleString()}/mo</span>
+            </div>
+            <div className="flex justify-between border-t border-teal-100 pt-1.5">
+              <span className="text-text-muted">Increase amount</span>
+              <span className="font-medium text-teal-700">+KES {rentIncrease.toLocaleString()}/mo</span>
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="flex-1 rounded-lg border border-surface-border dark:border-dark-border py-2 text-sm text-text-muted hover:bg-surface-muted">
+              Cancel
+            </button>
+            <button
+              onClick={handleRenew}
+              disabled={!newEndDate || saving}
+              className="flex-1 rounded-lg bg-teal-600 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {saving ? 'Saving…' : 'Renew Lease'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Applications (still mock) ─────────────────────────────────────────────────
 function Applications() {
-  const [search, setSearch] = useState('')
+  const [search, setSearch]     = useState('')
   const [selected, setSelected] = useState<LeaseApplication | null>(null)
   const filtered = LEASE_APPLICATIONS.filter(a =>
     a.applicant_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -249,9 +477,7 @@ function Applications() {
         </div>
         <div className="divide-y divide-surface-border dark:divide-dark-border">
           {filtered.map(a => (
-            <button
-              key={a.id}
-              onClick={() => setSelected(a)}
+            <button key={a.id} onClick={() => setSelected(a)}
               className={`w-full text-left px-4 py-3 hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors ${selected?.id === a.id ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}
             >
               <div className="flex items-center justify-between mb-0.5">
@@ -267,7 +493,7 @@ function Applications() {
       <div className={cn('flex-1 flex flex-col', !selected && 'hidden lg:flex')}>
         {selected && (
           <div className="lg:hidden flex items-center px-4 pt-3 pb-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-            <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors">
+            <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
               Back to list
             </button>
@@ -294,12 +520,12 @@ function Applications() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { label: 'Email', value: selected.applicant_email },
-                { label: 'Phone', value: selected.applicant_phone },
-                { label: 'National ID', value: selected.national_id },
-                { label: 'Employer', value: selected.employer ?? '—' },
+                { label: 'Email',          value: selected.applicant_email },
+                { label: 'Phone',          value: selected.applicant_phone },
+                { label: 'National ID',    value: selected.national_id },
+                { label: 'Employer',       value: selected.employer ?? '—' },
                 { label: 'Monthly Income', value: selected.monthly_income ? `KES ${selected.monthly_income.toLocaleString()}` : '—' },
-                { label: 'Submitted', value: selected.submitted_date },
+                { label: 'Submitted',      value: selected.submitted_date },
               ].map(f => (
                 <div key={f.label} className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-3">
                   <p className="text-xs text-text-muted">{f.label}</p>
@@ -313,12 +539,6 @@ function Applications() {
                 <p className="text-sm text-red-700 dark:text-red-300">{selected.rejection_reason}</p>
               </div>
             )}
-            {selected.notes && (
-              <div className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-4">
-                <p className="text-xs font-semibold text-text-muted mb-1">Notes</p>
-                <p className="text-sm text-text">{selected.notes}</p>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -326,11 +546,10 @@ function Applications() {
   )
 }
 
-// ── Onboarding Kanban ─────────────────────────────────────────────────────────
+// ── Onboarding Kanban (still mock) ────────────────────────────────────────────
 function OnboardingKanban() {
   const byStage = STAGE_ORDER.map(stage => ({
-    stage,
-    label: STAGE_LABELS[stage],
+    stage, label: STAGE_LABELS[stage],
     items: ONBOARDING_APPLICATIONS.filter(a => a.current_stage === stage && a.status === 'in_progress'),
   })).filter(col => col.items.length > 0 || ['applied','under_review','approved','deposit_payment'].includes(col.stage))
 
@@ -355,11 +574,7 @@ function OnboardingKanban() {
                         const current = STAGE_ORDER.indexOf(app.current_stage)
                         const done = app.stage_history.find(h => h.stage === s)?.completed_at
                         return (
-                          <div
-                            key={s}
-                            className={`w-2 h-2 rounded-full ${done ? 'bg-primary-500' : i === current ? 'bg-amber-400' : 'bg-surface-border dark:bg-dark-border'}`}
-                            title={STAGE_LABELS[s]}
-                          />
+                          <div key={s} className={`w-2 h-2 rounded-full ${done ? 'bg-primary-500' : i === current ? 'bg-amber-400' : 'bg-surface-border dark:bg-dark-border'}`} title={STAGE_LABELS[s]} />
                         )
                       })}
                     </div>
@@ -367,9 +582,7 @@ function OnboardingKanban() {
                   </div>
                 </div>
               ))}
-              {col.items.length === 0 && (
-                <div className="text-center py-6 text-xs text-text-muted">Empty</div>
-              )}
+              {col.items.length === 0 && <div className="text-center py-6 text-xs text-text-muted">Empty</div>}
             </div>
           </div>
         ))}
@@ -378,167 +591,13 @@ function OnboardingKanban() {
   )
 }
 
-// ── KPI bar ───────────────────────────────────────────────────────────────────
-function KPIBar() {
-  const active = LEASES.filter(l => l.status === 'active').length
-  const noticeGiven = LEASES.filter(l => l.status === 'notice_given').length
-  const pendingApps = LEASE_APPLICATIONS.filter(a => a.status === 'submitted' || a.status === 'under_review').length
-  const inOnboarding = ONBOARDING_APPLICATIONS.filter(a => a.status === 'in_progress').length
-
-  return (
-    <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-      {[
-        { label: 'Active Leases',   value: active,       color: 'text-green-600' },
-        { label: 'Notice Given',    value: noticeGiven,  color: 'text-amber-600' },
-        { label: 'Pending Applications', value: pendingApps, color: 'text-blue-600' },
-        { label: 'In Onboarding',   value: inOnboarding, color: 'text-primary-600' },
-      ].map(k => (
-        <div key={k.label} className="flex-1 bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl p-4">
-          <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
-          <p className="text-xs text-text-muted mt-0.5">{k.label}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
-
-// ── Lease Renewal Modal ────────────────────────────────────────────────────
-
-const BILLING_CYCLE_LABELS: Record<BillingCycle, string> = {
-  monthly:     'Monthly',
-  quarterly:   'Quarterly (3 months)',
-  semi_annual: 'Semi-Annual (6 months)',
-  annual:      'Annual',
-}
-
-function RenewLeaseModal({ lease, open, onClose }: {
-  lease: Lease | null; open: boolean; onClose: () => void
-}) {
-  const [escalationPct, setEscalationPct] = useState(5)
-  const [newEndDate, setNewEndDate] = useState('')
-  const [cycle, setCycle] = useState<BillingCycle>('monthly')
-  const [renewed, setRenewed] = useState(false)
-
-  const newRent = lease ? Math.round(lease.monthly_rent * (1 + escalationPct / 100)) : 0
-  const rentIncrease = lease ? newRent - lease.monthly_rent : 0
-
-  if (!open || !lease) return null
-
-  function handleRenew() {
-    setRenewed(true)
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-dark-surface rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-border dark:border-dark-border">
-          <div>
-            <h3 className="text-sm font-semibold text-text">Renew Lease — {lease.unit_label}</h3>
-            <p className="text-xs text-text-muted mt-0.5">{lease.tenant_name} · Currently ends {lease.end_date}</p>
-          </div>
-          <button onClick={() => { setRenewed(false); onClose() }} className="text-text-muted hover:text-text text-lg">✕</button>
-        </div>
-
-        {!renewed ? (
-          <div className="px-5 py-4 space-y-4">
-            {/* New end date */}
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1.5">New Lease End Date</label>
-              <input
-                type="date"
-                value={newEndDate}
-                onChange={e => setNewEndDate(e.target.value)}
-                min={lease.end_date}
-                className="w-full rounded-lg border border-surface-border dark:border-dark-border px-3 py-2 text-sm bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-
-            {/* Billing cycle */}
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1.5">Billing Cycle</label>
-              <select
-                value={cycle}
-                onChange={e => setCycle(e.target.value as BillingCycle)}
-                className="w-full rounded-lg border border-surface-border dark:border-dark-border px-3 py-2 text-sm bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                {(Object.keys(BILLING_CYCLE_LABELS) as BillingCycle[]).map(c => (
-                  <option key={c} value={c}>{BILLING_CYCLE_LABELS[c]}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Rent escalation */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-text-muted">Rent Escalation</label>
-                <span className="text-xs font-semibold text-text">{escalationPct}%</span>
-              </div>
-              <input
-                type="range" min={0} max={20} step={0.5}
-                value={escalationPct}
-                onChange={e => setEscalationPct(Number(e.target.value))}
-                className="w-full accent-teal-600"
-              />
-              <div className="flex justify-between text-[11px] text-text-muted mt-1">
-                <span>0% (no increase)</span>
-                <span>20%</span>
-              </div>
-            </div>
-
-            {/* Rent preview */}
-            <div className="rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-100 p-3 space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-text-muted">Current rent</span>
-                <span className="font-medium text-text">KES {lease.monthly_rent.toLocaleString()}/mo</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-text-muted">New rent ({escalationPct}% increase)</span>
-                <span className="font-bold text-teal-700">KES {newRent.toLocaleString()}/mo</span>
-              </div>
-              <div className="flex justify-between border-t border-teal-100 pt-1.5">
-                <span className="text-text-muted">Increase amount</span>
-                <span className="font-medium text-teal-700">+KES {rentIncrease.toLocaleString()}/mo</span>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-1">
-              <button onClick={() => { setRenewed(false); onClose() }} className="flex-1 rounded-lg border border-surface-border dark:border-dark-border py-2 text-sm text-text-muted hover:bg-surface-muted">Cancel</button>
-              <button
-                onClick={handleRenew}
-                disabled={!newEndDate}
-                className="flex-1 rounded-lg bg-teal-600 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-              >
-                Renew Lease
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="px-5 py-10 flex flex-col items-center gap-3 text-center">
-            <div className="text-4xl">✅</div>
-            <h4 className="text-base font-semibold text-text">Lease renewed</h4>
-            <p className="text-sm text-text-muted">
-              {lease.unit_label} · {lease.tenant_name}<br />
-              New end date: <strong>{newEndDate}</strong><br />
-              New rent: <strong>KES {newRent.toLocaleString()}/mo</strong>
-            </p>
-            <p className="text-xs text-text-muted">A renewal notice will be generated and sent to the tenant.</p>
-            <button onClick={() => { setRenewed(false); onClose() }} className="mt-1 rounded-lg border border-surface-border dark:border-dark-border px-5 py-2 text-sm text-text hover:bg-surface-muted">Close</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-export function LeasesPageClient() {
+export function LeasesPageClient({ initialLeases = [] }: { initialLeases?: LeaseData[] }) {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
         <Topbar title="Leases" subtitle="Lease lifecycle, applications & onboarding" />
-        <KPIBar />
+        <KPIBar leases={initialLeases} />
         <Tabs defaultValue="active" className="flex flex-col flex-1 overflow-hidden min-h-0">
           <div className="px-6 pt-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
             <TabsList>
@@ -547,9 +606,15 @@ export function LeasesPageClient() {
               <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="active"   className="flex flex-1 overflow-hidden min-h-0 mt-0"><ActiveLeases /></TabsContent>
-          <TabsContent value="applications" className="flex flex-1 overflow-hidden min-h-0 mt-0"><Applications /></TabsContent>
-          <TabsContent value="onboarding"  className="flex flex-1 overflow-hidden min-h-0 mt-0 flex-col"><OnboardingKanban /></TabsContent>
+          <TabsContent value="active"       className="flex flex-1 overflow-hidden min-h-0 mt-0">
+            <ActiveLeases initialLeases={initialLeases} />
+          </TabsContent>
+          <TabsContent value="applications" className="flex flex-1 overflow-hidden min-h-0 mt-0">
+            <Applications />
+          </TabsContent>
+          <TabsContent value="onboarding"   className="flex flex-1 overflow-hidden min-h-0 mt-0 flex-col">
+            <OnboardingKanban />
+          </TabsContent>
         </Tabs>
       </main>
     </DashboardLayout>

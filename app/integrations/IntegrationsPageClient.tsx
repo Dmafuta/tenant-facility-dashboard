@@ -1,450 +1,800 @@
 'use client'
 
-import { useState } from 'react'
-import { INTEGRATION_PROVIDERS } from '@/lib/mock-data'
-import type {
-  IntegrationProvider,
-  IntegrationCategory,
-  ProviderKey,
-} from '@/lib/types'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  getIntegrations, saveEmailIntegration, saveAfricasTalkingIntegration,
+  saveMpesaIntegration, saveTelegramIntegration,
+  testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
+  listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
+  setDefaultMpesaAccount, testMpesaAccount,
+  type IntegrationSettings, type MpesaAccount,
+} from '@/lib/api/settings'
 
-// ─── Category metadata ───────────────────────────────────────────────────────
-const CATEGORY_META: Record<IntegrationCategory, { label: string; icon: string; description: string; color: string }> = {
-  mpesa:    { label: 'M-Pesa',    icon: '💚', description: 'Receive rent & charges via Safaricom M-Pesa Daraja API', color: 'green' },
-  sms:      { label: 'SMS',       icon: '💬', description: 'Send text notifications to tenants via SMS gateway', color: 'blue' },
-  whatsapp: { label: 'WhatsApp',  icon: '📱', description: 'Rich messaging, templates & documents over WhatsApp', color: 'emerald' },
-  telegram: { label: 'Telegram',  icon: '✈️',  description: 'Instant management alerts and bot commands', color: 'sky' },
-  email:    { label: 'Email',     icon: '📧', description: 'Transactional and bulk email delivery', color: 'violet' },
-}
+// ── Shared UI atoms ───────────────────────────────────────────────────────────
 
-const PROVIDER_LABELS: Record<ProviderKey, string> = {
-  mpesa_daraja:   'Safaricom Daraja API',
-  africas_talking: "Africa's Talking",
-  twilio:         'Twilio',
-  vonage:         'Vonage (Nexmo)',
-  whatsapp_meta:  'Meta Cloud API',
-  telegram:       'Telegram',
-  sendgrid:       'SendGrid',
-}
-
-const STATUS_BADGE: Record<IntegrationProvider['status'], { label: string; classes: string }> = {
-  connected:    { label: 'Connected',    classes: 'bg-green-100 text-green-700' },
-  disconnected: { label: 'Not connected', classes: 'bg-gray-100 text-gray-500' },
-  error:        { label: 'Error',        classes: 'bg-red-100 text-red-700' },
-  testing:      { label: 'Testing…',    classes: 'bg-amber-100 text-amber-700' },
-}
-
-// ─── Config field renderers ──────────────────────────────────────────────────
-function ConfigField({
-  label, value, secret = false, hint,
-}: { label: string; value: string; secret?: boolean; hint?: string }) {
+function Field({
+  label, value, onChange, type = 'text', placeholder, hint, sensitive, alreadySet,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  type?: string
+  placeholder?: string
+  hint?: string
+  sensitive?: boolean
+  alreadySet?: boolean
+}) {
   const [show, setShow] = useState(false)
-  const display = secret && !show ? '•'.repeat(Math.min(value.length, 32)) : value
+  const inputType = sensitive && !show ? 'password' : 'text'
   return (
-    <div className="space-y-1">
-      <label className="block text-xs font-medium text-gray-500">{label}</label>
-      <div className="flex items-center gap-2">
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">
+        {label}
+        {alreadySet && (
+          <span className="ml-1.5 text-green-600 font-normal">● set</span>
+        )}
+      </label>
+      <div className="flex gap-1.5">
         <input
-          type="text"
-          readOnly
-          value={display || '(not set)'}
-          className="flex-1 rounded border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-mono text-gray-700"
+          type={inputType}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={alreadySet ? 'Leave blank to keep current value' : (placeholder ?? '')}
+          className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
-        {secret && value && (
+        {sensitive && (
           <button
+            type="button"
             onClick={() => setShow(s => !s)}
-            className="text-xs text-teal-600 hover:underline whitespace-nowrap"
+            className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
           >
-            {show ? 'Hide' : 'Reveal'}
+            {show ? 'Hide' : 'Show'}
           </button>
         )}
       </div>
-      {hint && <p className="text-xs text-gray-400">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
     </div>
   )
 }
 
-function MpesaConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'mpesa_daraja' }> }) {
+function StatusBadge({ configured }: { configured: boolean }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="Environment" value={config.environment} />
-      <ConfigField label="Shortcode Type" value={config.shortcode_type} />
-      <ConfigField label="Shortcode (Paybill / Till)" value={config.shortcode} />
-      <ConfigField label="Account Reference" value={config.account_reference} hint='Shown to payer on M-Pesa prompt, e.g. "RENT"' />
-      <ConfigField label="Consumer Key" value={config.consumer_key} secret />
-      <ConfigField label="Consumer Secret" value={config.consumer_secret} secret />
-      <ConfigField label="Passkey" value={config.passkey} secret />
-      <ConfigField label="STK Push Callback URL" value={config.callback_url} />
-      <ConfigField label="C2B Confirmation URL" value={config.c2b_confirmation_url} />
-      <ConfigField label="C2B Validation URL" value={config.c2b_validation_url} />
-    </div>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium
+      ${configured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${configured ? 'bg-green-500' : 'bg-gray-400'}`} />
+      {configured ? 'Configured' : 'Not configured'}
+    </span>
   )
 }
 
-function ATConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'africas_talking' }> }) {
+function SaveBtn({ loading, saved }: { loading: boolean; saved: boolean }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="Environment" value={config.environment} />
-      <ConfigField label="Username" value={config.username} />
-      <ConfigField label="API Key" value={config.api_key} secret />
-      <ConfigField label="Sender ID" value={config.sender_id || ''} hint="Alphanumeric sender — requires Safaricom/AT approval" />
-    </div>
+    <button
+      type="submit"
+      disabled={loading}
+      className="rounded-lg bg-teal-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
+    >
+      {loading ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+    </button>
   )
 }
 
-function TwilioConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'twilio' }> }) {
+function TestResult({ result, onClear }: { result: string | null; onClear: () => void }) {
+  if (!result) return null
+  const ok = result.startsWith('Test') || result.includes('sent') || result.includes('working')
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="Account SID" value={config.account_sid} />
-      <ConfigField label="Auth Token" value={config.auth_token} secret />
-      <ConfigField label="From Number" value={config.from_number} />
-      {config.whatsapp_number && (
-        <ConfigField label="WhatsApp Number" value={config.whatsapp_number} />
-      )}
+    <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+      <span className="shrink-0">{ok ? '✓' : '✗'}</span>
+      <span className="flex-1">{result}</span>
+      <button onClick={onClear} className="text-gray-400 hover:text-gray-600">×</button>
     </div>
   )
 }
 
-function VonageConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'vonage' }> }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="API Key" value={config.api_key} secret />
-      <ConfigField label="API Secret" value={config.api_secret} secret />
-      <ConfigField label="Sender Name" value={config.from_name} />
-    </div>
-  )
-}
-
-function WhatsAppMetaPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'whatsapp_meta' }> }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="Phone Number ID" value={config.phone_number_id} />
-      <ConfigField label="WhatsApp Business Account ID" value={config.waba_id} />
-      <ConfigField label="Access Token" value={config.access_token} secret />
-      <ConfigField label="Webhook Verify Token" value={config.verify_token} secret />
-      <ConfigField label="Webhook URL" value={config.webhook_url} />
-    </div>
-  )
-}
-
-function TelegramConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'telegram' }> }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="Bot Token" value={config.bot_token} secret />
-      <ConfigField label="Bot Username" value={config.bot_username} />
-      <ConfigField label="Management Chat ID" value={config.management_chat_id || ''} hint="Telegram group/channel ID for management alerts" />
-      <ConfigField label="Webhook URL" value={config.webhook_url || ''} />
-    </div>
-  )
-}
-
-function SendGridConfigPanel({ config }: { config: Extract<IntegrationProvider['config'], { provider: 'sendgrid' }> }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <ConfigField label="API Key" value={config.api_key} secret />
-      <ConfigField label="From Email" value={config.from_email} />
-      <ConfigField label="From Name" value={config.from_name} />
-      <ConfigField label="Reply-To" value={config.reply_to || ''} />
-    </div>
-  )
-}
-
-function renderConfigPanel(provider: IntegrationProvider) {
-  const c = provider.config
-  switch (c.provider) {
-    case 'mpesa_daraja':   return <MpesaConfigPanel config={c} />
-    case 'africas_talking': return <ATConfigPanel config={c} />
-    case 'twilio':          return <TwilioConfigPanel config={c} />
-    case 'vonage':          return <VonageConfigPanel config={c} />
-    case 'whatsapp_meta':  return <WhatsAppMetaPanel config={c} />
-    case 'telegram':        return <TelegramConfigPanel config={c} />
-    case 'sendgrid':        return <SendGridConfigPanel config={c} />
-  }
-}
-
-// ─── Provider Card ───────────────────────────────────────────────────────────
-function ProviderCard({
-  provider,
-  isExpanded,
-  onToggle,
-  onSetActive,
-  onTest,
-  onDisconnect,
-}: {
-  provider: IntegrationProvider
-  isExpanded: boolean
-  onToggle: () => void
-  onSetActive: () => void
-  onTest: () => void
-  onDisconnect: () => void
-}) {
-  const badge = STATUS_BADGE[provider.status]
-  const isConnected = provider.status === 'connected'
-
-  return (
-    <div className={`rounded-lg border bg-white overflow-hidden transition-all ${provider.is_active ? 'border-teal-300 ring-1 ring-teal-200' : 'border-gray-200'}`}>
-      {/* Header row */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900">{PROVIDER_LABELS[provider.provider]}</span>
-            {provider.is_active && (
-              <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-700">Active</span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badge.classes}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-green-500' : provider.status === 'error' ? 'bg-red-500' : 'bg-gray-400'}`} />
-              {badge.label}
-            </span>
-            {provider.last_tested_at && (
-              <span className="text-xs text-gray-400">
-                Tested {new Date(provider.last_tested_at).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {isConnected && !provider.is_active && (
-            <button
-              onClick={onSetActive}
-              className="rounded px-2.5 py-1 text-xs font-medium text-teal-700 border border-teal-200 hover:bg-teal-50"
-            >
-              Set as Default
-            </button>
-          )}
-          {isConnected && (
-            <button
-              onClick={onTest}
-              className="rounded px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-200 hover:bg-gray-50"
-            >
-              Test
-            </button>
-          )}
-          {isConnected ? (
-            <button
-              onClick={onDisconnect}
-              className="rounded px-2.5 py-1 text-xs font-medium text-red-600 border border-red-100 hover:bg-red-50"
-            >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              className="rounded px-2.5 py-1 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700"
-            >
-              Connect
-            </button>
-          )}
-          <button
-            onClick={onToggle}
-            className="rounded p-1 text-gray-400 hover:text-gray-600"
-            title={isExpanded ? 'Collapse' : 'Configure'}
-          >
-            <svg className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Error bar */}
-      {provider.last_error && (
-        <div className="mx-4 mb-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700">
-          ⚠ {provider.last_error}
-        </div>
-      )}
-
-      {/* Expanded config panel */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 bg-gray-50 px-4 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Configuration</span>
-            <button className="text-xs font-medium text-teal-600 hover:underline">Edit</button>
-          </div>
-          {renderConfigPanel(provider)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Category Section ────────────────────────────────────────────────────────
-function CategorySection({
-  category,
-  providers,
-  expandedId,
-  setExpandedId,
-  onSetActive,
-  onTest,
-  onDisconnect,
-}: {
-  category: IntegrationCategory
-  providers: IntegrationProvider[]
-  expandedId: string | null
-  setExpandedId: (id: string | null) => void
-  onSetActive: (id: string) => void
-  onTest: (id: string) => void
-  onDisconnect: (id: string) => void
-}) {
-  const meta = CATEGORY_META[category]
-  const connectedCount = providers.filter(p => p.status === 'connected').length
-
+function Card({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      {/* Category header */}
-      <div className="flex items-center gap-3 bg-gray-50 px-5 py-4 border-b border-gray-100">
-        <span className="text-2xl">{meta.icon}</span>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-gray-900">{meta.label}</h3>
-            <span className="text-xs text-gray-400">
-              {connectedCount}/{providers.length} connected
-            </span>
-          </div>
-          <p className="text-xs text-gray-500 mt-0.5">{meta.description}</p>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="text-2xl">{icon}</span>
+        <span className="flex-1 text-sm font-semibold text-gray-900">{title}</span>
+        <svg className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="border-t border-gray-100 px-5 py-5">{children}</div>}
+    </div>
+  )
+}
+
+// ── Email card ────────────────────────────────────────────────────────────────
+
+function EmailCard({ initial, onSave }: { initial: IntegrationSettings['email']; onSave: (s: IntegrationSettings) => void }) {
+  const [form, setForm] = useState({
+    host: initial.host, port: initial.port, username: initial.username,
+    password: '', fromName: initial.fromName,
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [result, setResult] = useState<string | null>(null)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = {
+        host: form.host, port: form.port, username: form.username, fromName: form.fromName,
+      }
+      if (form.password) payload.password = form.password
+      const updated = await saveEmailIntegration(payload)
+      onSave(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  const handleTest = async () => {
+    if (!testEmail) return
+    setTesting(true)
+    setResult(null)
+    try {
+      const msg = await testEmailIntegration(testEmail)
+      setResult(typeof msg === 'string' ? msg : 'Test email sent!')
+    } catch (e: any) {
+      setResult('Failed: ' + (e?.message ?? 'Unknown error'))
+    } finally { setTesting(false) }
+  }
+
+  return (
+    <Card icon="📧" title={`Email (SMTP) — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">Outbound email via Zoho, Gmail, SendGrid SMTP or any mail server.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="SMTP Host" value={form.host} onChange={f('host')} placeholder="smtp.zoho.com" />
+          <Field label="Port" value={form.port} onChange={f('port')} placeholder="587" />
         </div>
-        <button className="flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-500 hover:border-teal-400 hover:text-teal-600">
+        <Field label="Username / From Address" value={form.username} onChange={f('username')} placeholder="noreply@yourdomain.com" />
+        <Field label="Password / App Password" value={form.password} onChange={f('password')} sensitive alreadySet={initial.password === '***'} />
+        <Field label="From Name" value={form.fromName} onChange={f('fromName')} placeholder="FacilityOS" />
+        <div className="flex justify-end pt-2">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+      {/* Test section */}
+      <div className="mt-5 border-t border-gray-100 pt-4 space-y-2">
+        <p className="text-xs font-medium text-gray-500 mb-2">Send a test email</p>
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={testEmail}
+            onChange={e => setTestEmail(e.target.value)}
+            placeholder="recipient@example.com"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+          />
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing || !testEmail}
+            className="rounded-lg border border-teal-200 px-3 py-1.5 text-sm text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+          >
+            {testing ? 'Sending…' : 'Send Test'}
+          </button>
+        </div>
+        <TestResult result={result} onClear={() => setResult(null)} />
+      </div>
+    </Card>
+  )
+}
+
+// ── Africa's Talking card ─────────────────────────────────────────────────────
+
+function AfricasTalkingCard({ initial, onSave }: { initial: IntegrationSettings['africastalking']; onSave: (s: IntegrationSettings) => void }) {
+  const [form, setForm] = useState({
+    username: initial.username, apiKey: '', senderId: initial.senderId, environment: initial.environment || 'sandbox',
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testPhone, setTestPhone] = useState('')
+  const [result, setResult] = useState<string | null>(null)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = {
+        username: form.username, senderId: form.senderId, environment: form.environment,
+      }
+      if (form.apiKey) payload.apiKey = form.apiKey
+      const updated = await saveAfricasTalkingIntegration(payload)
+      onSave(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  const handleTest = async () => {
+    if (!testPhone) return
+    setTesting(true)
+    setResult(null)
+    try {
+      const msg = await testSmsIntegration(testPhone)
+      setResult(typeof msg === 'string' ? msg : 'SMS sent!')
+    } catch (e: any) {
+      setResult('Failed: ' + (e?.message ?? 'Unknown error'))
+    } finally { setTesting(false) }
+  }
+
+  return (
+    <Card icon="💬" title={`Africa's Talking (SMS) — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">Send SMS notifications and OTPs via Africa's Talking gateway.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Username" value={form.username} onChange={f('username')} placeholder="sandbox" />
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Environment</label>
+            <select value={form.environment} onChange={e => f('environment')(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400">
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+        </div>
+        <Field label="API Key" value={form.apiKey} onChange={f('apiKey')} sensitive alreadySet={initial.apiKey === '***'} />
+        <Field label="Sender ID" value={form.senderId} onChange={f('senderId')} placeholder="FacilityOS"
+          hint="Alphanumeric sender ID — requires Africa's Talking approval for production" />
+        <div className="flex justify-end pt-2">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+      <div className="mt-5 border-t border-gray-100 pt-4 space-y-2">
+        <p className="text-xs font-medium text-gray-500 mb-2">Send a test SMS</p>
+        <div className="flex gap-2">
+          <input
+            type="tel"
+            value={testPhone}
+            onChange={e => setTestPhone(e.target.value)}
+            placeholder="+254712345678"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+          />
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing || !testPhone}
+            className="rounded-lg border border-teal-200 px-3 py-1.5 text-sm text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+          >
+            {testing ? 'Sending…' : 'Send Test SMS'}
+          </button>
+        </div>
+        <TestResult result={result} onClear={() => setResult(null)} />
+      </div>
+    </Card>
+  )
+}
+
+// ── MPesa Account Form (create / edit) ────────────────────────────────────────
+
+const BLANK_ACCOUNT_FORM = {
+  name: '', shortcode: '', accountReference: '', passkey: '',
+  consumerKey: '', consumerSecret: '', initiatorName: '',
+  securityCredential: '', callbackUrl: '', b2cResultUrl: '', b2cTimeoutUrl: '',
+  environment: 'sandbox',
+}
+
+function MpesaAccountForm({
+  initial, onDone, onCancel,
+}: {
+  initial?: MpesaAccount
+  onDone: (a: MpesaAccount) => void
+  onCancel: () => void
+}) {
+  const [form, setForm] = useState(initial ? {
+    name: initial.name, shortcode: initial.shortcode,
+    accountReference: initial.accountReference ?? '',
+    passkey: '', consumerKey: '', consumerSecret: '',
+    initiatorName: initial.initiatorName ?? '',
+    securityCredential: '', callbackUrl: initial.callbackUrl ?? '',
+    b2cResultUrl: initial.b2cResultUrl ?? '', b2cTimeoutUrl: initial.b2cTimeoutUrl ?? '',
+    environment: initial.environment ?? 'sandbox',
+  } : { ...BLANK_ACCOUNT_FORM })
+  const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      const payload: Record<string, unknown> = {
+        name: form.name, shortcode: form.shortcode,
+        accountReference: form.accountReference,
+        initiatorName: form.initiatorName,
+        callbackUrl: form.callbackUrl, b2cResultUrl: form.b2cResultUrl,
+        b2cTimeoutUrl: form.b2cTimeoutUrl, environment: form.environment,
+      }
+      if (form.passkey)            payload.passkey = form.passkey
+      if (form.consumerKey)        payload.consumerKey = form.consumerKey
+      if (form.consumerSecret)     payload.consumerSecret = form.consumerSecret
+      if (form.securityCredential) payload.securityCredential = form.securityCredential
+      const result = initial
+        ? await updateMpesaAccount(initial.id, payload)
+        : await createMpesaAccount(payload)
+      onDone(result)
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to save')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 bg-gray-50 rounded-xl border border-gray-200 p-4">
+      <div className="flex items-center justify-between mb-1">
+        <h4 className="text-sm font-semibold text-gray-800">{initial ? 'Edit' : 'Add'} Paybill Account</h4>
+        <button type="button" onClick={onCancel} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Account Name *" value={form.name} onChange={f('name')} placeholder="e.g. Block A Rent" />
+        <Field label="Shortcode (Paybill/Till) *" value={form.shortcode} onChange={f('shortcode')} placeholder="174379" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Account Reference" value={form.accountReference} onChange={f('accountReference')} placeholder="RENT"
+          hint="Shown to payer on phone" />
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Environment</label>
+          <select value={form.environment} onChange={e => f('environment')(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400">
+            <option value="sandbox">Sandbox</option>
+            <option value="production">Production</option>
+          </select>
+        </div>
+      </div>
+      <Field label="LipaNaMpesa Passkey" value={form.passkey} onChange={f('passkey')} sensitive
+        alreadySet={initial?.passkey === '***'} />
+
+      <details className="group">
+        <summary className="cursor-pointer text-xs font-medium text-teal-600 hover:text-teal-700 list-none flex items-center gap-1">
+          <svg className="h-3.5 w-3.5 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          Own Daraja credentials (optional — leave blank to use global credentials)
+        </summary>
+        <div className="mt-3 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Consumer Key" value={form.consumerKey} onChange={f('consumerKey')} sensitive alreadySet={initial?.consumerKey === '***'} />
+            <Field label="Consumer Secret" value={form.consumerSecret} onChange={f('consumerSecret')} sensitive alreadySet={initial?.consumerSecret === '***'} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="B2C Initiator Name" value={form.initiatorName} onChange={f('initiatorName')} />
+            <Field label="B2C Security Credential" value={form.securityCredential} onChange={f('securityCredential')} sensitive alreadySet={initial?.securityCredential === '***'} />
+          </div>
+          <Field label="STK Callback URL" value={form.callbackUrl} onChange={f('callbackUrl')} placeholder="https://yourdomain.com/api/mpesa/stk-callback" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="B2C Result URL" value={form.b2cResultUrl} onChange={f('b2cResultUrl')} />
+            <Field label="B2C Timeout URL" value={form.b2cTimeoutUrl} onChange={f('b2cTimeoutUrl')} />
+          </div>
+        </div>
+      </details>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onCancel}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
+          Cancel
+        </button>
+        <button type="submit" disabled={saving}
+          className="rounded-lg bg-teal-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">
+          {saving ? 'Saving…' : initial ? 'Update' : 'Add Account'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+// ── MPesa Accounts List ───────────────────────────────────────────────────────
+
+function MpesaAccountsList() {
+  const [accounts, setAccounts]   = useState<MpesaAccount[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [editing, setEditing]     = useState<MpesaAccount | 'new' | null>(null)
+  const [testPhone, setTestPhone] = useState('')
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [result, setResult]       = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    listMpesaAccounts().then(setAccounts).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleSetDefault = async (id: string) => {
+    const updated = await setDefaultMpesaAccount(id)
+    setAccounts(updated)
+  }
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id)
+    try {
+      await deleteMpesaAccount(id)
+      setAccounts(prev => prev.filter(a => a.id !== id))
+    } finally { setDeletingId(null) }
+  }
+
+  const handleTest = async (id: string) => {
+    if (!testPhone) return
+    setTestingId(id)
+    setResult(null)
+    try {
+      const res = await testMpesaAccount(id, testPhone)
+      setResult(res.accepted ? `✓ STK push sent! ${res.customerMessage ?? ''}` : `✗ Failed: ${res.customerMessage}`)
+    } catch (e: any) {
+      setResult('✗ ' + (e?.message ?? 'Error'))
+    } finally { setTestingId(null) }
+  }
+
+  const handleDone = (saved: MpesaAccount) => {
+    setAccounts(prev => {
+      const idx = prev.findIndex(a => a.id === saved.id)
+      return idx >= 0 ? prev.map(a => a.id === saved.id ? saved : a) : [...prev, saved]
+    })
+    setEditing(null)
+  }
+
+  if (loading) return <div className="text-xs text-gray-400 py-2">Loading accounts…</div>
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Paybill Accounts</p>
+        <button
+          onClick={() => setEditing('new')}
+          className="flex items-center gap-1 rounded-lg border border-dashed border-teal-300 px-3 py-1 text-xs text-teal-600 hover:bg-teal-50"
+        >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Provider
+          Add Paybill
         </button>
       </div>
 
-      {/* Provider cards */}
-      <div className="divide-y divide-gray-100">
-        {providers.map(p => (
-          <ProviderCard
-            key={p.id}
-            provider={p}
-            isExpanded={expandedId === p.id}
-            onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
-            onSetActive={() => onSetActive(p.id)}
-            onTest={() => onTest(p.id)}
-            onDisconnect={() => onDisconnect(p.id)}
-          />
-        ))}
-      </div>
+      {accounts.length === 0 && editing !== 'new' && (
+        <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-gray-400">
+          No paybill accounts configured yet.<br />
+          <button onClick={() => setEditing('new')} className="mt-1 text-teal-600 hover:underline">
+            Add your first account →
+          </button>
+        </div>
+      )}
+
+      {/* Account rows */}
+      {accounts.map(account => (
+        <div key={account.id}>
+          {editing === account ? (
+            <MpesaAccountForm initial={account} onDone={handleDone} onCancel={() => setEditing(null)} />
+          ) : (
+            <div className={`rounded-lg border px-4 py-3 ${account.isDefault ? 'border-teal-300 bg-teal-50/40' : 'border-gray-200 bg-white'}`}>
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-gray-900">{account.name}</span>
+                    {account.isDefault && (
+                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-700">Default</span>
+                    )}
+                    {!account.active && (
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Inactive</span>
+                    )}
+                    {account.hasOwnCredentials && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">Own Daraja App</span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                    <span>Shortcode: <strong className="text-gray-700">{account.shortcode}</strong></span>
+                    {account.accountReference && <span>Ref: <strong className="text-gray-700">{account.accountReference}</strong></span>}
+                    <span className={`capitalize ${account.environment === 'production' ? 'text-green-600' : 'text-amber-600'}`}>
+                      {account.environment}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!account.isDefault && (
+                    <button onClick={() => handleSetDefault(account.id)}
+                      className="rounded px-2 py-1 text-xs text-teal-700 border border-teal-200 hover:bg-teal-50">
+                      Set Default
+                    </button>
+                  )}
+                  <button onClick={() => setEditing(account)}
+                    className="rounded px-2 py-1 text-xs text-gray-600 border border-gray-200 hover:bg-gray-50">
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(account.id)}
+                    disabled={deletingId === account.id}
+                    className="rounded px-2 py-1 text-xs text-red-600 border border-red-100 hover:bg-red-50 disabled:opacity-50">
+                    {deletingId === account.id ? '…' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* Add form */}
+      {editing === 'new' && (
+        <MpesaAccountForm onDone={handleDone} onCancel={() => setEditing(null)} />
+      )}
+
+      {/* Test section */}
+      {accounts.length > 0 && (
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          <p className="text-xs font-medium text-gray-500">Test STK Push per account (sends KES 1 prompt)</p>
+          <div className="flex gap-2">
+            <input type="tel" value={testPhone} onChange={e => setTestPhone(e.target.value)}
+              placeholder="2547XXXXXXXX (no +)"
+              className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {accounts.filter(a => a.active).map(account => (
+              <button key={account.id}
+                onClick={() => handleTest(account.id)}
+                disabled={!testPhone || testingId !== null}
+                className="rounded-lg border border-teal-200 px-3 py-1 text-xs text-teal-700 hover:bg-teal-50 disabled:opacity-50">
+                {testingId === account.id ? 'Sending…' : `Test "${account.name}"`}
+              </button>
+            ))}
+          </div>
+          {result && <TestResult result={result} onClear={() => setResult(null)} />}
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
-export function IntegrationsPageClient() {
-  const [providers, setProviders] = useState<IntegrationProvider[]>(INTEGRATION_PROVIDERS)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+// ── MPesa card ────────────────────────────────────────────────────────────────
 
-  const showToast = (msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 3000)
+function MpesaCard({ initial, onSave }: { initial: IntegrationSettings['mpesa']; onSave: (s: IntegrationSettings) => void }) {
+  const [form, setForm] = useState({
+    consumerKey: '', consumerSecret: '',
+    initiatorName: initial.initiatorName,
+    securityCredential: '', callbackUrl: initial.callbackUrl,
+    b2cResultUrl: initial.b2cResultUrl, b2cTimeoutUrl: initial.b2cTimeoutUrl,
+    environment: initial.environment || 'sandbox',
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = {
+        initiatorName: form.initiatorName,
+        callbackUrl: form.callbackUrl, b2cResultUrl: form.b2cResultUrl,
+        b2cTimeoutUrl: form.b2cTimeoutUrl, environment: form.environment,
+      }
+      if (form.consumerKey)        payload.consumerKey = form.consumerKey
+      if (form.consumerSecret)     payload.consumerSecret = form.consumerSecret
+      if (form.securityCredential) payload.securityCredential = form.securityCredential
+      const updated = await saveMpesaIntegration(payload)
+      onSave(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
   }
-
-  const handleSetActive = (id: string) => {
-    const target = providers.find(p => p.id === id)
-    if (!target) return
-    setProviders(prev =>
-      prev.map(p =>
-        p.category === target.category
-          ? { ...p, is_active: p.id === id }
-          : p
-      )
-    )
-    showToast(`${PROVIDER_LABELS[target.provider]} is now the active ${CATEGORY_META[target.category].label} provider.`)
-  }
-
-  const handleTest = (id: string) => {
-    const target = providers.find(p => p.id === id)
-    if (!target) return
-    setProviders(prev => prev.map(p => p.id === id ? { ...p, status: 'testing' } : p))
-    setTimeout(() => {
-      setProviders(prev => prev.map(p => p.id === id ? { ...p, status: 'connected', last_tested_at: new Date().toISOString() } : p))
-      showToast(`✓ ${PROVIDER_LABELS[target.provider]} connection test passed.`)
-    }, 1800)
-  }
-
-  const handleDisconnect = (id: string) => {
-    const target = providers.find(p => p.id === id)
-    if (!target) return
-    setProviders(prev => prev.map(p => p.id === id ? { ...p, status: 'disconnected', is_active: false } : p))
-    showToast(`${PROVIDER_LABELS[target.provider]} disconnected.`)
-  }
-
-  // Group by category in defined order
-  const categoryOrder: IntegrationCategory[] = ['mpesa', 'sms', 'whatsapp', 'telegram', 'email']
-  const grouped = categoryOrder.reduce<Record<IntegrationCategory, IntegrationProvider[]>>(
-    (acc, cat) => {
-      acc[cat] = providers.filter(p => p.category === cat)
-      return acc
-    },
-    {} as Record<IntegrationCategory, IntegrationProvider[]>
-  )
-
-  const totalConnected = providers.filter(p => p.status === 'connected').length
-  const totalProviders = providers.length
 
   return (
-    <main className="flex-1 overflow-y-auto bg-gray-50">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
-          {toast}
-        </div>
-      )}
-
-      <div className="mx-auto max-w-4xl px-6 py-6 space-y-6">
-        {/* Summary banner */}
-        <div className="flex items-center gap-4 rounded-xl bg-white border border-gray-200 px-5 py-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-gray-900">
-              {totalConnected} of {totalProviders} integrations connected
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Each category can have multiple providers configured — one is active at a time. Switch providers without losing saved credentials.
-            </p>
-          </div>
-          <div className="flex gap-6 text-center">
-            {categoryOrder.map(cat => {
-              const ps = grouped[cat]
-              const active = ps.find(p => p.is_active && p.status === 'connected')
-              return (
-                <div key={cat} className="flex flex-col items-center">
-                  <span className="text-lg">{CATEGORY_META[cat].icon}</span>
-                  <span className="text-xs font-medium text-gray-700">{CATEGORY_META[cat].label}</span>
-                  <span className={`text-xs ${active ? 'text-green-600' : 'text-gray-400'}`}>
-                    {active ? '● Active' : '○ None'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Info: multi-provider explanation */}
-        <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-sm text-blue-800">
-          <strong>Multi-provider support:</strong> You can configure multiple providers in each category (e.g. both Africa&apos;s Talking and Twilio for SMS). Only the <strong>Active</strong> provider is used when sending — switch at any time without re-entering credentials.
-        </div>
-
-        {/* Category sections */}
-        {categoryOrder.map(cat => (
-          <CategorySection
-            key={cat}
-            category={cat}
-            providers={grouped[cat]}
-            expandedId={expandedId}
-            setExpandedId={setExpandedId}
-            onSetActive={handleSetActive}
-            onTest={handleTest}
-            onDisconnect={handleDisconnect}
-          />
-        ))}
+    <Card icon="💚" title={`M-Pesa Daraja — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">Collect rent and charges via Safaricom Daraja API (STK Push + B2C).</p>
+        <StatusBadge configured={initial.configured} />
       </div>
-    </main>
+
+      {/* Global Daraja credentials (shared across all paybill accounts unless overridden) */}
+      <form onSubmit={handleSave} className="space-y-4">
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+          Global Daraja Credentials
+          <span className="ml-1.5 font-normal normal-case text-gray-400">— used by all accounts unless each account has its own</span>
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Consumer Key" value={form.consumerKey} onChange={f('consumerKey')} sensitive alreadySet={initial.consumerKey === '***'} />
+          <Field label="Consumer Secret" value={form.consumerSecret} onChange={f('consumerSecret')} sensitive alreadySet={initial.consumerSecret === '***'} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="B2C Initiator Name" value={form.initiatorName} onChange={f('initiatorName')} placeholder="testapi" />
+          <Field label="B2C Security Credential" value={form.securityCredential} onChange={f('securityCredential')} sensitive alreadySet={initial.securityCredential === '***'} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Default Environment</label>
+          <select value={form.environment} onChange={e => f('environment')(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400">
+            <option value="sandbox">Sandbox (sandbox.safaricom.co.ke)</option>
+            <option value="production">Production (api.safaricom.co.ke)</option>
+          </select>
+        </div>
+        <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">
+          Callback URLs must be publicly reachable. Use <strong>ngrok</strong> in development.
+        </div>
+        <Field label="Default STK Push Callback URL" value={form.callbackUrl} onChange={f('callbackUrl')} placeholder="https://yourdomain.com/api/mpesa/stk-callback" />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Default B2C Result URL" value={form.b2cResultUrl} onChange={f('b2cResultUrl')} placeholder="https://yourdomain.com/api/mpesa/b2c/result" />
+          <Field label="Default B2C Timeout URL" value={form.b2cTimeoutUrl} onChange={f('b2cTimeoutUrl')} placeholder="https://yourdomain.com/api/mpesa/b2c/timeout" />
+        </div>
+        <div className="flex justify-end pt-1">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+
+      {/* Paybill accounts */}
+      <div className="mt-6 border-t border-gray-100 pt-5">
+        <MpesaAccountsList />
+      </div>
+    </Card>
+  )
+}
+
+// ── Telegram card ─────────────────────────────────────────────────────────────
+
+function TelegramCard({ initial, onSave }: { initial: IntegrationSettings['telegram']; onSave: (s: IntegrationSettings) => void }) {
+  const [form, setForm] = useState({ botToken: '', chatId: initial.chatId })
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testChatId, setTestChatId] = useState('')
+  const [result, setResult]   = useState<string | null>(null)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = { chatId: form.chatId }
+      if (form.botToken) payload.botToken = form.botToken
+      const updated = await saveTelegramIntegration(payload)
+      onSave(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  const handleTest = async () => {
+    setTesting(true)
+    setResult(null)
+    try {
+      const msg = await testTelegramIntegration(testChatId || undefined)
+      setResult(typeof msg === 'string' ? msg : 'Message sent!')
+    } catch (e: any) {
+      setResult('Failed: ' + (e?.message ?? 'Unknown error'))
+    } finally { setTesting(false) }
+  }
+
+  return (
+    <Card icon="✈️" title={`Telegram Bot — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">Send instant management alerts and system notifications via Telegram Bot.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700 mb-4">
+        Create a bot with <strong>@BotFather</strong> → get the token. Add the bot to your management group and get the Chat ID using <code>@userinfobot</code>.
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <Field label="Bot Token" value={form.botToken} onChange={f('botToken')} sensitive alreadySet={initial.botToken === '***'} placeholder="123456:ABC-DEF1234..." />
+        <Field label="Default Chat ID (admin group)" value={form.chatId} onChange={f('chatId')} placeholder="-1001234567890"
+          hint="ID of the group or channel where system alerts are sent" />
+        <div className="flex justify-end pt-2">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+      <div className="mt-5 border-t border-gray-100 pt-4 space-y-2">
+        <p className="text-xs font-medium text-gray-500 mb-2">Send a test message</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={testChatId}
+            onChange={e => setTestChatId(e.target.value)}
+            placeholder="Chat ID (blank = use default)"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+          />
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing}
+            className="rounded-lg border border-teal-200 px-3 py-1.5 text-sm text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+          >
+            {testing ? 'Sending…' : 'Send Test'}
+          </button>
+        </div>
+        <TestResult result={result} onClear={() => setResult(null)} />
+      </div>
+    </Card>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export function IntegrationsPageClient() {
+  const [settings, setSettings] = useState<IntegrationSettings | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    getIntegrations()
+      .then(setSettings)
+      .catch(e => setError(e?.message ?? 'Failed to load integration settings'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div className="p-8 text-sm text-gray-400">Loading integrations…</div>
+  if (error)   return <div className="p-8 text-sm text-red-500">{error}</div>
+  if (!settings) return null
+
+  const handleSave = (updated: IntegrationSettings) => setSettings(updated)
+
+  const configured = [
+    settings.email.configured,
+    settings.africastalking.configured,
+    settings.mpesa.configured,
+    settings.telegram.configured,
+  ].filter(Boolean).length
+
+  return (
+    <div className="p-6 max-w-3xl space-y-5">
+      {/* Summary */}
+      <div className="flex items-center gap-4 rounded-xl bg-white border border-gray-200 px-5 py-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-gray-900">{configured} of 4 integrations configured</p>
+          <p className="text-xs text-gray-500 mt-0.5">Credentials are stored securely in the database and never exposed in plaintext.</p>
+        </div>
+        <div className="ml-auto flex gap-3">
+          {[
+            { icon: '📧', label: 'Email',    ok: settings.email.configured },
+            { icon: '💬', label: 'SMS',      ok: settings.africastalking.configured },
+            { icon: '💚', label: 'M-Pesa',   ok: settings.mpesa.configured },
+            { icon: '✈️',  label: 'Telegram', ok: settings.telegram.configured },
+          ].map(({ icon, label, ok }) => (
+            <div key={label} className="flex flex-col items-center gap-0.5">
+              <span className="text-base">{icon}</span>
+              <span className="text-xs text-gray-500">{label}</span>
+              <span className={`text-xs ${ok ? 'text-green-600' : 'text-gray-400'}`}>{ok ? '●' : '○'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Cards */}
+      <EmailCard          initial={settings.email}          onSave={handleSave} />
+      <AfricasTalkingCard initial={settings.africastalking} onSave={handleSave} />
+      <MpesaCard          initial={settings.mpesa}          onSave={handleSave} />
+      <TelegramCard       initial={settings.telegram}       onSave={handleSave} />
+    </div>
   )
 }

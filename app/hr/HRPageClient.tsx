@@ -213,24 +213,95 @@ function VendorRow({ vendor, deptName }: { vendor: VendorContract; deptName: str
 // ── Filter options ─────────────────────────────────────────────────────────
 
 const TYPE_OPTIONS = [
-  { value: 'all',       label: 'All Types'  },
-  { value: 'permanent', label: 'Permanent'  },
-  { value: 'casual',    label: 'Casual'     },
+  { value: 'all',        label: 'All Types'  },
+  { value: 'permanent',  label: 'Permanent'  },
+  { value: 'casual',     label: 'Casual'     },
+  { value: 'outsourced', label: 'Outsourced' },
 ]
+
+function personTypeToStaffType(t: string): 'permanent' | 'casual' | 'outsourced' {
+  if (t === 'permanent_staff') return 'permanent'
+  if (t === 'casual_staff')    return 'casual'
+  return 'outsourced'
+}
+
+function personStatusBadge(s: string) {
+  const map: Record<string, string> = {
+    active:               'bg-success/10 text-success',
+    pending_verification: 'bg-warning/10 text-warning',
+    inactive:             'bg-surface-border text-text-muted',
+    suspended:            'bg-danger/10 text-danger',
+    former:               'bg-surface-border text-text-muted',
+  }
+  return (
+    <span className={cn('text-xs px-2 py-0.5 rounded font-medium capitalize', map[s] ?? '')}>
+      {s.replace(/_/g, ' ')}
+    </span>
+  )
+}
+
+// ── LivePersonCard — for backend-registered staff (no FacilityStaffMember record) ──
+
+function LivePersonCard({ person }: { person: Person }) {
+  const name     = `${person.first_name} ${person.last_name}`
+  const initials = `${person.first_name[0]}${person.last_name[0]}`
+  const staffType = personTypeToStaffType(person.type)
+
+  return (
+    <Card className="p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-sm font-bold text-primary-700 dark:text-primary-300 flex-shrink-0">
+            {initials}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-text">{name}</p>
+            {person.agency_name
+              ? <p className="text-xs text-text-muted">{person.agency_name}</p>
+              : <p className="text-xs text-text-muted italic">No dept assigned</p>}
+            {person.phone && <p className="text-xs text-text-muted">{person.phone}</p>}
+          </div>
+        </div>
+        {staffTypeBadge(staffType)}
+      </div>
+
+      <div className="text-xs text-text-muted">
+        <span>Since: {person.joined_date}</span>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-surface-border dark:border-dark-border pt-2">
+        {personStatusBadge(person.status)}
+        <CanDo action="write" resource={{ type: 'person' }}>
+          <a href="/people" className="text-xs text-primary-600 dark:text-primary-400 hover:underline">View in People →</a>
+        </CanDo>
+      </div>
+    </Card>
+  )
+}
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export function HRPageClient() {
+export function HRPageClient({ initialStaff }: { initialStaff?: Person[] } = {}) {
   const [search,       setSearch]      = useState('')
   const [typeFilter,   setType]        = useState('all')
   const [deptFilter,   setDeptFilter]  = useState('all')
   const [showRegister, setShowRegister] = useState(false)
 
+  // Live staff: backend records take precedence; fall back to mock if backend unavailable
+  const [liveStaff, setLiveStaff] = useState<Person[]>(initialStaff ?? [])
+  const hasBackendData = initialStaff !== undefined
+
+  function handleStaffRegistered(p: Person) {
+    setLiveStaff(prev => [p, ...prev])
+  }
+
+  // Build person map: merge backend staff + mock people (for FacilityStaffMember lookups)
   const personMap = useMemo(() => {
     const m = new Map<string, Person>()
     PEOPLE.forEach(p => m.set(p.id, p))
+    liveStaff.forEach(p => m.set(p.id, p))
     return m
-  }, [])
+  }, [liveStaff])
 
   const deptMap = useMemo(() => {
     const m = new Map<string, Department>()
@@ -256,14 +327,28 @@ export function HRPageClient() {
     })
   }, [search, typeFilter, deptFilter, personMap, deptMap])
 
+  const filteredLiveStaff = useMemo(() => {
+    const q = search.toLowerCase()
+    return liveStaff.filter(p => {
+      const fullName  = `${p.first_name} ${p.last_name}`.toLowerCase()
+      const matchSearch = !q || fullName.includes(q) || (p.agency_name ?? '').toLowerCase().includes(q)
+      const staffType   = personTypeToStaffType(p.type)
+      const matchType   = typeFilter === 'all' || staffType === typeFilter
+      return matchSearch && matchType
+    })
+  }, [search, typeFilter, liveStaff])
+
   const stats = useMemo(() => ({
-    permanent:    FACILITY_STAFF.filter(s => s.staff_type === 'permanent').length,
-    casual:       FACILITY_STAFF.filter(s => s.staff_type === 'casual').length,
-    outsourced:   PEOPLE.filter(p => p.is_outsourced).length,
+    permanent:    FACILITY_STAFF.filter(s => s.staff_type === 'permanent').length
+                  + liveStaff.filter(p => p.type === 'permanent_staff').length,
+    casual:       FACILITY_STAFF.filter(s => s.staff_type === 'casual').length
+                  + liveStaff.filter(p => p.type === 'casual_staff').length,
+    outsourced:   PEOPLE.filter(p => p.is_outsourced).length
+                  + liveStaff.filter(p => p.is_outsourced).length,
     bgcPending:   FACILITY_STAFF.filter(s => !s.background_check_done).length,
     probation:    FACILITY_STAFF.filter(s => s.contract_status === 'probation').length,
     activeVendors: VENDOR_CONTRACTS.filter(v => v.status === 'active').length,
-  }), [])
+  }), [liveStaff])
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
@@ -296,7 +381,7 @@ export function HRPageClient() {
       <Tabs defaultValue="departments">
         <TabsList>
           <TabsTrigger value="departments">Departments ({DEPARTMENTS.length})</TabsTrigger>
-          <TabsTrigger value="facility-staff">Facility Staff ({FACILITY_STAFF.length})</TabsTrigger>
+          <TabsTrigger value="facility-staff">Facility Staff ({FACILITY_STAFF.length + liveStaff.length})</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Contracts ({VENDOR_CONTRACTS.length})</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
         </TabsList>
@@ -355,7 +440,10 @@ export function HRPageClient() {
                   deptName={deptMap.get(s.department_id)?.name ?? '—'}
                 />
               ))}
-              {filteredStaff.length === 0 && (
+              {filteredLiveStaff.map(p => (
+                <LivePersonCard key={p.id} person={p} />
+              ))}
+              {filteredStaff.length === 0 && filteredLiveStaff.length === 0 && (
                 <div className="col-span-3 py-12 text-center text-text-muted text-sm">No staff match the current filters.</div>
               )}
             </div>
@@ -400,7 +488,11 @@ export function HRPageClient() {
         </TabsContent>
       </Tabs>
 
-      <RegisterStaffModal open={showRegister} onClose={() => setShowRegister(false)} />
+      <RegisterStaffModal
+        open={showRegister}
+        onClose={() => setShowRegister(false)}
+        onRegister={handleStaffRegistered}
+      />
     </div>
   )
 }

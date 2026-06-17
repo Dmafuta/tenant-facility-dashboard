@@ -1,0 +1,76 @@
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       facilityapp_v3
+      POSTGRES_USER:     ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Spring Boot API ──────────────────────────────────────────────────────────
+  backend:
+    image: ghcr.io/dmafuta/tenant-portal-api:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL:              jdbc:postgresql://postgres:5432/facilityapp_v3
+      DB_USERNAME:         ${DB_USERNAME}
+      DB_PASSWORD:         ${DB_PASSWORD}
+      JWT_SECRET:          ${JWT_SECRET}
+      FRONTEND_URL:        ${FRONTEND_URL}
+      SEED_ADMIN_EMAIL:    ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+    expose:
+      - "8081"
+
+  # ── Next.js Frontend ─────────────────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/dmafuta/tenant-portal:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_URL: http://backend:8081
+      NODE_ENV:    production
+    volumes:
+      - ./private/templates:/app/private/templates:ro
+    expose:
+      - "3000"
+
+  # ── Nginx reverse proxy ───────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
+
+  # ── Certbot (Let's Encrypt) ───────────────────────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-certs:/etc/letsencrypt
+
+volumes:
+  pgdata:
+  certbot-www:
+  certbot-certs:

@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { loginWithPassword, sendOtp } from '@/lib/api/auth'
 
 type Mode = 'password' | 'magic'
 
@@ -19,29 +19,34 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    const supabase = createClient()
-
-    if (mode === 'magic') {
-      const { error: err } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: false },
-      })
+    try {
+      if (mode === 'magic') {
+        await sendOtp(email)
+        setMagicSent(true)
+      } else {
+        const result = await loginWithPassword(email, password)
+        if ('requiresTwoFactor' in result && result.requiresTwoFactor) {
+          const params = new URLSearchParams({
+            email:        result.email,
+            channel:      '2fa',
+            maskedContact: result.maskedContact,
+          })
+          window.location.href = `/verify?${params.toString()}`
+        } else {
+          window.location.href = '/dashboard'
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.')
+    } finally {
       setLoading(false)
-      if (err) { setError(err.message); return }
-      setMagicSent(true)
-    } else {
-      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
-      setLoading(false)
-      if (err) { setError(err.message); return }
-      if (!data.user) { setError('Invalid email or password.'); return }
-      window.location.href = '/dashboard'
     }
   }
 
   return (
     <div className="min-h-screen flex">
       {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-primary-600 flex-col justify-between p-12 relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-[60%] bg-primary-600 flex-col justify-between p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -121,13 +126,13 @@ export default function LoginPage() {
               <div className="w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-3xl mx-auto mb-4">{'📬'}</div>
               <h2 className="text-base font-semibold text-text mb-2">Check your inbox</h2>
               <p className="text-sm text-text-muted mb-6 leading-relaxed">
-                We sent a sign-in link to <strong className="text-text">{email}</strong>. Click it to sign in instantly, or enter the 6-digit code below.
+                We sent a 6-digit code to <strong className="text-text">{email}</strong>. Enter it below to sign in.
               </p>
               <Link
                 href={`/verify?email=${encodeURIComponent(email)}`}
                 className="inline-block px-5 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors shadow-sm mb-4"
               >
-                Enter code instead
+                Enter code
               </Link>
               <br />
               <button
@@ -188,9 +193,9 @@ export default function LoginPage() {
                 className="w-full py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors shadow-sm flex items-center justify-center gap-2"
               >
                 {loading ? (
-                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{' '}{mode === 'magic' ? 'Sending link...' : 'Signing in...'}</>
+                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{' '}{mode === 'magic' ? 'Sending code...' : 'Signing in...'}</>
                 ) : (
-                  mode === 'magic' ? 'Send Magic Link' : 'Sign In'
+                  mode === 'magic' ? 'Send Code' : 'Sign In'
                 )}
               </button>
 

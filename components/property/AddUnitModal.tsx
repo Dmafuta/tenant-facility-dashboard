@@ -1,8 +1,10 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
+import { createUnit, updateUnit, type UnitData } from '@/lib/api/units'
+import type { Unit } from '@/lib/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -147,7 +149,7 @@ interface FormState {
 const TODAY = new Date().toISOString().slice(0, 10)
 
 const EMPTY: FormState = {
-  unit_type: '', unit_label: '', block: '', floor: '',
+  unit_type: 'apartment', unit_label: '', block: '', floor: '',
   floor_area_sqm: '', bedrooms: '1', bathrooms: '1', guest_toilets: '0',
   parking_bays: '0', has_storage: false, furnished: 'unfurnished',
   bay_type: '', bay_dimensions: '',
@@ -162,9 +164,49 @@ const STEP_LABELS = ['Type', 'Physical', 'Location', 'Status & Dates', 'Pricing'
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export function AddUnitModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+// Map a frontend Unit back into a FormState for the edit modal
+function unitToFormState(unit: Unit): FormState {
+  const statusMap: Record<string, UnitStatus> = {
+    occupied: 'occupied', vacant: 'vacant', maintenance: 'renovation', reserved: 'reserved',
+  }
+  return {
+    ...EMPTY,
+    unit_label: unit.number,
+    block: unit.block,
+    floor: unit.floor ? String(unit.floor) : '',
+    floor_area_sqm: unit.size_sqm ? String(unit.size_sqm) : '',
+    bedrooms: unit.bedrooms ? String(unit.bedrooms) : '1',
+    bathrooms: unit.bathrooms ? String(unit.bathrooms) : '1',
+    asking_rent: unit.monthly_rate ? String(unit.monthly_rate) : '',
+    status: (statusMap[unit.status] ?? 'vacant') as UnitStatus,
+  }
+}
+
+export function AddUnitModal({
+  open,
+  onClose,
+  onSuccess,
+  unit,
+}: {
+  open: boolean
+  onClose: () => void
+  onSuccess?: (unit: UnitData) => void
+  unit?: Unit  // when provided, the modal is in edit mode
+}) {
+  const isEditing = !!unit
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormState>(EMPTY)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  // Re-initialize form whenever the modal opens or the unit changes
+  useEffect(() => {
+    if (open) {
+      setForm(unit ? unitToFormState(unit) : EMPTY)
+      setStep(0)
+      setSubmitError('')
+    }
+  }, [open, unit])
 
   const set = (k: keyof FormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -189,14 +231,59 @@ export function AddUnitModal({ open, onClose }: { open: boolean; onClose: () => 
   const canStep0 = !!form.unit_type && !!form.unit_label
   const canStep3 = !!form.handover_date
 
-  function reset() { setForm(EMPTY); setStep(0) }
-  function handleSubmit() {
-    alert(`Unit ${form.unit_label} registered (demo).`)
-    onClose(); reset()
+  function reset() { setForm(EMPTY); setStep(0); setSubmitError('') }
+
+  async function handleSubmit() {
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const payload = {
+        unit_type: form.unit_type || null,
+        unit_label: form.unit_label,
+        block: form.block || null,
+        floor: form.floor || null,
+        floor_area_sqm: form.floor_area_sqm ? Number(form.floor_area_sqm) : null,
+        bedrooms: form.bedrooms ? Number(form.bedrooms) : null,
+        bathrooms: form.bathrooms ? Number(form.bathrooms) : null,
+        guest_toilets: form.guest_toilets ? Number(form.guest_toilets) : null,
+        parking_bays: form.parking_bays ? Number(form.parking_bays) : null,
+        has_storage: form.has_storage,
+        furnished: form.furnished || null,
+        bay_type: form.bay_type || null,
+        bay_dimensions: form.bay_dimensions || null,
+        storage_area_sqm: form.storage_area_sqm ? Number(form.storage_area_sqm) : null,
+        storage_height_m: form.storage_height_m ? Number(form.storage_height_m) : null,
+        floor_position: form.floor_position || null,
+        view: form.view || null,
+        features: form.features,
+        status: form.status,
+        handover_date: form.handover_date || null,
+        available_from: form.available_from || null,
+        asking_rent: form.asking_rent ? Number(form.asking_rent) : null,
+        deposit_months: form.deposit_months ? Number(form.deposit_months) : null,
+        service_charge: form.service_charge ? Number(form.service_charge) : null,
+        service_charge_included: form.service_charge_included,
+        notes: form.notes || null,
+      }
+
+      if (isEditing && unit) {
+        const updated = await updateUnit(unit.id, payload)
+        onSuccess?.(updated)
+      } else {
+        const created = await createUnit(payload)
+        onSuccess?.(created)
+      }
+      onClose()
+      reset()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : isEditing ? 'Failed to update unit.' : 'Failed to register unit.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title="Add New Unit" size="lg">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title={isEditing ? `Edit Unit ${unit?.block ? unit.block + '-' : ''}${unit?.number ?? ''}` : 'Add New Unit'} size="lg">
       <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
         <Steps steps={STEP_LABELS} current={step} />
 
@@ -204,23 +291,25 @@ export function AddUnitModal({ open, onClose }: { open: boolean; onClose: () => 
         {step === 0 && (
           <div className="space-y-5">
             <SectionDivider title="Unit Type" />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {UNIT_TYPE_OPTIONS.map(t => (
-                <button
-                  key={t.value}
-                  onClick={() => setForm(f => ({ ...f, unit_type: t.value, furnished: t.residential ? f.furnished : 'unfurnished' }))}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl border-2 text-center transition-all',
-                    form.unit_type === t.value
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      : 'border-surface-border dark:border-dark-border hover:border-primary-300 hover:bg-surface-hover dark:hover:bg-dark-hover'
-                  )}
+            <Field label="Unit Type" required>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base pointer-events-none">
+                  {UNIT_TYPE_OPTIONS.find(t => t.value === form.unit_type)?.icon}
+                </span>
+                <select
+                  className={cn(INPUT, 'pl-9')}
+                  value={form.unit_type}
+                  onChange={e => {
+                    const t = UNIT_TYPE_OPTIONS.find(o => o.value === e.target.value)
+                    setForm(f => ({ ...f, unit_type: e.target.value as UnitType, furnished: t?.residential ? f.furnished : 'unfurnished' }))
+                  }}
                 >
-                  <span className="text-xl">{t.icon}</span>
-                  <span className={cn('text-xs font-medium', form.unit_type === t.value ? 'text-primary-700 dark:text-primary-300' : 'text-text')}>{t.label}</span>
-                </button>
-              ))}
-            </div>
+                  {UNIT_TYPE_OPTIONS.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+            </Field>
 
             <SectionDivider title="Identity" />
             <div className="grid grid-cols-3 gap-4">
@@ -582,9 +671,16 @@ export function AddUnitModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
             )}
 
+            {submitError && (
+              <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{submitError}</p>
+            )}
             <FooterNav>
-              <Button variant="ghost" onClick={() => setStep(4)}>← Back</Button>
-              <Button onClick={handleSubmit}>✓ Register Unit</Button>
+              <Button variant="ghost" onClick={() => setStep(4)} disabled={submitting}>← Back</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? (
+                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> {isEditing ? 'Saving…' : 'Registering…'}</>
+                ) : isEditing ? '✓ Save Changes' : '✓ Register Unit'}
+              </Button>
             </FooterNav>
           </div>
         )}

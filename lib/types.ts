@@ -87,6 +87,7 @@ export interface Person {
   national_id?: string          // masked in UI (******* 123A)
   avatar?: string
   unit_ids: string[]
+  home_unit_id?: string
   status: PersonStatus
   kyc_status: KycStatus
   phone_verified_at?: string

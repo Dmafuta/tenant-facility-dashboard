@@ -2,13 +2,16 @@
 import { useState, useRef, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { verifyOtp, sendOtp } from '@/lib/api/auth'
 
 const CODE_LENGTH = 6
 
 function VerifyForm() {
-  const searchParams = useSearchParams()
-  const email = searchParams.get('email') ?? ''
+  const searchParams  = useSearchParams()
+  const email         = searchParams.get('email') ?? ''
+  const channel       = searchParams.get('channel') ?? 'email'   // 'email' | '2fa'
+  const maskedContact = searchParams.get('maskedContact') ?? ''
+  const isSms         = channel === '2fa' && maskedContact.startsWith('+')
 
   const [digits, setDigits]       = useState<string[]>(Array(CODE_LENGTH).fill(''))
   const [loading, setLoading]     = useState(false)
@@ -54,33 +57,33 @@ function VerifyForm() {
   async function submit(code: string) {
     setLoading(true)
     setError('')
-    const supabase = createClient()
-    const { error: err } = await supabase.auth.verifyOtp({
-      email,
-      token: code,
-      type: 'email',
-    })
-    setLoading(false)
-    if (err) {
-      setError(err.message)
+    try {
+      await verifyOtp(email, code)
+      window.location.href = '/dashboard'
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid code.')
       setDigits(Array(CODE_LENGTH).fill(''))
       inputs.current[0]?.focus()
-    } else {
-      window.location.href = '/dashboard'
+    } finally {
+      setLoading(false)
     }
   }
 
   async function handleResend() {
     setResend(true)
-    const supabase = createClient()
-    await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } })
-    setResend(false)
-    setResent(true)
-    setCountdown(30)
-    setTimeout(() => setResent(false), 3000)
+    try {
+      await sendOtp(email)
+      setResent(true)
+      setCountdown(30)
+      setTimeout(() => setResent(false), 3000)
+    } catch {
+      // silent fail on resend
+    } finally {
+      setResend(false)
+    }
   }
 
-  const code = digits.join('')
+  const code   = digits.join('')
   const filled = code.length === CODE_LENGTH
 
   return (
@@ -93,16 +96,25 @@ function VerifyForm() {
         </div>
 
         <div className="mx-auto mb-6 w-20 h-20 rounded-2xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-4xl">
-          📬
+          {isSms ? '📱' : '📬'}
         </div>
 
         <div className="text-center mb-8">
-          <h1 className="text-xl font-bold text-text mb-2">Check your email</h1>
+          <h1 className="text-xl font-bold text-text mb-2">
+            {isSms ? 'Check your phone' : 'Check your email'}
+          </h1>
           <p className="text-sm text-text-muted leading-relaxed">
-            {email
-              ? <>Enter the 6-digit code sent to <strong className="text-text">{email}</strong>.</>
-              : 'Enter the 6-digit code sent to your email.'}
+            {maskedContact
+              ? <>Enter the 6-digit code sent to <strong className="text-text">{maskedContact}</strong>.</>
+              : email
+                ? <>Enter the 6-digit code sent to <strong className="text-text">{email}</strong>.</>
+                : 'Enter the 6-digit code sent to you.'}
           </p>
+          {isSms && (
+            <p className="text-xs text-text-muted mt-1">
+              Also sent to your email as backup.
+            </p>
+          )}
         </div>
 
         <div className="flex gap-2.5 justify-center mb-6" onPaste={handlePaste}>
@@ -133,7 +145,7 @@ function VerifyForm() {
 
         {resent && (
           <p className="text-center text-xs text-success bg-success/10 rounded-lg px-3 py-2 mb-4">
-            ✓ A new code has been sent
+            A new code has been sent
           </p>
         )}
 
@@ -143,15 +155,19 @@ function VerifyForm() {
           className="w-full py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm flex items-center justify-center gap-2 mb-4"
         >
           {loading ? (
-            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Verifying…</>
+            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Verifying&hellip;</>
           ) : (
-            '→ Verify & Continue'
+            'Verify &amp; Continue'
           )}
         </button>
 
         <p className="text-center text-sm text-text-muted">
           Didn&apos;t receive a code?{' '}
-          {countdown > 0 ? (
+          {channel === '2fa' ? (
+            <Link href="/login" className="text-primary-600 font-medium hover:underline">
+              Sign in again
+            </Link>
+          ) : countdown > 0 ? (
             <span className="text-text-muted">Resend in {countdown}s</span>
           ) : (
             <button
@@ -166,12 +182,12 @@ function VerifyForm() {
 
         <div className="mt-8 pt-6 border-t border-surface-border dark:border-dark-border text-center">
           <Link href="/login" className="text-xs text-text-muted hover:text-text transition-colors">
-            ← Back to sign in
+            &larr; Back to sign in
           </Link>
         </div>
 
         <p className="mt-6 text-center text-xs text-text-muted">
-          🔒 Your session is protected with two-factor authentication.
+          Your session is protected with two-factor authentication.
         </p>
       </div>
     </div>

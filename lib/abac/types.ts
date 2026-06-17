@@ -5,6 +5,7 @@ export type TenantRole =
   | 'security_officer'
   | 'receptionist'
   | 'owner'
+  | string  // dynamic roles from DB
 
 export type Action =
   | 'read' | 'write' | 'delete' | 'export'
@@ -15,6 +16,7 @@ export type Action =
   | 'access.grant' | 'access.revoke'
   | 'document.upload'
   | 'staff.onboard' | 'staff.offboard'
+  | 'kyc.verify'
   | 'settings.modify'
 
 export type ResourceType =
@@ -25,12 +27,17 @@ export type ResourceType =
 export interface Resource {
   type: ResourceType
   id?: string | number
-  ownerId?: string   // for owner-scoped checks
+  ownerId?: string
 }
 
 export interface Subject {
   id: string
   role: TenantRole
   name: string
-  unit_ids?: string[]   // for owner role — units they own
+  email?: string
+  phone?: string
+  unit_ids?: string[]
+  /** Dynamic permissions from DB — "action:resource" strings e.g. "read:unit" */
+  permissions?: string[]
+  twoFactorEnabled?: boolean
 }

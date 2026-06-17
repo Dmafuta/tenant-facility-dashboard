@@ -1,9 +1,20 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import type { KycDocumentType, Person } from '@/lib/types'
+import { createPerson, apiPersonToPerson } from '@/lib/api/people'
+import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 import { cn } from '@/lib/cn'
+
+// ── Unit loader hook ───────────────────────────────────────────────────────
+function useUnits(open: boolean) {
+  const [units, setUnits] = useState<UnitData[]>([])
+  useEffect(() => {
+    if (open) getUnitsFromApi().then(setUnits).catch(() => {})
+  }, [open])
+  return units
+}
 
 // ── Shared primitives ──────────────────────────────────────────────────────
 
@@ -295,10 +306,13 @@ function VehiclesStep({
 export function RegisterTenantModal({ open, onClose, onRegister }: {
   open: boolean; onClose: () => void; onRegister?: (p: Person) => void
 }) {
+  const units = useUnits(open)
   const [step, setStep]           = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]           = useState<Record<string, File>>({})
   const [vehicles, setVehicles]   = useState<VehicleEntry[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [form, setForm]           = useState({
     first_name: '', middle_name: '', last_name: '',
     national_id: '', phone: '', email: '',
@@ -323,29 +337,37 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
   const fullName = [form.first_name, form.middle_name, form.last_name].filter(Boolean).join(' ')
 
   function reset() {
-    setStep(0); setPhoneVerified(false); setDocs({})
+    setStep(0); setPhoneVerified(false); setDocs({}); setSubmitError('')
     setForm({ first_name:'', middle_name:'', last_name:'', national_id:'', phone:'', email:'', unit_id:'', move_in_date:'', monthly_rent:'', employer:'', guarantor_name:'', guarantor_phone:'' })
     setVehicles([])
   }
 
-  function handleSubmit() {
-    const today = new Date().toISOString()
-    const person: Person = {
-      id: `P-${Date.now()}`,
-      type: 'tenant',
-      first_name: form.first_name,
-      last_name: form.last_name,
-      email: form.email,
-      phone: form.phone,
-      national_id: form.national_id || undefined,
-      unit_ids: form.unit_id ? [form.unit_id] : [],
-      status: 'pending_verification',
-      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
-      phone_verified_at: phoneVerified ? today : undefined,
-      joined_date: form.move_in_date || today.slice(0, 10),
+  async function handleSubmit() {
+    setSubmitting(true); setSubmitError('')
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const data = await createPerson({
+        person_type: 'tenant',
+        first_name: form.first_name,
+        middle_name: form.middle_name || null,
+        last_name: form.last_name,
+        email: form.email || null,
+        phone: form.phone || null,
+        national_id: form.national_id || null,
+        unit_ids: form.unit_id ? [form.unit_id] : [],
+        kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+        phone_verified: phoneVerified,
+        joined_date: form.move_in_date || today,
+        is_outsourced: false,
+        notes: form.employer ? `Employer: ${form.employer}` : null,
+      })
+      onRegister?.(apiPersonToPerson(data))
+      onClose(); reset()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to register tenant.')
+    } finally {
+      setSubmitting(false)
     }
-    onRegister?.(person)
-    onClose(); reset()
   }
 
   return (
@@ -387,9 +409,9 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
               <Field label="Unit" required>
                 <select className={INPUT} value={form.unit_id} onChange={set('unit_id')}>
                   <option value="">Select unit…</option>
-                  <option value="u1">Block A — 101</option>
-                  <option value="u2">Block A — 102</option>
-                  <option value="u3">Block B — 201</option>
+                  {units.map(u => (
+                    <option key={u.id} value={u.id}>{u.unit_label}{u.block ? ` — Block ${u.block}` : ''}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="Move-in Date" required>
@@ -474,7 +496,7 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
               <ConfirmRow label="National ID"  value={form.national_id || '—'} />
               <ConfirmRow label="Phone"        value={form.phone + (phoneVerified ? ' ✅ Verified' : ' ⚠ Unverified')} />
               <ConfirmRow label="Email"        value={form.email} />
-              <ConfirmRow label="Unit"         value={form.unit_id || '—'} />
+              <ConfirmRow label="Unit"         value={units.find(u => u.id === form.unit_id)?.unit_label || form.unit_id || '—'} />
               <ConfirmRow label="Move-in"      value={form.move_in_date || '—'} />
               <ConfirmRow label="Documents"    value={`${Object.keys(docs).length} uploaded`} />
               <ConfirmRow label="Vehicles"     value={vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''}` : 'None'} />
@@ -483,9 +505,12 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
               A portal invite will be sent to <strong>{form.email}</strong> once registration is saved.
               {!phoneVerified && <span className="text-warning block mt-1">⚠ Phone unverified — SMS notices will be held until verified.</span>}
             </div>
+            {submitError && <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{submitError}</p>}
             <FooterNav>
-              <Button variant="ghost" onClick={() => setStep(3)}>← Back</Button>
-              <Button onClick={handleSubmit}>✓ Register Tenant</Button>
+              <Button variant="ghost" onClick={() => setStep(3)} disabled={submitting}>← Back</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> Registering…</> : '✓ Register Tenant'}
+              </Button>
             </FooterNav>
           </div>
         )}
@@ -501,10 +526,13 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
 export function RegisterOwnerModal({ open, onClose, onRegister }: {
   open: boolean; onClose: () => void; onRegister?: (p: Person) => void
 }) {
+  const units = useUnits(open)
   const [step, setStep]           = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]           = useState<Record<string, File>>({})
   const [vehicles, setVehicles]   = useState<VehicleEntry[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [form, setForm]           = useState({
     first_name: '', middle_name: '', last_name: '',
     national_id: '', phone: '', email: '',
@@ -524,29 +552,35 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
   const fullName = [form.first_name, form.middle_name, form.last_name].filter(Boolean).join(' ')
 
   function reset() {
-    setStep(0); setPhoneVerified(false); setDocs({})
+    setStep(0); setPhoneVerified(false); setDocs({}); setSubmitError('')
     setForm({ first_name:'', middle_name:'', last_name:'', national_id:'', phone:'', email:'', unit_id:'', share_percent:'100', is_resident:'true' })
     setVehicles([])
   }
 
-  function handleSubmit() {
-    const today = new Date().toISOString()
-    const person: Person = {
-      id: `P-${Date.now()}`,
-      type: form.is_resident === 'true' ? 'resident_owner' : 'non_resident_owner',
-      first_name: form.first_name,
-      last_name: form.last_name,
-      email: form.email,
-      phone: form.phone,
-      national_id: form.national_id || undefined,
-      unit_ids: form.unit_id ? [form.unit_id] : [],
-      status: 'pending_verification',
-      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
-      phone_verified_at: phoneVerified ? today : undefined,
-      joined_date: today.slice(0, 10),
+  async function handleSubmit() {
+    setSubmitting(true); setSubmitError('')
+    try {
+      const data = await createPerson({
+        person_type: form.is_resident === 'true' ? 'resident_owner' : 'non_resident_owner',
+        first_name: form.first_name,
+        middle_name: form.middle_name || null,
+        last_name: form.last_name,
+        email: form.email || null,
+        phone: form.phone || null,
+        national_id: form.national_id || null,
+        unit_ids: form.unit_id ? [form.unit_id] : [],
+        kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+        phone_verified: phoneVerified,
+        joined_date: new Date().toISOString().slice(0, 10),
+        is_outsourced: false,
+      })
+      onRegister?.(apiPersonToPerson(data))
+      onClose(); reset()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to register owner.')
+    } finally {
+      setSubmitting(false)
     }
-    onRegister?.(person)
-    onClose(); reset()
   }
 
   return (
@@ -587,8 +621,9 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
               <Field label="Unit" required>
                 <select className={INPUT} value={form.unit_id} onChange={set('unit_id')}>
                   <option value="">Select unit…</option>
-                  <option value="u1">Block A — 101</option>
-                  <option value="u2">Block A — 102</option>
+                  {units.map(u => (
+                    <option key={u.id} value={u.id}>{u.unit_label}{u.block ? ` — Block ${u.block}` : ''}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="Ownership Share %">
@@ -656,15 +691,18 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
               <ConfirmRow label="National ID" value={form.national_id} />
               <ConfirmRow label="Phone"       value={form.phone + (phoneVerified ? ' ✅' : ' ⚠ Unverified')} />
               <ConfirmRow label="Email"       value={form.email || '—'} />
-              <ConfirmRow label="Unit"        value={form.unit_id || '—'} />
+              <ConfirmRow label="Unit"        value={units.find(u => u.id === form.unit_id)?.unit_label || form.unit_id || '—'} />
               <ConfirmRow label="Share"       value={`${form.share_percent}%`} />
               <ConfirmRow label="Type"        value={form.is_resident === 'true' ? 'Resident Owner' : 'Non-Resident Owner'} />
               <ConfirmRow label="Documents"   value={`${Object.keys(docs).length} uploaded`} />
               <ConfirmRow label="Vehicles"    value={vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''}` : 'None'} />
             </div>
+            {submitError && <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{submitError}</p>}
             <FooterNav>
-              <Button variant="ghost" onClick={() => setStep(3)}>← Back</Button>
-              <Button onClick={handleSubmit}>✓ Register Owner</Button>
+              <Button variant="ghost" onClick={() => setStep(3)} disabled={submitting}>← Back</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> Registering…</> : '✓ Register Owner'}
+              </Button>
             </FooterNav>
           </div>
         )}
@@ -680,10 +718,13 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
 export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
   open: boolean; onClose: () => void; onRegister?: (p: Person) => void
 }) {
+  const units = useUnits(open)
   const [step, setStep]           = useState(0)
   const [repPhoneVerified, setRepPhoneVerified] = useState(false)
   const [docs, setDocs]           = useState<Record<string, File>>({})
   const [vehicles, setVehicles]   = useState<VehicleEntry[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [company, setCompany]     = useState({
     company_name: '', registration_number: '', kra_pin: '', email: '', phone: '',
     unit_id: '', share_percent: '100',
@@ -711,32 +752,37 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
   const repFullName = [rep.first_name, rep.middle_name, rep.last_name].filter(Boolean).join(' ')
 
   function reset() {
-    setStep(0); setRepPhoneVerified(false); setDocs({})
+    setStep(0); setRepPhoneVerified(false); setDocs({}); setSubmitError('')
     setCompany({ company_name:'', registration_number:'', kra_pin:'', email:'', phone:'', unit_id:'', share_percent:'100' })
     setRep({ first_name:'', middle_name:'', last_name:'', national_id:'', phone:'', email:'' })
     setVehicles([])
   }
 
-  function handleSubmit() {
-    const today = new Date().toISOString()
-    // Authorized rep becomes the Person record; company name stored in agency_name for display
-    const person: Person = {
-      id: `P-${Date.now()}`,
-      type: 'non_resident_owner',
-      first_name: rep.first_name,
-      last_name: rep.last_name,
-      email: rep.email || company.email,
-      phone: rep.phone,
-      national_id: rep.national_id || undefined,
-      unit_ids: company.unit_id ? [company.unit_id] : [],
-      status: 'pending_verification',
-      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
-      phone_verified_at: repPhoneVerified ? today : undefined,
-      joined_date: today.slice(0, 10),
-      agency_name: company.company_name,   // surfaces as "Company" in the detail panel
+  async function handleSubmit() {
+    setSubmitting(true); setSubmitError('')
+    try {
+      const data = await createPerson({
+        person_type: 'non_resident_owner',
+        first_name: rep.first_name,
+        middle_name: rep.middle_name || null,
+        last_name: rep.last_name,
+        email: rep.email || company.email || null,
+        phone: rep.phone || null,
+        national_id: rep.national_id || null,
+        unit_ids: company.unit_id ? [company.unit_id] : [],
+        kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+        phone_verified: repPhoneVerified,
+        joined_date: new Date().toISOString().slice(0, 10),
+        is_outsourced: false,
+        agency_name: company.company_name,
+      })
+      onRegister?.(apiPersonToPerson(data))
+      onClose(); reset()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to register corporate owner.')
+    } finally {
+      setSubmitting(false)
     }
-    onRegister?.(person)
-    onClose(); reset()
   }
 
   return (
@@ -775,8 +821,9 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
               <Field label="Unit" required>
                 <select className={INPUT} value={company.unit_id} onChange={setC('unit_id')}>
                   <option value="">Select unit…</option>
-                  <option value="u1">Block A — 101</option>
-                  <option value="u2">Block A — 102</option>
+                  {units.map(u => (
+                    <option key={u.id} value={u.id}>{u.unit_label}{u.block ? ` — Block ${u.block}` : ''}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="Ownership Share %">
@@ -876,16 +923,19 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
               <ConfirmRow label="Company"     value={company.company_name} />
               <ConfirmRow label="KRA PIN"     value={company.kra_pin} />
               <ConfirmRow label="Reg. No."    value={company.registration_number || '—'} />
-              <ConfirmRow label="Unit"        value={company.unit_id || '—'} />
+              <ConfirmRow label="Unit"        value={units.find(u => u.id === company.unit_id)?.unit_label || company.unit_id || '—'} />
               <ConfirmRow label="Share"       value={`${company.share_percent}%`} />
               <ConfirmRow label="Rep"         value={repFullName} />
               <ConfirmRow label="Rep Phone"   value={rep.phone + (repPhoneVerified ? ' ✅' : ' ⚠ Unverified')} />
               <ConfirmRow label="Documents"   value={`${Object.keys(docs).length} uploaded`} />
               <ConfirmRow label="Vehicles"    value={vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''}` : 'None'} />
             </div>
+            {submitError && <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{submitError}</p>}
             <FooterNav>
-              <Button variant="ghost" onClick={() => setStep(4)}>← Back</Button>
-              <Button onClick={handleSubmit}>✓ Register Corporate Owner</Button>
+              <Button variant="ghost" onClick={() => setStep(4)} disabled={submitting}>← Back</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> Registering…</> : '✓ Register Corporate Owner'}
+              </Button>
             </FooterNav>
           </div>
         )}
@@ -908,6 +958,8 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
   const [step, setStep]               = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]               = useState<Record<string, File>>({})
+  const [submitting, setSubmitting]   = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [form, setForm]               = useState({
     first_name: '', middle_name: '', last_name: '',
     national_id: '', phone: '', email: '',
@@ -939,7 +991,7 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
   const fullName    = [form.first_name, form.middle_name, form.last_name].filter(Boolean).join(' ')
 
   function reset() {
-    setStep(0); setPhoneVerified(false); setDocs({})
+    setStep(0); setPhoneVerified(false); setDocs({}); setSubmitError('')
     setForm({
       first_name:'', middle_name:'', last_name:'', national_id:'', phone:'', email:'',
       is_outsourced:'false', agency_name:'', agency_contact:'', agency_clearance_ref:'',
@@ -949,31 +1001,38 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
     })
   }
 
-  function handleSubmit() {
-    const today = new Date().toISOString()
-    const personType = isOutsourced
-      ? 'outsourced'
-      : form.contract_type === 'permanent' ? 'permanent_staff' : 'casual_staff'
-    const person: Person = {
-      id: `P-${Date.now()}`,
-      type: personType,
-      first_name: form.first_name,
-      last_name: form.last_name,
-      email: form.email,
-      phone: form.phone,
-      national_id: form.national_id || undefined,
-      unit_ids: [],
-      status: 'pending_verification',
-      kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
-      phone_verified_at: phoneVerified ? today : undefined,
-      joined_date: form.start_date || today.slice(0, 10),
-      is_outsourced: isOutsourced,
-      agency_name:           isOutsourced ? form.agency_name           : undefined,
-      agency_contact:        isOutsourced ? form.agency_contact        : undefined,
-      agency_clearance_ref:  isOutsourced ? form.agency_clearance_ref  : undefined,
+  async function handleSubmit() {
+    setSubmitting(true); setSubmitError('')
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const personType = isOutsourced
+        ? 'outsourced'
+        : form.contract_type === 'permanent' ? 'permanent_staff' : 'casual_staff'
+      const data = await createPerson({
+        person_type: personType,
+        first_name: form.first_name,
+        middle_name: form.middle_name || null,
+        last_name: form.last_name,
+        email: form.email || null,
+        phone: form.phone || null,
+        national_id: form.national_id || null,
+        unit_ids: [],
+        kyc_status: Object.keys(docs).length > 0 ? 'docs_uploaded' : 'pending_docs',
+        phone_verified: phoneVerified,
+        joined_date: form.start_date || today,
+        is_outsourced: isOutsourced,
+        agency_name:           isOutsourced ? form.agency_name           : null,
+        agency_contact:        isOutsourced ? form.agency_contact        : null,
+        agency_clearance_ref:  isOutsourced ? form.agency_clearance_ref  : null,
+        notes: form.job_title ? `Job title: ${form.job_title}` : null,
+      })
+      onRegister?.(apiPersonToPerson(data))
+      onClose(); reset()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to register staff member.')
+    } finally {
+      setSubmitting(false)
     }
-    onRegister?.(person)
-    onClose(); reset()
   }
 
   return (
@@ -1187,8 +1246,8 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
               </div>
             )}
             <FooterNav>
-              <Button variant="ghost" onClick={() => setStep(isOutsourced ? 2 : 3)}>← Back</Button>
-              <Button onClick={handleSubmit}>✓ Register Staff Member</Button>
+              <Button variant="ghost" onClick={() => setStep(isOutsourced ? 2 : 3)}>Back</Button>
+              <Button onClick={handleSubmit}>Register Staff Member</Button>
             </FooterNav>
           </div>
         )}
