@@ -23,7 +23,7 @@ import type {
   Meter,
 } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -1448,9 +1448,131 @@ function WaterBalanceTab() {
 
 // ── ReadingsTab ────────────────────────────────────────────────────────────
 
-function ReadingsTab({ readings, loading }: { readings: MeterReadingData[]; loading: boolean }) {
+function ReadingsTab({
+  readings, loading, onRefresh,
+}: {
+  readings: MeterReadingData[]
+  loading: boolean
+  onRefresh: () => void
+}) {
+  const [search, setSearch]         = useState('')
+  const [periodFilter, setPeriod]   = useState('')
+  const [utilityFilter, setUtility] = useState('all')
+  const [statusFilter, setStatus]   = useState('all')
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+
+  // Collect unique billing periods for the dropdown
+  const periods = useMemo(() => {
+    const set = new Set<string>()
+    readings.forEach(r => { if (r.billing_period) set.add(r.billing_period) })
+    return Array.from(set).sort().reverse()
+  }, [readings])
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return readings.filter(r => {
+      const matchSearch  = !q || (r.unit_label ?? '').toLowerCase().includes(q) || r.meter_number.toLowerCase().includes(q)
+      const matchPeriod  = !periodFilter || r.billing_period === periodFilter
+      const matchUtility = utilityFilter === 'all' || r.utility_type === utilityFilter
+      const matchStatus  = statusFilter === 'all' || r.status === statusFilter
+      return matchSearch && matchPeriod && matchUtility && matchStatus
+    })
+  }, [readings, search, periodFilter, utilityFilter, statusFilter])
+
+  const pendingCount = filtered.filter(r => r.status === 'pending_bill').length
+
+  async function handleMarkBilled(id: string) {
+    setUpdatingId(id)
+    try { await updateReadingStatus(id, 'billed'); onRefresh() }
+    catch { /* ignore */ }
+    finally { setUpdatingId(null) }
+  }
+
+  async function handleMarkAllBilled() {
+    const pending = filtered.filter(r => r.status === 'pending_bill')
+    for (const r of pending) {
+      await updateReadingStatus(r.id, 'billed').catch(() => {})
+    }
+    onRefresh()
+  }
+
+  function exportCsv() {
+    const headers = ['Unit', 'Meter No', 'Utility', 'Period', 'Prev', 'Current', 'Consumed', 'Unit Cost', 'Amount Due', 'Mgmt Fee', 'Source', 'Read By', 'Date', 'Status']
+    const rows = filtered.map(r => [
+      r.unit_label ?? '',
+      r.meter_number,
+      r.utility_type,
+      r.billing_period ?? r.reading_date ?? '',
+      r.previous_value,
+      r.current_value,
+      r.units_consumed,
+      r.unit_cost ?? '',
+      r.amount_due,
+      r.management_fee ?? '',
+      r.source ?? '',
+      r.read_by ?? '',
+      r.reading_date ?? '',
+      r.status,
+    ])
+    const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url
+    a.download = `meter-readings${periodFilter ? `-${periodFilter}` : ''}.csv`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   return (
-    <div>
+    <div className="space-y-4">
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search unit, meter no…" containerClassName="w-56" />
+        <select
+          value={periodFilter}
+          onChange={e => setPeriod(e.target.value)}
+          className="rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <option value="">All Periods</option>
+          {periods.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <Select
+          value={utilityFilter}
+          onChange={setUtility}
+          options={[
+            { value: 'all',         label: 'All Utilities' },
+            { value: 'water',       label: '💧 Water' },
+            { value: 'electricity', label: '⚡ Electricity' },
+            { value: 'sewerage',    label: '🚰 Sewerage' },
+            { value: 'gas_piped',   label: '🔥 Gas (Piped)' },
+            { value: 'internet',    label: '📶 Internet' },
+          ]}
+          className="w-40"
+        />
+        <Select
+          value={statusFilter}
+          onChange={setStatus}
+          options={[
+            { value: 'all',          label: 'All Statuses' },
+            { value: 'pending_bill', label: 'Pending Bill' },
+            { value: 'billed',       label: 'Billed' },
+          ]}
+          className="w-36"
+        />
+        <div className="ml-auto flex items-center gap-2">
+          {pendingCount > 0 && (
+            <CanDo action="write" resource={{ type: 'unit' }}>
+              <Button size="sm" variant="outline" onClick={handleMarkAllBilled}>
+                Mark All Billed ({pendingCount})
+              </Button>
+            </CanDo>
+          )}
+          <Button size="sm" variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
+            ⬇ Export CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1464,10 +1586,10 @@ function ReadingsTab({ readings, loading }: { readings: MeterReadingData[]; load
             <tbody>
               {loading ? (
                 <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
-              ) : readings.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">No readings recorded yet.</td></tr>
-              ) : readings.map((r, i) => (
-                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === readings.length - 1 && 'border-b-0')}>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">No readings match filters.</td></tr>
+              ) : filtered.map((r, i) => (
+                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === filtered.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-text">{r.unit_label ?? '—'}</p>
                     <p className="text-xs text-text-muted font-mono">{r.meter_number}</p>
@@ -1487,9 +1609,22 @@ function ReadingsTab({ readings, loading }: { readings: MeterReadingData[]; load
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium', r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
-                      {r.status === 'billed' ? 'Billed' : r.status === 'pending_bill' ? 'Pending Bill' : r.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={cn('text-xs px-2 py-0.5 rounded font-medium', r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
+                        {r.status === 'billed' ? 'Billed' : r.status === 'pending_bill' ? 'Pending Bill' : r.status}
+                      </span>
+                      {r.status === 'pending_bill' && (
+                        <CanDo action="write" resource={{ type: 'unit' }}>
+                          <button
+                            onClick={() => handleMarkBilled(r.id)}
+                            disabled={updatingId === r.id}
+                            className="text-[11px] font-medium text-primary-600 hover:underline whitespace-nowrap disabled:opacity-50"
+                          >
+                            {updatingId === r.id ? '…' : 'Mark Billed'}
+                          </button>
+                        </CanDo>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1851,12 +1986,13 @@ export function UtilitiesPageClient() {
 
   useEffect(() => { fetchMeters() }, [fetchMeters])
 
-  useEffect(() => {
-    getMeterReadings()
-      .then(setReadings)
-      .catch(() => {})
-      .finally(() => setLoadingReadings(false))
+  const fetchReadings = useCallback(async () => {
+    try { const data = await getMeterReadings(); setReadings(data) }
+    catch { /* ignore */ }
+    finally { setLoadingReadings(false) }
   }, [])
+
+  useEffect(() => { fetchReadings() }, [fetchReadings])
 
   const fetchWater = useCallback(async () => {
     try {
@@ -1954,7 +2090,7 @@ export function UtilitiesPageClient() {
           <WaterBalanceTab />
         </TabsContent>
         <TabsContent value="readings" className="pt-5">
-          <ReadingsTab readings={readings} loading={loadingReadings} />
+          <ReadingsTab readings={readings} loading={loadingReadings} onRefresh={fetchReadings} />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
           <DisconnectionTab />
@@ -1965,7 +2101,7 @@ export function UtilitiesPageClient() {
         meter={readTarget}
         open={showRead}
         onClose={() => setShowRead(false)}
-        onSaved={() => { fetchMeters(); getMeterReadings().then(setReadings).catch(() => {}) }}
+        onSaved={() => { fetchMeters(); fetchReadings() }}
       />
       <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} />
       <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} />

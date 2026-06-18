@@ -90,3 +90,10 @@ export async function createMeterReading(meterId: string, payload: Record<string
     body: JSON.stringify(payload),
   })
 }
+
+export async function updateReadingStatus(readingId: string, status: string): Promise<MeterReadingData> {
+  return apiFetch<MeterReadingData>(`/meter-readings/${readingId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
