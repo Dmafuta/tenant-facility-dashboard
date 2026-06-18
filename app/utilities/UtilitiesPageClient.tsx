@@ -25,8 +25,14 @@ import type {
 import { cn } from '@/lib/cn'
 import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData } from '@/lib/api/meters'
-import { getWaterSuppliers, getReserveTanks, getWaterZones } from '@/lib/api/water'
+import {
+  getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
+  getReserveTanks, createReserveTank, updateReserveTank, updateTankLevel,
+  getWaterZones, createWaterZone, updateWaterZone, deleteWaterZone,
+} from '@/lib/api/water'
 import type { WaterSupplierData, ReserveTankData, WaterZoneData } from '@/lib/api/water'
+import { getUnitsFromApi } from '@/lib/api/units'
+import type { UnitData } from '@/lib/api/units'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -562,23 +568,461 @@ function TankLevelBar({ current, capacity }: { current: number; capacity: number
   )
 }
 
+// ── Water Supply Chain Modals ──────────────────────────────────────────────
+
+const INPUT = 'w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500'
+const LABEL = 'block text-xs font-medium text-text-muted mb-1'
+
+const SOURCE_TYPES = ['municipal', 'borehole', 'tanker', 'rainwater', 'other']
+
+function SupplierModal({
+  open, onClose, onSaved, existing, meters,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  existing: WaterSupplierData | null
+  meters: MeterData[]
+}) {
+  const [name, setName]       = useState('')
+  const [sourceType, setSrc]  = useState('municipal')
+  const [contactName, setCN]  = useState('')
+  const [contactPhone, setCP] = useState('')
+  const [rate, setRate]       = useState('')
+  const [meterId, setMId]     = useState('')
+  const [notes, setNotes]     = useState('')
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setName(existing?.name ?? '')
+      setSrc(existing?.sourceType ?? 'municipal')
+      setCN(existing?.contactName ?? '')
+      setCP(existing?.contactPhone ?? '')
+      setRate(existing?.contractedRatePerM3?.toString() ?? '')
+      setMId(existing?.meterIds ?? '')
+      setNotes(existing?.notes ?? '')
+      setError(null)
+    }
+  }, [open, existing])
+
+  const supplierMeters = meters.filter(m => !m.meter_role || m.meter_role === 'supplier')
+
+  async function handleSave() {
+    if (!name.trim()) { setError('Name is required.'); return }
+    setSaving(true); setError(null)
+    try {
+      const payload = {
+        name: name.trim(), sourceType, contactName: contactName || null,
+        contactPhone: contactPhone || null, contractedRatePerM3: rate ? Number(rate) : null,
+        currency: 'KES', active: existing?.active ?? true,
+        meterIds: meterId || null, notes: notes || null,
+      }
+      if (existing) await updateWaterSupplier(existing.id, payload)
+      else await createWaterSupplier(payload)
+      onSaved(); onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={existing ? 'Edit Supplier' : 'Add Water Supplier'} size="md">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className={LABEL}>Supplier Name *</label>
+            <input className={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Nairobi Water" />
+          </div>
+          <div>
+            <label className={LABEL}>Source Type</label>
+            <select className={INPUT} value={sourceType} onChange={e => setSrc(e.target.value)}>
+              {SOURCE_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Rate (KES/m³)</label>
+            <input type="number" className={INPUT} value={rate} onChange={e => setRate(e.target.value)} placeholder="e.g. 85" />
+          </div>
+          <div>
+            <label className={LABEL}>Contact Name</label>
+            <input className={INPUT} value={contactName} onChange={e => setCN(e.target.value)} placeholder="Optional" />
+          </div>
+          <div>
+            <label className={LABEL}>Contact Phone</label>
+            <input className={INPUT} value={contactPhone} onChange={e => setCP(e.target.value)} placeholder="Optional" />
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Inflow Meter</label>
+            <select className={INPUT} value={meterId} onChange={e => setMId(e.target.value)}>
+              <option value="">— None —</option>
+              {supplierMeters.map(m => (
+                <option key={m.id} value={m.id}>{m.meter_number}{m.unit_label ? ` (${m.unit_label})` : ''}</option>
+              ))}
+              {/* Also show any meter if none are tagged as supplier role yet */}
+              {supplierMeters.length === 0 && meters.map(m => (
+                <option key={m.id} value={m.id}>{m.meter_number}{m.unit_label ? ` (${m.unit_label})` : ''}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-text-muted mt-1">Select meter with role "Supplier" — set meter role in the Meters tab first.</p>
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Notes</label>
+            <textarea className={INPUT} rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
+          </div>
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Supplier'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function TankModal({
+  open, onClose, onSaved, existing, meters,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  existing: ReserveTankData | null
+  meters: MeterData[]
+}) {
+  const [name, setName]           = useState('')
+  const [capacity, setCapacity]   = useState('')
+  const [location, setLocation]   = useState('')
+  const [compartments, setComp]   = useState('1')
+  const [threshold, setThresh]    = useState('20')
+  const [inflowId, setInflowId]   = useState('')
+  const [outflowId, setOutflowId] = useState('')
+  const [notes, setNotes]         = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setName(existing?.name ?? '')
+      setCapacity(existing?.capacityM3?.toString() ?? '')
+      setLocation(existing?.location ?? '')
+      setComp(existing?.compartments?.toString() ?? '1')
+      setThresh(existing?.lowLevelThresholdPct?.toString() ?? '20')
+      // Parse first ID from comma-sep for single-select simplicity
+      setInflowId((existing?.inflowMeterIds ?? '').split(',')[0]?.trim() ?? '')
+      setOutflowId((existing?.outflowMeterIds ?? '').split(',')[0]?.trim() ?? '')
+      setNotes(existing?.notes ?? '')
+      setError(null)
+    }
+  }, [open, existing])
+
+  const inflowMeters  = meters.filter(m => m.meter_role === 'tank_inflow')
+  const outflowMeters = meters.filter(m => m.meter_role === 'tank_outflow')
+  // Fallback: show all meters if none are role-tagged
+  const inflowOpts  = inflowMeters.length > 0 ? inflowMeters : meters
+  const outflowOpts = outflowMeters.length > 0 ? outflowMeters : meters
+
+  async function handleSave() {
+    if (!name.trim()) { setError('Name is required.'); return }
+    setSaving(true); setError(null)
+    try {
+      const payload = {
+        name: name.trim(), capacityM3: capacity ? Number(capacity) : null,
+        currentLevelM3: existing?.currentLevelM3 ?? 0,
+        location: location || null, compartments: Number(compartments) || 1,
+        inflowMeterIds: inflowId || null, outflowMeterIds: outflowId || null,
+        lowLevelThresholdPct: Number(threshold) || 20, notes: notes || null,
+      }
+      if (existing) await updateReserveTank(existing.id, payload)
+      else await createReserveTank(payload)
+      onSaved(); onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={existing ? 'Edit Reserve Tank' : 'Add Reserve Tank'} size="md">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className={LABEL}>Tank Name *</label>
+            <input className={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Main Rooftop Tank" />
+          </div>
+          <div>
+            <label className={LABEL}>Capacity (m³)</label>
+            <input type="number" className={INPUT} value={capacity} onChange={e => setCapacity(e.target.value)} placeholder="e.g. 50" />
+          </div>
+          <div>
+            <label className={LABEL}>Location</label>
+            <input className={INPUT} value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Rooftop Block A" />
+          </div>
+          <div>
+            <label className={LABEL}>Compartments</label>
+            <input type="number" className={INPUT} value={compartments} onChange={e => setComp(e.target.value)} min="1" />
+          </div>
+          <div>
+            <label className={LABEL}>Low Level Alert (%)</label>
+            <input type="number" className={INPUT} value={threshold} onChange={e => setThresh(e.target.value)} min="1" max="99" />
+          </div>
+          <div>
+            <label className={LABEL}>Inflow Meter</label>
+            <select className={INPUT} value={inflowId} onChange={e => setInflowId(e.target.value)}>
+              <option value="">— None —</option>
+              {inflowOpts.map(m => <option key={m.id} value={m.id}>{m.meter_number}{m.unit_label ? ` (${m.unit_label})` : ''}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Outflow Meter</label>
+            <select className={INPUT} value={outflowId} onChange={e => setOutflowId(e.target.value)}>
+              <option value="">— None —</option>
+              {outflowOpts.map(m => <option key={m.id} value={m.id}>{m.meter_number}{m.unit_label ? ` (${m.unit_label})` : ''}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Notes</label>
+            <textarea className={INPUT} rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
+          </div>
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Tank'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function TankLevelModal({
+  open, onClose, onSaved, tank,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  tank: ReserveTankData | null
+}) {
+  const [level, setLevel]   = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open && tank) { setLevel(tank.currentLevelM3?.toString() ?? '0'); setError(null) }
+  }, [open, tank])
+
+  if (!tank) return null
+
+  async function handleSave() {
+    const val = parseFloat(level)
+    if (isNaN(val) || val < 0) { setError('Enter a valid level.'); return }
+    if (tank.capacityM3 != null && val > Number(tank.capacityM3)) { setError(`Cannot exceed capacity of ${tank.capacityM3} m³.`); return }
+    setSaving(true); setError(null)
+    try {
+      await updateTankLevel(tank.id, val)
+      onSaved(); onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to update.')
+    } finally { setSaving(false) }
+  }
+
+  const pct = tank.capacityM3 && Number(tank.capacityM3) > 0
+    ? Math.min(100, Math.round((parseFloat(level || '0') / Number(tank.capacityM3)) * 100))
+    : null
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Update Tank Level — ${tank.name}`} size="sm">
+      <div className="space-y-4">
+        <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card text-sm flex gap-6">
+          <div>
+            <p className="text-xs text-text-muted">Capacity</p>
+            <p className="font-medium text-text">{tank.capacityM3 != null ? `${tank.capacityM3} m³` : '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted">Current (recorded)</p>
+            <p className="font-medium text-text">{tank.currentLevelM3} m³</p>
+          </div>
+        </div>
+        <div>
+          <label className={LABEL}>New Current Level (m³)</label>
+          <input type="number" className={INPUT} value={level} onChange={e => setLevel(e.target.value)}
+            placeholder="e.g. 32.5" min="0" step="0.001" />
+          {pct !== null && (
+            <p className="text-xs text-text-muted mt-1">
+              That's <span className={cn('font-semibold', pct < 25 ? 'text-danger' : pct < 50 ? 'text-warning' : 'text-success')}>{pct}%</span> of capacity.
+            </p>
+          )}
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Update Level'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function ZoneModal({
+  open, onClose, onSaved, existing, meters, tanks,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  existing: WaterZoneData | null
+  meters: MeterData[]
+  tanks: ReserveTankData[]
+}) {
+  const [name, setName]       = useState('')
+  const [description, setDesc]= useState('')
+  const [tankId, setTankId]   = useState('')
+  const [distMeterId, setDist]= useState('')
+  const [selectedUnitIds, setUnits] = useState<string[]>([])
+  const [unitSearch, setUSearch]    = useState('')
+  const [allUnits, setAllUnits]     = useState<UnitData[]>([])
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setName(existing?.name ?? '')
+      setDesc(existing?.description ?? '')
+      setTankId(existing?.tankId ?? '')
+      setDist(existing?.distributionMeterId ?? '')
+      setUnits((existing?.unitIds ?? '').split(',').filter(Boolean))
+      setUSearch('')
+      setError(null)
+      getUnitsFromApi().then(setAllUnits).catch(() => {})
+    }
+  }, [open, existing])
+
+  const distMeters = meters.filter(m => m.meter_role === 'distribution')
+  const distOpts   = distMeters.length > 0 ? distMeters : meters
+
+  const filteredUnits = useMemo(() => {
+    const q = unitSearch.toLowerCase()
+    return q ? allUnits.filter(u => u.unit_label.toLowerCase().includes(q)) : allUnits
+  }, [allUnits, unitSearch])
+
+  function toggleUnit(id: string) {
+    setUnits(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  async function handleSave() {
+    if (!name.trim()) { setError('Name is required.'); return }
+    setSaving(true); setError(null)
+    try {
+      const payload = {
+        name: name.trim(), description: description || null,
+        tankId: tankId || null, distributionMeterId: distMeterId || null,
+        unitIds: selectedUnitIds.join(',') || null,
+      }
+      if (existing) await updateWaterZone(existing.id, payload)
+      else await createWaterZone(payload)
+      onSaved(); onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={existing ? 'Edit Zone' : 'Add Distribution Zone'} size="md">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className={LABEL}>Zone Name *</label>
+            <input className={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Block A — Upper Floors" />
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Description</label>
+            <input className={INPUT} value={description} onChange={e => setDesc(e.target.value)} placeholder="Optional description" />
+          </div>
+          <div>
+            <label className={LABEL}>Reserve Tank</label>
+            <select className={INPUT} value={tankId} onChange={e => setTankId(e.target.value)}>
+              <option value="">— None —</option>
+              {tanks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Distribution Meter</label>
+            <select className={INPUT} value={distMeterId} onChange={e => setDist(e.target.value)}>
+              <option value="">— None —</option>
+              {distOpts.map(m => <option key={m.id} value={m.id}>{m.meter_number}{m.unit_label ? ` (${m.unit_label})` : ''}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Unit assignment */}
+        <div>
+          <label className={LABEL}>Units in this Zone ({selectedUnitIds.length} selected)</label>
+          <input className={cn(INPUT, 'mb-2')} placeholder="Search units…" value={unitSearch} onChange={e => setUSearch(e.target.value)} />
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-surface-border dark:border-dark-border divide-y divide-surface-border dark:divide-dark-border">
+            {filteredUnits.length === 0 ? (
+              <p className="px-3 py-4 text-xs text-text-muted text-center">No units found.</p>
+            ) : filteredUnits.map(u => (
+              <label key={u.id} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-muted dark:hover:bg-dark-hover cursor-pointer">
+                <input type="checkbox" checked={selectedUnitIds.includes(u.id)}
+                  onChange={() => toggleUnit(u.id)}
+                  className="rounded border-surface-border text-primary-600 focus:ring-primary-500" />
+                <span className="text-sm text-text">{u.unit_label}</span>
+                <span className="text-xs text-text-muted ml-auto capitalize">{u.unit_type?.replace(/_/g, ' ')}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Zone'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── WaterSupplyTab ─────────────────────────────────────────────────────────
+
 function WaterSupplyTab({
-  suppliers, tanks, zones, meters, loading,
+  suppliers, tanks, zones, meters, loading, onRefresh,
 }: {
   suppliers: WaterSupplierData[]
   tanks: ReserveTankData[]
   zones: WaterZoneData[]
   meters: MeterData[]
   loading: boolean
+  onRefresh: () => void
 }) {
   const tank = tanks[0] ?? null
+
+  // Modal state
+  const [showSupplierModal, setShowSupplierModal] = useState(false)
+  const [editSupplier, setEditSupplier]           = useState<WaterSupplierData | null>(null)
+  const [showTankModal, setShowTankModal]         = useState(false)
+  const [editTank, setEditTank]                   = useState<ReserveTankData | null>(null)
+  const [showLevelModal, setShowLevelModal]       = useState(false)
+  const [levelTank, setLevelTank]                 = useState<ReserveTankData | null>(null)
+  const [showZoneModal, setShowZoneModal]         = useState(false)
+  const [editZone, setEditZone]                   = useState<WaterZoneData | null>(null)
+  const [togglingId, setTogglingId]               = useState<string | null>(null)
+  const [deletingZoneId, setDeletingZoneId]       = useState<string | null>(null)
+  const [confirmDeleteZone, setConfirmDeleteZone] = useState<WaterZoneData | null>(null)
 
   function findMeterById(id: string | null | undefined): MeterData | undefined {
     if (!id) return undefined
     return meters.find(m => m.id === id)
   }
 
-  function supplierMeters(s: WaterSupplierData): MeterData | undefined {
+  function supplierMeter(s: WaterSupplierData): MeterData | undefined {
     const ids = (s.meterIds ?? '').split(',').map(x => x.trim()).filter(Boolean)
     return meters.find(m => ids.includes(m.id))
   }
@@ -586,6 +1030,20 @@ function WaterSupplyTab({
   const tankOutMeter = tank
     ? meters.find(m => (tank.outflowMeterIds ?? '').split(',').map(x => x.trim()).includes(m.id))
     : undefined
+
+  async function handleToggleSupplier(s: WaterSupplierData) {
+    setTogglingId(s.id)
+    try { await toggleWaterSupplier(s.id); onRefresh() }
+    catch { /* ignore */ }
+    finally { setTogglingId(null) }
+  }
+
+  async function handleDeleteZone(z: WaterZoneData) {
+    setDeletingZoneId(z.id)
+    try { await deleteWaterZone(z.id); onRefresh() }
+    catch { /* ignore */ }
+    finally { setDeletingZoneId(null); setConfirmDeleteZone(null) }
+  }
 
   if (loading) return <p className="py-12 text-center text-text-muted text-sm">Loading water supply chain…</p>
 
@@ -606,18 +1064,25 @@ function WaterSupplyTab({
         </div>
       </div>
 
-      {/* Suppliers row */}
+      {/* ── Suppliers ── */}
       <div>
-        <h3 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
-          <span className="w-5 h-5 rounded bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
-          Water Suppliers
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-text flex items-center gap-2">
+            <span className="w-5 h-5 rounded bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
+            Water Suppliers
+          </h3>
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="outline" onClick={() => { setEditSupplier(null); setShowSupplierModal(true) }}>
+              + Add Supplier
+            </Button>
+          </CanDo>
+        </div>
         {suppliers.length === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">No suppliers configured yet.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {suppliers.map(s => {
-              const meter = supplierMeters(s)
+              const meter = supplierMeter(s)
               return (
                 <Card key={s.id} className="p-4">
                   <div className="flex items-start justify-between mb-3">
@@ -647,7 +1112,21 @@ function WaterSupplyTab({
                       <p className="font-medium text-text">{meter?.last_reading_date ?? '—'}</p>
                     </div>
                   </div>
-                  {s.notes && <p className="text-xs text-text-muted italic">{s.notes}</p>}
+                  {s.notes && <p className="text-xs text-text-muted italic mb-3">{s.notes}</p>}
+                  <CanDo action="write" resource={{ type: 'unit' }}>
+                    <div className="flex items-center gap-2 pt-2 border-t border-surface-border dark:border-dark-border">
+                      <button onClick={() => { setEditSupplier(s); setShowSupplierModal(true) }}
+                        className="text-xs font-medium text-primary-600 hover:underline">Edit</button>
+                      <span className="text-text-muted">·</span>
+                      <button
+                        onClick={() => handleToggleSupplier(s)}
+                        disabled={togglingId === s.id}
+                        className={cn('text-xs font-medium hover:underline', s.active ? 'text-danger' : 'text-success')}
+                      >
+                        {togglingId === s.id ? '…' : s.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </CanDo>
                 </Card>
               )
             })}
@@ -655,12 +1134,19 @@ function WaterSupplyTab({
         )}
       </div>
 
-      {/* Reserve Tank */}
+      {/* ── Reserve Tank ── */}
       <div>
-        <h3 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
-          <span className="w-5 h-5 rounded bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">2</span>
-          Reserve Tank
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-text flex items-center gap-2">
+            <span className="w-5 h-5 rounded bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">2</span>
+            Reserve Tank
+          </h3>
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="outline" onClick={() => { setEditTank(null); setShowTankModal(true) }}>
+              + Add Tank
+            </Button>
+          </CanDo>
+        </div>
         {!tank ? (
           <p className="text-sm text-text-muted py-4 text-center">No reserve tanks configured yet.</p>
         ) : (
@@ -687,16 +1173,32 @@ function WaterSupplyTab({
               </div>
             )}
             {tank.notes && <p className="mt-3 text-xs text-text-muted italic">{tank.notes}</p>}
+            <CanDo action="write" resource={{ type: 'unit' }}>
+              <div className="flex items-center gap-2 mt-4 pt-3 border-t border-surface-border dark:border-dark-border">
+                <button onClick={() => { setEditTank(tank); setShowTankModal(true) }}
+                  className="text-xs font-medium text-primary-600 hover:underline">Edit</button>
+                <span className="text-text-muted">·</span>
+                <button onClick={() => { setLevelTank(tank); setShowLevelModal(true) }}
+                  className="text-xs font-medium text-teal-600 hover:underline">Update Level</button>
+              </div>
+            </CanDo>
           </Card>
         )}
       </div>
 
-      {/* Distribution Zones */}
+      {/* ── Distribution Zones ── */}
       <div>
-        <h3 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
-          <span className="w-5 h-5 rounded bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold">3</span>
-          Distribution Zones
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-text flex items-center gap-2">
+            <span className="w-5 h-5 rounded bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold">3</span>
+            Distribution Zones
+          </h3>
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="outline" onClick={() => { setEditZone(null); setShowZoneModal(true) }}>
+              + Add Zone
+            </Button>
+          </CanDo>
+        </div>
         {zones.length === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">No distribution zones configured yet.</p>
         ) : (
@@ -713,7 +1215,7 @@ function WaterSupplyTab({
                     </div>
                     <span className="text-xs text-text-muted">{unitCount} unit{unitCount !== 1 ? 's' : ''}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                     <div>
                       <p className="text-xs text-text-muted">Zone Meter</p>
                       <p className="font-medium text-text font-mono text-xs">{distMeter?.meter_number ?? '—'}</p>
@@ -723,12 +1225,66 @@ function WaterSupplyTab({
                       <p className="font-medium text-text">{distMeter?.last_reading != null ? `${Number(distMeter.last_reading).toLocaleString()} m³` : '—'}</p>
                     </div>
                   </div>
+                  <CanDo action="write" resource={{ type: 'unit' }}>
+                    <div className="flex items-center gap-2 pt-2 border-t border-surface-border dark:border-dark-border">
+                      <button onClick={() => { setEditZone(z); setShowZoneModal(true) }}
+                        className="text-xs font-medium text-primary-600 hover:underline">Edit</button>
+                      <span className="text-text-muted">·</span>
+                      <button onClick={() => setConfirmDeleteZone(z)}
+                        className="text-xs font-medium text-danger hover:underline">Delete</button>
+                    </div>
+                  </CanDo>
                 </Card>
               )
             })}
           </div>
         )}
       </div>
+
+      {/* ── Modals ── */}
+      <SupplierModal
+        open={showSupplierModal}
+        onClose={() => setShowSupplierModal(false)}
+        onSaved={() => { setShowSupplierModal(false); onRefresh() }}
+        existing={editSupplier}
+        meters={meters}
+      />
+      <TankModal
+        open={showTankModal}
+        onClose={() => setShowTankModal(false)}
+        onSaved={() => { setShowTankModal(false); onRefresh() }}
+        existing={editTank}
+        meters={meters}
+      />
+      <TankLevelModal
+        open={showLevelModal}
+        onClose={() => setShowLevelModal(false)}
+        onSaved={() => { setShowLevelModal(false); onRefresh() }}
+        tank={levelTank}
+      />
+      <ZoneModal
+        open={showZoneModal}
+        onClose={() => setShowZoneModal(false)}
+        onSaved={() => { setShowZoneModal(false); onRefresh() }}
+        existing={editZone}
+        meters={meters}
+        tanks={tanks}
+      />
+
+      {/* Delete Zone confirmation */}
+      {confirmDeleteZone && (
+        <Modal open={!!confirmDeleteZone} onClose={() => setConfirmDeleteZone(null)} title="Delete Zone" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-text">Are you sure you want to delete <strong>{confirmDeleteZone.name}</strong>? This cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteZone(null)} disabled={!!deletingZoneId}>Cancel</Button>
+              <Button variant="danger" size="sm" onClick={() => handleDeleteZone(confirmDeleteZone)} disabled={!!deletingZoneId}>
+                {deletingZoneId ? 'Deleting…' : 'Delete Zone'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -1302,12 +1858,15 @@ export function UtilitiesPageClient() {
       .finally(() => setLoadingReadings(false))
   }, [])
 
-  useEffect(() => {
-    Promise.all([getWaterSuppliers(), getReserveTanks(), getWaterZones()])
-      .then(([s, t, z]) => { setSuppliers(s); setTanks(t); setZones(z) })
-      .catch(() => {})
-      .finally(() => setLoadingWater(false))
+  const fetchWater = useCallback(async () => {
+    try {
+      const [s, t, z] = await Promise.all([getWaterSuppliers(), getReserveTanks(), getWaterZones()])
+      setSuppliers(s); setTanks(t); setZones(z)
+    } catch { /* ignore */ }
+    finally { setLoadingWater(false) }
   }, [])
+
+  useEffect(() => { fetchWater() }, [fetchWater])
 
   const consumerMeters = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
   const latestBalance  = WATER_BALANCE_PERIODS[WATER_BALANCE_PERIODS.length - 1]
@@ -1388,6 +1947,7 @@ export function UtilitiesPageClient() {
             zones={zones}
             meters={meters}
             loading={loadingWater}
+            onRefresh={fetchWater}
           />
         </TabsContent>
         <TabsContent value="balance" className="pt-5">
