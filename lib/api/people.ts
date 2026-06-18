@@ -52,6 +52,10 @@ export async function updatePersonStatus(personId: string, status: string): Prom
   return apiFetch<PersonData>(`/people/${personId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
 }
 
+export async function updatePersonType(personId: string, personType: string): Promise<PersonData> {
+  return apiFetch<PersonData>(`/people/${personId}/type`, { method: 'PATCH', body: JSON.stringify({ personType }) })
+}
+
 /** Map a backend PersonData to the frontend Person shape */
 export function apiPersonToPerson(p: PersonData): Person {
   const typeMap: Record<string, PersonType> = {

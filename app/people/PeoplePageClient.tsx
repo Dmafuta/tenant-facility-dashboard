@@ -26,6 +26,7 @@ import { getEmergencyContacts, createEmergencyContact, updateEmergencyContact, d
 import {
   updatePerson as apiUpdatePerson,
   updatePersonStatus as apiUpdatePersonStatus,
+  updatePersonType as apiUpdatePersonType,
   removeUnitFromPerson,
   apiPersonToPerson,
   type PersonData,
@@ -1327,10 +1328,11 @@ function EditPersonModal({ person, onClose, onSaved }: {
         first_name:  form.first_name.trim(),
         last_name:   form.last_name.trim(),
         email:       form.email || null,
-        phone:       form.phone || null,
         national_id: form.national_id || null,
         notes:       form.notes || null,
         is_outsourced: person.is_outsourced ?? false,
+        // Only include phone if not verified — verified phone is immutable
+        ...(person.phone_verified_at ? {} : { phone: form.phone || null }),
       }
       const data = await apiUpdatePerson(person.id, payload)
       onSaved(apiPersonToPerson(data))
@@ -1366,8 +1368,16 @@ function EditPersonModal({ person, onClose, onSaved }: {
           <FormField label="Email">
             <input type="email" value={form.email} onChange={field('email')} className={INPUT_CLS} placeholder="name@example.com" />
           </FormField>
-          <FormField label="Phone">
-            <input type="tel" value={form.phone} onChange={field('phone')} className={INPUT_CLS} placeholder="+254 700 000 000" />
+          <FormField label={person.phone_verified_at ? 'Phone (Verified — locked)' : 'Phone'}>
+            <input
+              type="tel"
+              value={form.phone}
+              onChange={field('phone')}
+              readOnly={!!person.phone_verified_at}
+              className={INPUT_CLS + (person.phone_verified_at ? ' opacity-60 cursor-not-allowed bg-surface-muted dark:bg-dark-hover' : '')}
+              placeholder="+254 700 000 000"
+              title={person.phone_verified_at ? 'Phone number is verified and cannot be changed here' : undefined}
+            />
           </FormField>
           <FormField label="National ID">
             <input value={form.national_id} onChange={field('national_id')} className={INPUT_CLS} />
@@ -1402,6 +1412,10 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
   const [showEdit, setShowEdit]             = useState(false)
   const [statusWorking, setStatusWorking]   = useState(false)
   const [statusError, setStatusError]       = useState('')
+  const [showChangeType, setShowChangeType] = useState(false)
+  const [newType, setNewType]               = useState(person.type as string)
+  const [typeWorking, setTypeWorking]       = useState(false)
+  const [typeError, setTypeError]           = useState('')
   const [removingUnit, setRemovingUnit]     = useState<string | null>(null)
   const [activeLeases, setActiveLeases]     = useState<LeaseData[]>([])
 
@@ -1443,6 +1457,20 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
     }
   }
 
+  async function handleChangeType() {
+    if (newType === person.type) { setShowChangeType(false); return }
+    setTypeWorking(true); setTypeError('')
+    try {
+      const data = await apiUpdatePersonType(person.id, newType)
+      onUpdate(apiPersonToPerson(data))
+      setShowChangeType(false)
+    } catch (e) {
+      setTypeError(e instanceof Error ? e.message : 'Failed to update type')
+    } finally {
+      setTypeWorking(false)
+    }
+  }
+
   async function handleRemoveUnit(unitId: string) {
     setRemovingUnit(unitId)
     try {
@@ -1468,8 +1496,24 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
       {/* Header */}
       <div className="p-6 border-b border-surface-border dark:border-dark-border">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-2xl font-bold text-primary-700 dark:text-primary-300 flex-shrink-0">
-            {initials}
+          <div className="relative w-16 h-16 flex-shrink-0">
+            <div className="w-16 h-16 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-2xl font-bold text-primary-700 dark:text-primary-300">
+              {initials}
+            </div>
+            {person.kyc_status === 'approved' ? (
+              <span title="KYC Verified" className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success flex items-center justify-center ring-2 ring-surface dark:ring-dark-card">
+                <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3">
+                  <path d="M2 6l2.5 2.5L10 3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </span>
+            ) : person.status === 'pending_verification' || person.kyc_status === 'pending_docs' || person.kyc_status === 'docs_uploaded' ? (
+              <span title="Pending Verification" className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-warning flex items-center justify-center ring-2 ring-surface dark:ring-dark-card">
+                <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3">
+                  <circle cx="6" cy="6" r="5" stroke="white" strokeWidth="1.2"/>
+                  <path d="M6 3.5V6l1.5 1.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </span>
+            ) : null}
           </div>
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-text">{person.first_name} {person.last_name}</h2>
@@ -1604,6 +1648,60 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
                     </div>
                   </div>
                 </div>
+              </CanDo>
+
+              {/* Change Person Type */}
+              <CanDo action="write" resource={{ type: 'person', id: person.id }} fallback={null}>
+                {!showChangeType ? (
+                  <button
+                    onClick={() => { setNewType(person.type as string); setTypeError(''); setShowChangeType(true) }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm font-medium text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
+                  >
+                    Change Person Type
+                  </button>
+                ) : (
+                  <div className="bg-surface-muted dark:bg-dark-hover p-3 rounded-lg space-y-2.5">
+                    <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Change Person Type</p>
+                    {person.unit_ids.length > 0 && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                        This person is linked to {person.unit_ids.length} unit{person.unit_ids.length !== 1 ? 's' : ''}. After changing their type, review those unit assignments to ensure they&apos;re still correct.
+                      </p>
+                    )}
+                    {typeError && (
+                      <p className="text-xs text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">{typeError}</p>
+                    )}
+                    <select
+                      value={newType}
+                      disabled={typeWorking}
+                      onChange={e => setNewType(e.target.value)}
+                      className="w-full text-sm rounded-lg px-3 py-2 border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:opacity-60"
+                    >
+                      <option value="tenant">Tenant</option>
+                      <option value="resident_owner">Resident Owner</option>
+                      <option value="non_resident_owner">Non-Resident Owner</option>
+                      <option value="short_stay_guest">Short-Stay Guest</option>
+                      <option value="permanent_staff">Permanent Staff</option>
+                      <option value="casual_staff">Casual Staff</option>
+                      <option value="outsourced">Outsourced</option>
+                    </select>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleChangeType}
+                        disabled={typeWorking || newType === person.type}
+                        className="flex-1 px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                      >
+                        {typeWorking ? 'Saving…' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={() => setShowChangeType(false)}
+                        disabled={typeWorking}
+                        className="flex-1 px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm font-medium text-text hover:bg-surface-muted dark:hover:bg-dark-hover disabled:opacity-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </CanDo>
 
               <CanDo action="write" resource={{ type: 'person', id: person.id }} fallback={null}>
