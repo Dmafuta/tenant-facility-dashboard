@@ -34,7 +34,7 @@ export const NAV: NavGroup[] = [
       { label: 'Property',    href: '/property',    icon: '🏢', roles: [FM, FIN, MAINT, RECEP, OWNER] },
       { label: 'People',      href: '/people',      icon: '👥', roles: [FM, FIN, SEC, RECEP] },
       { label: 'Utilities',   href: '/utilities',   icon: '💧', roles: [FM, MAINT] },
-      { label: 'Consumables', href: '/consumables', icon: '📦', roles: [FM, MAINT] },
+      { label: 'Consumables', href: '/consumables', icon: '📦', roles: [FM, MAINT, RECEP] },
     ],
   },
   {
