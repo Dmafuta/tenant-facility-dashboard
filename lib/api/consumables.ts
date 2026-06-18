@@ -84,3 +84,42 @@ export async function generateRun(period: string, typeId: string): Promise<{ gen
     { method: 'POST' }
   )
 }
+
+// ── Stock Levels ────────────────────────────────────────────────────────────
+
+export interface ConsumableStockData {
+  id: string
+  consumable_type_id: string
+  consumable_name: string
+  unit_of_issue: string
+  current_stock: number
+  reorder_level: number
+  notes: string | null
+  last_restocked_date: string | null
+  last_restocked_quantity: number
+  last_restocked_by: string | null
+}
+
+export async function getConsumableStock(): Promise<ConsumableStockData[]> {
+  return apiFetch<ConsumableStockData[]>('/consumables/stock')
+}
+
+export async function restockConsumable(
+  typeId: string,
+  payload: { quantity: number; notes?: string }
+): Promise<ConsumableStockData> {
+  return apiFetch<ConsumableStockData>(`/consumables/stock/${typeId}/restock`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateStockSettings(
+  typeId: string,
+  payload: { reorder_level?: number; notes?: string }
+): Promise<ConsumableStockData> {
+  return apiFetch<ConsumableStockData>(`/consumables/stock/${typeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}

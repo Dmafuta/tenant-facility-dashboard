@@ -5,13 +5,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
-import { CONSUMABLE_STOCK } from '@/lib/mock-data'
-import type { ConsumableStock } from '@/lib/types'
 import { cn } from '@/lib/cn'
 import {
   getConsumableTypes, createConsumableType, updateConsumableType, toggleConsumableType,
   getIssuances, createIssuance, issueOne, bulkIssue, generateRun,
-  type ConsumableTypeData, type ConsumableIssuanceData,
+  getConsumableStock, restockConsumable, updateStockSettings,
+  type ConsumableTypeData, type ConsumableIssuanceData, type ConsumableStockData,
 } from '@/lib/api/consumables'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -717,72 +716,263 @@ function ConsumableTypeCard({
   )
 }
 
+// ── RestockModal ────────────────────────────────────────────────────────────
+
+function RestockModal({
+  stock, onClose, onSaved,
+}: {
+  stock: ConsumableStockData
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [quantity, setQuantity] = useState('')
+  const [notes,    setNotes]    = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [error,    setError]    = useState('')
+
+  async function handleSave() {
+    const qty = parseInt(quantity, 10)
+    if (!qty || qty <= 0) { setError('Enter a valid quantity greater than 0.'); return }
+    setSaving(true); setError('')
+    try {
+      await restockConsumable(stock.consumable_type_id, { quantity: qty, notes: notes || undefined })
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to record restock.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm bg-surface dark:bg-dark-card rounded-2xl shadow-xl overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-surface-border dark:border-dark-border">
+          <span className="text-xl">📦</span>
+          <div>
+            <h2 className="text-base font-semibold text-text">Record Restock</h2>
+            <p className="text-xs text-text-muted">{stock.consumable_name}</p>
+          </div>
+          <button onClick={onClose} className="ml-auto text-text-muted hover:text-text">✕</button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-lg bg-surface-muted p-3 text-sm flex items-center justify-between">
+            <span className="text-text-muted">Current stock</span>
+            <span className="font-semibold text-text">{stock.current_stock} {stock.unit_of_issue}</span>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-1 block">
+              Quantity to add ({stock.unit_of_issue}) <span className="text-danger">*</span>
+            </label>
+            <input
+              type="number" min={1} value={quantity}
+              onChange={e => setQuantity(e.target.value)}
+              className={INPUT_CLS} placeholder="e.g. 30"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-1 block">Notes (optional)</label>
+            <input
+              value={notes} onChange={e => setNotes(e.target.value)}
+              className={INPUT_CLS} placeholder="Supplier, batch number…"
+            />
+          </div>
+          {quantity && parseInt(quantity, 10) > 0 && (
+            <p className="text-xs text-text-muted">
+              New stock will be: <span className="font-semibold text-success">
+                {stock.current_stock + parseInt(quantity, 10)} {stock.unit_of_issue}
+              </span>
+            </p>
+          )}
+          {error && <p className="text-xs text-danger">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border dark:border-dark-border">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Record Restock'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── StockSettingsModal ──────────────────────────────────────────────────────
+
+function StockSettingsModal({
+  stock, onClose, onSaved,
+}: {
+  stock: ConsumableStockData
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [reorderLevel, setReorderLevel] = useState(String(stock.reorder_level))
+  const [notes,        setNotes]        = useState(stock.notes ?? '')
+  const [saving,       setSaving]       = useState(false)
+  const [error,        setError]        = useState('')
+
+  async function handleSave() {
+    const rl = parseInt(reorderLevel, 10)
+    if (isNaN(rl) || rl < 0) { setError('Enter a valid reorder level.'); return }
+    setSaving(true); setError('')
+    try {
+      await updateStockSettings(stock.consumable_type_id, { reorder_level: rl, notes: notes || undefined })
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm bg-surface dark:bg-dark-card rounded-2xl shadow-xl overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-surface-border dark:border-dark-border">
+          <span className="text-xl">⚙️</span>
+          <div>
+            <h2 className="text-base font-semibold text-text">Stock Settings</h2>
+            <p className="text-xs text-text-muted">{stock.consumable_name}</p>
+          </div>
+          <button onClick={onClose} className="ml-auto text-text-muted hover:text-text">✕</button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-1 block">Reorder Level ({stock.unit_of_issue})</label>
+            <input
+              type="number" min={0} value={reorderLevel}
+              onChange={e => setReorderLevel(e.target.value)}
+              className={INPUT_CLS}
+            />
+            <p className="text-xs text-text-muted mt-1">Alert shown when stock falls below this level.</p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-text-muted mb-1 block">Notes</label>
+            <textarea
+              value={notes} onChange={e => setNotes(e.target.value)}
+              rows={3} className={INPUT_CLS} placeholder="Supplier info, storage notes…"
+            />
+          </div>
+          {error && <p className="text-xs text-danger">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border dark:border-dark-border">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save Settings'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── StockLevelsTab ─────────────────────────────────────────────────────────
 
-function StockLevelsTab() {
-  const stocks = CONSUMABLE_STOCK
+function StockLevelsTab({
+  stocks, loading, onRefresh,
+}: {
+  stocks: ConsumableStockData[]
+  loading: boolean
+  onRefresh: () => void
+}) {
+  const [restockTarget,  setRestockTarget]  = useState<ConsumableStockData | null>(null)
+  const [settingsTarget, setSettingsTarget] = useState<ConsumableStockData | null>(null)
+
+  const belowReorderCount = stocks.filter(s => s.current_stock < s.reorder_level).length
+
+  if (loading) {
+    return <div className="py-16 text-center text-sm text-text-muted">Loading stock levels…</div>
+  }
 
   return (
     <div className="space-y-5">
+      {restockTarget && (
+        <RestockModal stock={restockTarget} onClose={() => setRestockTarget(null)} onSaved={onRefresh} />
+      )}
+      {settingsTarget && (
+        <StockSettingsModal stock={settingsTarget} onClose={() => setSettingsTarget(null)} onSaved={onRefresh} />
+      )}
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-text-muted">
-          {stocks.filter(s => s.current_stock < s.reorder_level).length} item(s) below reorder level
+          {belowReorderCount > 0
+            ? `${belowReorderCount} item${belowReorderCount !== 1 ? 's' : ''} below reorder level`
+            : 'All items above reorder level'}
         </p>
-        <Button variant="primary" size="sm">+ Record Restock</Button>
+        <Button variant="primary" size="sm" onClick={() => stocks.length > 0 && setRestockTarget(stocks[0])}>
+          + Record Restock
+        </Button>
       </div>
 
-      <div className="rounded-lg border border-surface-border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-muted text-text-muted">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium">Item</th>
-              <th className="text-center px-4 py-3 font-medium">In Stock</th>
-              <th className="text-center px-4 py-3 font-medium">Reorder At</th>
-              <th className="text-left px-4 py-3 font-medium">Last Restocked</th>
-              <th className="text-left px-4 py-3 font-medium">Status</th>
-              <th className="text-left px-4 py-3 font-medium">Notes</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {stocks.map((s, i) => {
-              const belowReorder = s.current_stock < s.reorder_level
-              const outOfStock   = s.current_stock === 0
-              return (
-                <tr key={s.id} className={cn('border-t border-surface-border hover:bg-surface-hover transition-colors', i % 2 === 0 ? '' : 'bg-surface-muted/30')}>
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-text">{s.consumable_name}</p>
-                    <p className="text-xs text-text-muted">{s.unit_of_issue}</p>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={cn('font-bold text-lg', outOfStock ? 'text-danger' : belowReorder ? 'text-warning' : 'text-success')}>
-                      {s.current_stock}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center text-text-muted">{s.reorder_level}</td>
-                  <td className="px-4 py-3 text-text-muted">
-                    <p>{s.last_restocked_date}</p>
-                    <p className="text-xs">+{s.last_restocked_quantity} by {s.last_restocked_by}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    {outOfStock ? (
-                      <Badge variant="danger">Out of Stock</Badge>
-                    ) : belowReorder ? (
-                      <Badge variant="warning">Low Stock</Badge>
-                    ) : (
-                      <Badge variant="success">OK</Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-text-muted max-w-xs">{s.notes ?? '—'}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Button variant="outline" size="sm">Restock</Button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      {stocks.length === 0 ? (
+        <div className="py-12 text-center text-sm text-text-muted">
+          No active consumable types found. Add a consumable type first.
+        </div>
+      ) : (
+        <div className="rounded-lg border border-surface-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-muted text-text-muted">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium">Item</th>
+                <th className="text-center px-4 py-3 font-medium">In Stock</th>
+                <th className="text-center px-4 py-3 font-medium">Reorder At</th>
+                <th className="text-left px-4 py-3 font-medium">Last Restocked</th>
+                <th className="text-left px-4 py-3 font-medium">Status</th>
+                <th className="text-left px-4 py-3 font-medium">Notes</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {stocks.map((s, i) => {
+                const belowReorder = s.current_stock < s.reorder_level
+                const outOfStock   = s.current_stock === 0
+                return (
+                  <tr key={s.id} className={cn('border-t border-surface-border hover:bg-surface-hover transition-colors', i % 2 === 0 ? '' : 'bg-surface-muted/30')}>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-text">{s.consumable_name}</p>
+                      <p className="text-xs text-text-muted">{s.unit_of_issue}</p>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={cn('font-bold text-lg', outOfStock ? 'text-danger' : belowReorder ? 'text-warning' : 'text-success')}>
+                        {s.current_stock}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-text-muted">{s.reorder_level}</td>
+                    <td className="px-4 py-3 text-text-muted">
+                      {s.last_restocked_date
+                        ? <>
+                            <p>{s.last_restocked_date}</p>
+                            <p className="text-xs">+{s.last_restocked_quantity} by {s.last_restocked_by ?? '—'}</p>
+                          </>
+                        : <span className="text-xs">Never restocked</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3">
+                      {outOfStock ? (
+                        <Badge variant="danger">Out of Stock</Badge>
+                      ) : belowReorder ? (
+                        <Badge variant="warning">Low Stock</Badge>
+                      ) : (
+                        <Badge variant="success">OK</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-text-muted max-w-xs">{s.notes ?? '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center gap-2 justify-end">
+                        <Button variant="outline" size="sm" onClick={() => setSettingsTarget(s)}>Settings</Button>
+                        <Button variant="primary" size="sm" onClick={() => setRestockTarget(s)}>Restock</Button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -790,8 +980,10 @@ function StockLevelsTab() {
 // ── Main ───────────────────────────────────────────────────────────────────
 
 export function ConsumablesPageClient() {
-  const [types,       setTypes]       = useState<ConsumableTypeData[]>([])
+  const [types,        setTypes]        = useState<ConsumableTypeData[]>([])
   const [typesLoading, setTypesLoading] = useState(true)
+  const [stocks,       setStocks]       = useState<ConsumableStockData[]>([])
+  const [stocksLoading, setStocksLoading] = useState(true)
 
   const loadTypes = useCallback(async () => {
     setTypesLoading(true)
@@ -799,10 +991,17 @@ export function ConsumablesPageClient() {
     finally { setTypesLoading(false) }
   }, [])
 
+  const loadStocks = useCallback(async () => {
+    setStocksLoading(true)
+    try { setStocks(await getConsumableStock()) } catch { /* ignore */ }
+    finally { setStocksLoading(false) }
+  }, [])
+
   useEffect(() => { loadTypes() }, [loadTypes])
+  useEffect(() => { loadStocks() }, [loadStocks])
 
   const activeTypes   = types.filter(t => t.active).length
-  const lowStockCount = CONSUMABLE_STOCK.filter(s => s.current_stock < s.reorder_level).length
+  const lowStockCount = stocks.filter(s => s.current_stock < s.reorder_level).length
 
   return (
     <main className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -847,7 +1046,7 @@ export function ConsumablesPageClient() {
           <ConsumableTypesTab types={types} loading={typesLoading} onRefresh={loadTypes} />
         </TabsContent>
         <TabsContent value="stock" className="pt-5">
-          <StockLevelsTab />
+          <StockLevelsTab stocks={stocks} loading={stocksLoading} onRefresh={loadStocks} />
         </TabsContent>
       </Tabs>
     </main>
