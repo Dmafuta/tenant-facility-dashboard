@@ -404,7 +404,7 @@ function UserMenu() {
     setOpen(false)
     setSignOut(true)
     await logout()
-    window.location.href = '/login'
+    window.location.replace('/login')
   }
 
   const initials = getInitials(subject.name)

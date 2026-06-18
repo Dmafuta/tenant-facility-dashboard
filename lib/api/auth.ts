@@ -65,11 +65,6 @@ export async function verifyOtp(
 }
 
 export async function logout(): Promise<void> {
+  // Signout route clears cookies and revokes the refresh token server-side
   await fetch('/api/auth/signout', { method: 'POST' })
-  try {
-    await apiFetch<void>('/auth/logout', { method: 'POST' })
-  } catch {
-    // Proceed to redirect even if the API call fails —
-    // the session is effectively abandoned on the client.
-  }
 }

@@ -5,18 +5,18 @@ const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8081'
 export async function POST(request: NextRequest) {
   const refreshToken = request.cookies.get('refresh_token')?.value
 
-  // Tell the backend to revoke the refresh token
+  // Revoke the refresh token on the backend (backend reads from Cookie header)
   try {
     await fetch(`${BACKEND}/api/auth/logout`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ refreshToken: refreshToken ?? '' }),
+      headers: { Cookie: `refresh_token=${refreshToken ?? ''}` },
     })
   } catch {
-    // Ignore backend errors — still clear cookies client-side
+    // Ignore backend errors — still clear cookies
   }
 
-  const response = NextResponse.redirect(new URL('/login', request.url), { status: 302 })
+  // Return 200 with cookies cleared. The client handles the redirect.
+  const response = NextResponse.json({ ok: true })
   response.cookies.delete('access_token')
   response.cookies.delete('refresh_token')
   return response
