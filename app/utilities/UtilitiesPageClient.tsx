@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -10,54 +10,61 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import {
-  METERS, METER_READINGS, METER_TYPE_HISTORY,
+  METERS as MOCK_METERS,
+  METER_TYPE_HISTORY,
   WATER_SUPPLIERS, RESERVE_TANKS, WATER_ZONES, WATER_BALANCE_PERIODS,
   CHARGES, INVENTORY_METERS,
 } from '@/lib/mock-data'
 import type {
-  Meter, MeterReading, MeterTypeHistory,
+  MeterTypeHistory,
   UtilityType, MeterType, MeterRole,
   WaterSupplier, ReserveTank, WaterZone, WaterBalancePeriod,
   MeterExtended, MeterCategory,
+  Meter,
 } from '@/lib/types'
 import { cn } from '@/lib/cn'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading } from '@/lib/api/meters'
+import type { MeterData, MeterReadingData } from '@/lib/api/meters'
+import { getWaterSuppliers, getReserveTanks, getWaterZones } from '@/lib/api/water'
+import type { WaterSupplierData, ReserveTankData, WaterZoneData } from '@/lib/api/water'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function utilityLabel(u: UtilityType): string {
-  const MAP: Record<UtilityType, string> = {
+function utilityLabel(u: string): string {
+  const MAP: Record<string, string> = {
     water: 'Water', sewerage: 'Sewerage', water_sewer: 'Water & Sewer',
     electricity: 'Electricity', gas_piped: 'Gas (Piped)', gas_cylinder: 'Gas (Cylinder)',
     internet: 'Internet',
   }
   return MAP[u] ?? u
 }
-function utilityIcon(u: UtilityType): string {
-  const MAP: Record<UtilityType, string> = {
+function utilityIcon(u: string): string {
+  const MAP: Record<string, string> = {
     water: '💧', sewerage: '🚰', water_sewer: '💧',
     electricity: '⚡', gas_piped: '🔥', gas_cylinder: '🔥', internet: '📶',
   }
   return MAP[u] ?? '📊'
 }
-function meterTypeBadge(t: MeterType) {
-  const styles: Record<MeterType, { label: string; cls: string }> = {
+function meterTypeBadge(t: string) {
+  const styles: Record<string, { label: string; cls: string }> = {
     postpaid: { label: 'Postpaid', cls: 'bg-surface-border text-text-muted' },
     prepaid:  { label: 'Prepaid',  cls: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400' },
     smart:    { label: 'Smart ⚡',  cls: 'bg-success/10 text-success' },
   }
-  const { label, cls } = styles[t]
-  return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', cls)}>{label}</span>
+  const s = styles[t] ?? { label: t, cls: 'bg-surface-border text-text-muted' }
+  return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', s.cls)}>{s.label}</span>
 }
-function meterRoleBadge(role: MeterRole | undefined) {
+function meterRoleBadge(role: string | undefined | null) {
   if (!role || role === 'consumer') return null
-  const MAP: Record<Exclude<MeterRole,'consumer'>, { label: string; cls: string }> = {
+  const MAP: Record<string, { label: string; cls: string }> = {
     supplier:      { label: '⬆ Supplier',     cls: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' },
     tank_inflow:   { label: '→ Tank In',       cls: 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-300' },
     tank_outflow:  { label: '← Tank Out',      cls: 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-300' },
     distribution:  { label: '⬇ Distribution',  cls: 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300' },
   }
-  const { label, cls } = MAP[role]
-  return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', cls)}>{label}</span>
+  const s = MAP[role]
+  if (!s) return null
+  return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', s.cls)}>{s.label}</span>
 }
 function statusDot(s: string) {
   return <span className={cn('inline-block w-2 h-2 rounded-full mr-1.5', s === 'active' ? 'bg-success' : 'bg-text-muted')} />
@@ -73,21 +80,83 @@ function lossBg(pct: number) {
   return 'bg-success/10 border-success/20'
 }
 
+function readingActionLabel(meterType: string): string {
+  if (meterType === 'prepaid') return 'Log Vending Issue'
+  if (meterType === 'smart') return 'Manual Override'
+  return 'Enter Reading'
+}
+
 // ── Reading Entry Modal ────────────────────────────────────────────────────
 
-function ReadingEntryModal({ meter, open, onClose }: { meter: Meter | null; open: boolean; onClose: () => void }) {
-  const [reading, setReading]   = useState('')
-  const [date, setDate]         = useState(new Date().toISOString().slice(0, 10))
-  const [unitCost, setUnitCost] = useState('')
-  const [mgmtFee, setMgmtFee]   = useState(meter?.management_fee_pct?.toString() ?? '')
+function ReadingEntryModal({
+  meter, open, onClose, onSaved,
+}: {
+  meter: MeterData | null
+  open: boolean
+  onClose: () => void
+  onSaved?: () => void
+}) {
+  const [reading, setReading]     = useState('')
+  const [date, setDate]           = useState(new Date().toISOString().slice(0, 10))
+  const [billingPeriod, setBp]    = useState('')
+  const [unitCost, setUnitCost]   = useState('')
+  const [mgmtFee, setMgmtFee]     = useState('')
+  const [notes, setNotes]         = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open && meter) {
+      setReading('')
+      setDate(new Date().toISOString().slice(0, 10))
+      setBp('')
+      setUnitCost('')
+      setMgmtFee(meter.management_fee_pct?.toString() ?? '')
+      setNotes('')
+      setError(null)
+    }
+  }, [open, meter])
+
   if (!meter) return null
   const prev = meter.last_reading ?? 0
   const consumed = reading ? Math.max(0, Number(reading) - prev) : 0
   const subtotal = consumed * Number(unitCost || 0)
   const fee      = mgmtFee ? subtotal * (Number(mgmtFee) / 100) : 0
   const total    = subtotal + fee
+  const isPrepaid = meter.meter_type === 'prepaid'
+  const isSmart   = meter.meter_type === 'smart'
+
+  async function handleSave() {
+    if (!reading) { setError('Current reading is required.'); return }
+    setSaving(true)
+    setError(null)
+    try {
+      await createMeterReading(meter.id, {
+        current_value:       Number(reading),
+        reading_date:        date || undefined,
+        billing_period:      billingPeriod || undefined,
+        unit_cost:           unitCost ? Number(unitCost) : undefined,
+        management_fee_pct:  mgmtFee ? Number(mgmtFee) : undefined,
+        notes:               notes || undefined,
+        source:              isPrepaid ? 'vending_issue' : isSmart ? 'manual' : 'manual',
+      })
+      onSaved?.()
+      onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save reading.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const modalTitle = isPrepaid
+    ? `Log Vending Issue — ${meter.meter_number}`
+    : isSmart
+    ? `Manual Override — ${meter.meter_number}`
+    : `Enter Reading — ${meter.meter_number}`
+
   return (
-    <Modal open={open} onClose={onClose} title={`Enter Reading — ${meter.meter_number}`} size="md">
+    <Modal open={open} onClose={onClose} title={modalTitle} size="md">
       <div className="space-y-4">
         <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card text-sm flex gap-4">
           <div>
@@ -100,24 +169,26 @@ function ReadingEntryModal({ meter, open, onClose }: { meter: Meter | null; open
           </div>
           <div>
             <p className="text-xs text-text-muted">Previous</p>
-            <p className="font-medium text-text">{prev.toLocaleString()}</p>
+            <p className="font-medium text-text">{Number(prev).toLocaleString()}</p>
           </div>
         </div>
-        {meter.meter_type === 'prepaid' && (
+        {isPrepaid && (
           <div className="p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-sm text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-            ⚠️ <strong>Prepaid meter</strong> — reading recorded for tracking only, no charge generated.
+            ⚠️ <strong>Prepaid meter</strong> — vending units recorded for tracking only, no charge generated.
           </div>
         )}
-        {meter.meter_type === 'smart' && (
+        {isSmart && (
           <div className="p-3 rounded-lg bg-success/10 text-sm text-success border border-success/20">
-            ⚡ <strong>Smart meter</strong> — auto-collected via IoT. Manual entry overrides sensor reading.
+            ⚡ <strong>Smart meter</strong> — auto-collected via IoT. This manual entry overrides the sensor reading.
           </div>
         )}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Current Reading</label>
+            <label className="block text-xs font-medium text-text-muted mb-1">
+              {isPrepaid ? 'Units Issued' : 'Current Reading'}
+            </label>
             <input type="number" className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder={`> ${prev}`} value={reading} onChange={e => setReading(e.target.value)} />
+              placeholder={isPrepaid ? 'Units from vending' : `> ${prev}`} value={reading} onChange={e => setReading(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">Reading Date</label>
@@ -125,7 +196,12 @@ function ReadingEntryModal({ meter, open, onClose }: { meter: Meter | null; open
               value={date} onChange={e => setDate(e.target.value)} />
           </div>
         </div>
-        {meter.meter_type !== 'prepaid' && (
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Billing Period (e.g. Jun 2026)</label>
+          <input type="text" className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            placeholder="Jun 2026" value={billingPeriod} onChange={e => setBp(e.target.value)} />
+        </div>
+        {!isPrepaid && (
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Unit Cost (KES)</label>
@@ -139,7 +215,7 @@ function ReadingEntryModal({ meter, open, onClose }: { meter: Meter | null; open
             </div>
           </div>
         )}
-        {consumed > 0 && meter.meter_type !== 'prepaid' && (
+        {consumed > 0 && !isPrepaid && (
           <div className="p-3 rounded-lg bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 text-sm space-y-1">
             <div className="flex justify-between text-text-muted">
               <span>Consumed</span>
@@ -161,9 +237,12 @@ function ReadingEntryModal({ meter, open, onClose }: { meter: Meter | null; open
             </div>
           </div>
         )}
+        {error && <p className="text-xs text-danger">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={() => { alert('Reading saved (demo)'); onClose() }}>Save Reading</Button>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !reading}>
+            {saving ? 'Saving…' : isPrepaid ? 'Log Issue' : isSmart ? 'Save Override' : 'Save Reading'}
+          </Button>
         </div>
       </div>
     </Modal>
@@ -172,9 +251,21 @@ function ReadingEntryModal({ meter, open, onClose }: { meter: Meter | null; open
 
 // ── Meter Detail Drawer ────────────────────────────────────────────────────
 
-function MeterDetailDrawer({ meter, open, onClose }: { meter: Meter | null; open: boolean; onClose: () => void }) {
-  const readings = useMemo(() => meter ? METER_READINGS.filter(r => r.meter_id === meter.id) : [], [meter])
-  const history  = useMemo(() => meter ? METER_TYPE_HISTORY.filter(h => h.meter_id === meter.id) : [], [meter])
+function MeterDetailDrawer({ meter, open, onClose }: { meter: MeterData | null; open: boolean; onClose: () => void }) {
+  const [readings, setReadings] = useState<MeterReadingData[]>([])
+  const [loadingR, setLoadingR] = useState(false)
+  const history = useMemo(() => meter ? METER_TYPE_HISTORY.filter((h: MeterTypeHistory) => h.meter_id === meter.id) : [], [meter])
+
+  useEffect(() => {
+    if (open && meter) {
+      setLoadingR(true)
+      getReadingsForMeter(meter.id)
+        .then(setReadings)
+        .catch(() => setReadings([]))
+        .finally(() => setLoadingR(false))
+    }
+  }, [open, meter])
+
   if (!meter) return null
   return (
     <Drawer open={open} onClose={onClose} title={`${utilityLabel(meter.utility_type)} — ${meter.meter_number}`}>
@@ -193,21 +284,21 @@ function MeterDetailDrawer({ meter, open, onClose }: { meter: Meter | null; open
           </div>
           <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card">
             <p className="text-xs text-text-muted">Account No.</p>
-            <p className="font-medium text-text font-mono text-xs">{meter.account_number}</p>
+            <p className="font-medium text-text font-mono text-xs">{meter.account_number ?? '—'}</p>
           </div>
           <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card">
             <p className="text-xs text-text-muted">Last Reading</p>
-            <p className="font-medium text-text">{meter.last_reading?.toLocaleString() ?? '—'}</p>
-            <p className="text-[11px] text-text-muted">{meter.last_reading_date}</p>
+            <p className="font-medium text-text">{meter.last_reading != null ? Number(meter.last_reading).toLocaleString() : '—'}</p>
+            <p className="text-[11px] text-text-muted">{meter.last_reading_date ?? ''}</p>
           </div>
           {meter.current_billing_person && (
             <div className="col-span-2 p-3 rounded-lg bg-surface-muted dark:bg-dark-card">
               <p className="text-xs text-text-muted">Billed To</p>
               <p className="font-medium text-text">{meter.current_billing_person.name}</p>
-              <p className="text-[11px] text-text-muted">{meter.billing_arrangement.replace(/_/g, ' ')}</p>
+              <p className="text-[11px] text-text-muted">{meter.billing_arrangement?.replace(/_/g, ' ')}</p>
             </div>
           )}
-          {meter.management_fee_pct && (
+          {meter.management_fee_pct != null && (
             <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card">
               <p className="text-xs text-text-muted">Management Fee</p>
               <p className="font-medium text-text">{meter.management_fee_pct}%</p>
@@ -220,13 +311,16 @@ function MeterDetailDrawer({ meter, open, onClose }: { meter: Meter | null; open
             <TabsTrigger value="history">Migration History{history.length > 0 ? ` (${history.length})` : ''}</TabsTrigger>
           </TabsList>
           <TabsContent value="readings">
-            <div className="space-y-2">
-              {readings.length === 0
-                ? <p className="text-sm text-text-muted py-4 text-center">No readings recorded yet.</p>
-                : readings.map(r => (
+            {loadingR ? (
+              <p className="text-sm text-text-muted py-4 text-center">Loading…</p>
+            ) : readings.length === 0 ? (
+              <p className="text-sm text-text-muted py-4 text-center">No readings recorded yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {readings.map(r => (
                   <div key={r.id} className="p-3 rounded-lg border border-surface-border dark:border-dark-border text-sm">
                     <div className="flex justify-between mb-1">
-                      <span className="font-medium text-text">{r.billing_period}</span>
+                      <span className="font-medium text-text">{r.billing_period ?? r.reading_date ?? '—'}</span>
                       <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
                         r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
                       )}>{r.status}</span>
@@ -234,20 +328,21 @@ function MeterDetailDrawer({ meter, open, onClose }: { meter: Meter | null; open
                     <div className="grid grid-cols-3 gap-2 text-xs text-text-muted">
                       <div><p>Prev → Current</p><p className="text-text font-medium">{r.previous_value} → {r.current_value}</p></div>
                       <div><p>Consumed</p><p className="text-text font-medium">{r.units_consumed} units</p></div>
-                      <div><p>Amount</p><p className="text-text font-medium">KES {r.amount_due.toLocaleString()}</p></div>
+                      <div><p>Amount</p><p className="text-text font-medium">KES {Number(r.amount_due).toLocaleString()}</p></div>
                     </div>
-                    {r.management_fee && (
-                      <p className="text-[11px] text-text-muted mt-1">+ KES {r.management_fee.toLocaleString()} mgmt fee · {r.source}</p>
+                    {r.management_fee != null && (
+                      <p className="text-[11px] text-text-muted mt-1">+ KES {Number(r.management_fee).toLocaleString()} mgmt fee · {r.source}</p>
                     )}
                   </div>
                 ))}
-            </div>
+              </div>
+            )}
           </TabsContent>
           <TabsContent value="history">
             <div className="space-y-2">
               {history.length === 0
                 ? <p className="text-sm text-text-muted py-4 text-center">No meter type migrations recorded.</p>
-                : history.map(h => (
+                : history.map((h: MeterTypeHistory) => (
                   <div key={h.id} className="p-3 rounded-lg border border-surface-border dark:border-dark-border text-sm">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="px-2 py-0.5 rounded bg-surface-border text-text-muted text-xs">{h.from_type}</span>
@@ -296,7 +391,15 @@ const ROLE_FILTERS = [
 const TH = 'px-4 py-3 text-left text-xs font-medium text-text-muted whitespace-nowrap'
 const TD = 'px-4 py-3.5 text-sm text-text whitespace-nowrap'
 
-function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void; onView: (m: Meter) => void; onAddMeter: () => void }) {
+function MetersTab({
+  meters, loading, onRead, onView, onAddMeter,
+}: {
+  meters: MeterData[]
+  loading: boolean
+  onRead: (m: MeterData) => void
+  onView: (m: MeterData) => void
+  onAddMeter: () => void
+}) {
   const [search, setSearch]   = useState('')
   const [utility, setUtility] = useState('all')
   const [type, setType]       = useState('all')
@@ -304,14 +407,14 @@ function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return METERS.filter(m => {
+    return meters.filter(m => {
       const matchSearch  = !q || (m.unit_label ?? '').toLowerCase().includes(q) || m.meter_number.toLowerCase().includes(q) || (m.current_billing_person?.name ?? '').toLowerCase().includes(q)
       const matchUtility = utility === 'all' || m.utility_type === utility
       const matchType    = type === 'all' || m.meter_type === type
       const matchRole    = role === 'all' || (role === 'consumer' ? !m.meter_role || m.meter_role === 'consumer' : m.meter_role === role)
       return matchSearch && matchUtility && matchType && matchRole
     })
-  }, [search, utility, type, role])
+  }, [meters, search, utility, type, role])
 
   return (
     <div className="space-y-4">
@@ -337,7 +440,9 @@ function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void;
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <p className="py-12 text-center text-text-muted text-sm">Loading meters…</p>
+      ) : filtered.length === 0 ? (
         <p className="py-12 text-center text-text-muted text-sm">No meters match filters.</p>
       ) : (
         <div className="rounded-xl border border-surface-border dark:border-dark-border overflow-hidden bg-surface dark:bg-dark-surface">
@@ -377,7 +482,7 @@ function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void;
                   <td className={TD}>
                     {m.last_reading != null ? (
                       <>
-                        <span className="font-semibold">{m.last_reading.toLocaleString()}</span>
+                        <span className="font-semibold">{Number(m.last_reading).toLocaleString()}</span>
                         <span className="block text-[11px] text-text-muted">{m.last_reading_date}</span>
                       </>
                     ) : <span className="text-text-muted">—</span>}
@@ -386,7 +491,7 @@ function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void;
                     {m.current_billing_person ? (
                       <>
                         <span>{m.current_billing_person.name}</span>
-                        {m.management_fee_pct && (
+                        {m.management_fee_pct != null && (
                           <span className="block text-[11px] text-text-muted">{m.management_fee_pct}% mgmt fee</span>
                         )}
                       </>
@@ -401,14 +506,22 @@ function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void;
                   <td className={TD} onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-2">
                       {m.meter_type === 'smart' ? (
-                        <span className="text-[11px] text-success whitespace-nowrap">⚡ Auto</span>
+                        <>
+                          <span className="text-[11px] text-success whitespace-nowrap">⚡ Auto</span>
+                          <span className="text-text-muted">·</span>
+                          <CanDo action="write" resource={{ type: 'unit' }}>
+                            <button onClick={() => onRead(m)} className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap">
+                              Override
+                            </button>
+                          </CanDo>
+                        </>
                       ) : (
                         <CanDo action="write" resource={{ type: 'unit' }}>
                           <button
                             onClick={() => onRead(m)}
                             className="text-xs font-medium text-primary-600 hover:underline whitespace-nowrap"
                           >
-                            Enter Reading
+                            {readingActionLabel(m.meter_type)}
                           </button>
                         </CanDo>
                       )}
@@ -434,7 +547,7 @@ function MetersTab({ onRead, onView, onAddMeter }: { onRead: (m: Meter) => void;
 // ── WaterSupplyTab ─────────────────────────────────────────────────────────
 
 function TankLevelBar({ current, capacity }: { current: number; capacity: number }) {
-  const pct = Math.min(100, Math.round((current / capacity) * 100))
+  const pct = capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : 0
   const color = pct < 25 ? 'bg-danger' : pct < 50 ? 'bg-warning' : 'bg-success'
   return (
     <div className="w-full">
@@ -449,12 +562,32 @@ function TankLevelBar({ current, capacity }: { current: number; capacity: number
   )
 }
 
-function WaterSupplyTab() {
-  // Enrich with meter data
-  const supplierMeters = METERS.filter(m => m.meter_role === 'supplier')
-  const distMeters     = METERS.filter(m => m.meter_role === 'distribution')
-  const tankOutMeter   = METERS.find(m => m.meter_role === 'tank_outflow')
-  const tank           = RESERVE_TANKS[0]
+function WaterSupplyTab({
+  suppliers, tanks, zones, meters, loading,
+}: {
+  suppliers: WaterSupplierData[]
+  tanks: ReserveTankData[]
+  zones: WaterZoneData[]
+  meters: MeterData[]
+  loading: boolean
+}) {
+  const tank = tanks[0] ?? null
+
+  function findMeterById(id: string | null | undefined): MeterData | undefined {
+    if (!id) return undefined
+    return meters.find(m => m.id === id)
+  }
+
+  function supplierMeters(s: WaterSupplierData): MeterData | undefined {
+    const ids = (s.meterIds ?? '').split(',').map(x => x.trim()).filter(Boolean)
+    return meters.find(m => ids.includes(m.id))
+  }
+
+  const tankOutMeter = tank
+    ? meters.find(m => (tank.outflowMeterIds ?? '').split(',').map(x => x.trim()).includes(m.id))
+    : undefined
+
+  if (loading) return <p className="py-12 text-center text-text-muted text-sm">Loading water supply chain…</p>
 
   return (
     <div className="space-y-6">
@@ -479,43 +612,47 @@ function WaterSupplyTab() {
           <span className="w-5 h-5 rounded bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
           Water Suppliers
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {WATER_SUPPLIERS.map(s => {
-            const meter = supplierMeters.find(m => m.supplier_id === s.id)
-            return (
-              <Card key={s.id} className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="font-semibold text-text">{s.name}</p>
-                    <p className="text-xs text-text-muted capitalize">{s.source_type.replace('_', ' ')}</p>
+        {suppliers.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">No suppliers configured yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {suppliers.map(s => {
+              const meter = supplierMeters(s)
+              return (
+                <Card key={s.id} className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-semibold text-text">{s.name}</p>
+                      <p className="text-xs text-text-muted capitalize">{(s.sourceType ?? '').replace('_', ' ')}</p>
+                    </div>
+                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium', s.active ? 'bg-success/10 text-success' : 'bg-surface-border text-text-muted')}>
+                      {s.active ? 'Active' : 'Inactive'}
+                    </span>
                   </div>
-                  <span className={cn('text-xs px-2 py-0.5 rounded font-medium', s.active ? 'bg-success/10 text-success' : 'bg-surface-border text-text-muted')}>
-                    {s.active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                  <div>
-                    <p className="text-xs text-text-muted">Rate</p>
-                    <p className="font-medium text-text">KES {s.contracted_rate_per_m3}/m³</p>
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                    <div>
+                      <p className="text-xs text-text-muted">Rate</p>
+                      <p className="font-medium text-text">{s.contractedRatePerM3 != null ? `KES ${s.contractedRatePerM3}/m³` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-text-muted">Meter</p>
+                      <p className="font-medium text-text font-mono text-xs">{meter?.meter_number ?? '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-text-muted">Last Reading</p>
+                      <p className="font-medium text-text">{meter?.last_reading != null ? `${Number(meter.last_reading).toLocaleString()} m³` : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-text-muted">Read Date</p>
+                      <p className="font-medium text-text">{meter?.last_reading_date ?? '—'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-text-muted">Meter</p>
-                    <p className="font-medium text-text font-mono text-xs">{meter?.meter_number ?? '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted">Last Reading</p>
-                    <p className="font-medium text-text">{meter?.last_reading?.toLocaleString() ?? '—'} m³</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted">Read Date</p>
-                    <p className="font-medium text-text">{meter?.last_reading_date ?? '—'}</p>
-                  </div>
-                </div>
-                {s.notes && <p className="text-xs text-text-muted italic">{s.notes}</p>}
-              </Card>
-            )
-          })}
-        </div>
+                  {s.notes && <p className="text-xs text-text-muted italic">{s.notes}</p>}
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Reserve Tank */}
@@ -524,23 +661,29 @@ function WaterSupplyTab() {
           <span className="w-5 h-5 rounded bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">2</span>
           Reserve Tank
         </h3>
-        {tank && (
+        {!tank ? (
+          <p className="text-sm text-text-muted py-4 text-center">No reserve tanks configured yet.</p>
+        ) : (
           <Card className="p-5">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <p className="font-semibold text-text">{tank.name}</p>
-                <p className="text-xs text-text-muted">{tank.location} · {tank.compartments} compartments</p>
+                <p className="text-xs text-text-muted">{tank.location ?? '—'} · {tank.compartments} compartment{tank.compartments !== 1 ? 's' : ''}</p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-text-muted">Outflow Meter</p>
                 <p className="font-mono text-xs text-text">{tankOutMeter?.meter_number ?? '—'}</p>
-                <p className="text-xs text-text-muted">Last: {tankOutMeter?.last_reading?.toLocaleString() ?? '—'} m³</p>
+                <p className="text-xs text-text-muted">Last: {tankOutMeter?.last_reading != null ? `${Number(tankOutMeter.last_reading).toLocaleString()} m³` : '—'}</p>
               </div>
             </div>
-            <TankLevelBar current={tank.current_level_m3} capacity={tank.capacity_m3} />
-            {tank.current_level_m3 < tank.capacity_m3 * (tank.low_level_threshold_pct / 100) && (
+            {tank.capacityM3 != null && tank.capacityM3 > 0 ? (
+              <TankLevelBar current={Number(tank.currentLevelM3)} capacity={Number(tank.capacityM3)} />
+            ) : (
+              <p className="text-xs text-text-muted">Capacity not configured</p>
+            )}
+            {tank.capacityM3 != null && tank.capacityM3 > 0 && Number(tank.currentLevelM3) < Number(tank.capacityM3) * (tank.lowLevelThresholdPct / 100) && (
               <div className="mt-3 p-2 rounded bg-danger/10 border border-danger/20 text-xs text-danger font-medium">
-                ⚠️ Tank below {tank.low_level_threshold_pct}% threshold — consider activating borehole or ordering tanker.
+                ⚠️ Tank below {tank.lowLevelThresholdPct}% threshold — consider activating borehole or ordering tanker.
               </div>
             )}
             {tank.notes && <p className="mt-3 text-xs text-text-muted italic">{tank.notes}</p>}
@@ -554,47 +697,37 @@ function WaterSupplyTab() {
           <span className="w-5 h-5 rounded bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold">3</span>
           Distribution Zones
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {WATER_ZONES.map(z => {
-            const distMeter = distMeters.find(m => m.id === z.distribution_meter_id)
-            // Latest balance for this zone
-            const latest = WATER_BALANCE_PERIODS[WATER_BALANCE_PERIODS.length - 1]
-            const zoneBalance = latest?.zone_breakdown.find(b => b.zone_id === z.id)
-            return (
-              <Card key={z.id} className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="font-semibold text-text">{z.name}</p>
-                    <p className="text-xs text-text-muted">{z.description}</p>
-                  </div>
-                  <span className="text-xs text-text-muted">{z.unit_ids.length} units</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                  <div>
-                    <p className="text-xs text-text-muted">Zone Meter</p>
-                    <p className="font-medium text-text font-mono text-xs">{distMeter?.meter_number ?? '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted">Last Reading</p>
-                    <p className="font-medium text-text">{distMeter?.last_reading?.toLocaleString() ?? '—'} m³</p>
-                  </div>
-                </div>
-                {zoneBalance && (
-                  <div className={cn('p-2 rounded border text-xs', lossBg(zoneBalance.loss_pct))}>
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Zone loss ({latest.period})</span>
-                      <span className={cn('font-bold', lossColor(zoneBalance.loss_pct))}>{zoneBalance.loss_pct.toFixed(1)}%</span>
+        {zones.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">No distribution zones configured yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {zones.map(z => {
+              const distMeter = findMeterById(z.distributionMeterId)
+              const unitCount = (z.unitIds ?? '').split(',').filter(Boolean).length
+              return (
+                <Card key={z.id} className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-semibold text-text">{z.name}</p>
+                      <p className="text-xs text-text-muted">{z.description}</p>
                     </div>
-                    <div className="flex justify-between mt-0.5">
-                      <span className="text-text-muted">Dist: {zoneBalance.distribution_m3} m³ · Consumer: {zoneBalance.consumer_m3} m³</span>
-                      <span className={cn('font-medium', lossColor(zoneBalance.loss_pct))}>−{zoneBalance.loss_m3} m³</span>
+                    <span className="text-xs text-text-muted">{unitCount} unit{unitCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-text-muted">Zone Meter</p>
+                      <p className="font-medium text-text font-mono text-xs">{distMeter?.meter_number ?? '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-text-muted">Last Reading</p>
+                      <p className="font-medium text-text">{distMeter?.last_reading != null ? `${Number(distMeter.last_reading).toLocaleString()} m³` : '—'}</p>
                     </div>
                   </div>
-                )}
-              </Card>
-            )
-          })}
-        </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -717,8 +850,6 @@ function WaterBalanceTab() {
             <h3 className="text-sm font-semibold text-text mb-3">Supplier Contribution</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {WATER_SUPPLIERS.filter(s => s.active).map(s => {
-                const meter = METERS.find(m => m.supplier_id === s.id)
-                // Approximate this period's inflow from this supplier
                 const approxM3 = s.source_type === 'municipal'
                   ? Math.round(period.total_inflow_m3 * 0.62)
                   : period.total_inflow_m3 - Math.round(period.total_inflow_m3 * 0.62)
@@ -761,7 +892,7 @@ function WaterBalanceTab() {
 
 // ── ReadingsTab ────────────────────────────────────────────────────────────
 
-function ReadingsTab() {
+function ReadingsTab({ readings, loading }: { readings: MeterReadingData[]; loading: boolean }) {
   return (
     <div>
       <Card className="overflow-hidden">
@@ -775,25 +906,33 @@ function ReadingsTab() {
               </tr>
             </thead>
             <tbody>
-              {METER_READINGS.slice().reverse().map((r, i) => (
-                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === METER_READINGS.length - 1 && 'border-b-0')}>
+              {loading ? (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
+              ) : readings.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">No readings recorded yet.</td></tr>
+              ) : readings.map((r, i) => (
+                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === readings.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-text">{r.unit_label}</p>
+                    <p className="font-medium text-text">{r.unit_label ?? '—'}</p>
                     <p className="text-xs text-text-muted font-mono">{r.meter_number}</p>
                   </td>
                   <td className="px-4 py-3 text-text-muted">{utilityIcon(r.utility_type)} {utilityLabel(r.utility_type)}</td>
-                  <td className="px-4 py-3 text-text-muted">{r.billing_period}</td>
-                  <td className="px-4 py-3 font-medium text-text">{r.units_consumed.toLocaleString()}</td>
-                  <td className="px-4 py-3 font-medium text-text">KES {r.amount_due.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-text-muted">{r.management_fee ? `KES ${r.management_fee.toLocaleString()}` : '—'}</td>
+                  <td className="px-4 py-3 text-text-muted">{r.billing_period ?? r.reading_date ?? '—'}</td>
+                  <td className="px-4 py-3 font-medium text-text">{Number(r.units_consumed).toLocaleString()}</td>
+                  <td className="px-4 py-3 font-medium text-text">KES {Number(r.amount_due).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-text-muted">{r.management_fee != null ? `KES ${Number(r.management_fee).toLocaleString()}` : '—'}</td>
                   <td className="px-4 py-3">
-                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium', r.source === 'smart_iot' ? 'bg-success/10 text-success' : 'bg-surface-border text-text-muted')}>
-                      {r.source === 'smart_iot' ? '⚡ IoT' : r.source}
+                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
+                      r.source === 'smart_iot' ? 'bg-success/10 text-success' :
+                      r.source === 'vending_issue' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400' :
+                      'bg-surface-border text-text-muted'
+                    )}>
+                      {r.source === 'smart_iot' ? '⚡ IoT' : r.source === 'vending_issue' ? '🏧 Vending' : r.source ?? 'manual'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn('text-xs px-2 py-0.5 rounded font-medium', r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
-                      {r.status === 'billed' ? 'Billed' : 'Pending Bill'}
+                      {r.status === 'billed' ? 'Billed' : r.status === 'pending_bill' ? 'Pending Bill' : r.status}
                     </span>
                   </td>
                 </tr>
@@ -805,9 +944,6 @@ function ReadingsTab() {
     </div>
   )
 }
-
-// ── Main ───────────────────────────────────────────────────────────────────
-
 
 // ── Disconnection Notices Tab ─────────────────────────────────────────────────
 
@@ -823,6 +959,7 @@ interface DisconnectionCandidate {
   stage: 'overdue' | 'reminder_due' | 'formal_due' | 'clear'
 }
 
+// Uses mock data — wired to live data in a future iteration
 function DisconnectionTab() {
   const [sentNotices, setSentNotices] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
@@ -832,14 +969,12 @@ function DisconnectionTab() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // Find postpaid meters with overdue charges
   const candidates = useMemo((): DisconnectionCandidate[] => {
-    const postpaidMeters = METERS.filter(m =>
+    const postpaidMeters = MOCK_METERS.filter((m: Meter) =>
       m.meter_type === 'postpaid' && m.status === 'active' && m.unit_id
     )
 
-    return postpaidMeters.map(meter => {
-      // Find overdue utility charges for this unit
+    return postpaidMeters.map((meter: Meter) => {
       const overdueCharges = CHARGES.filter(c =>
         c.unit_id === meter.unit_id &&
         (c.status === 'overdue' || c.status === 'pending') &&
@@ -847,7 +982,6 @@ function DisconnectionTab() {
       )
       const outstanding = overdueCharges.reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
 
-      // Simulate days overdue from due_date
       const oldestCharge = overdueCharges.sort((a, b) => a.due_date.localeCompare(b.due_date))[0]
       let daysOverdue = 0
       if (oldestCharge) {
@@ -862,8 +996,8 @@ function DisconnectionTab() {
       else if (daysOverdue > 0) stage = 'overdue'
 
       return { meter, days_overdue: daysOverdue, outstanding_amount: outstanding, stage }
-    }).filter(c => c.stage !== 'clear' || c.outstanding_amount > 0)
-  }, [])
+    }).filter((c: DisconnectionCandidate) => c.stage !== 'clear' || c.outstanding_amount > 0)
+  }, [MOCK_METERS])
 
   const formalDue   = candidates.filter(c => c.stage === 'formal_due')
   const reminderDue = candidates.filter(c => c.stage === 'reminder_due')
@@ -1132,13 +1266,50 @@ function InventoryTab({ onAssign }: { onAssign?: (m: MeterExtended) => void }) {
 // ── Main Page ──────────────────────────────────────────────────────────────────────────
 
 export function UtilitiesPageClient() {
-  const [readTarget, setReadTarget]     = useState<Meter | null>(null)
+  const [readTarget, setReadTarget]     = useState<MeterData | null>(null)
   const [showRead, setShowRead]         = useState(false)
-  const [viewTarget, setViewTarget]     = useState<Meter | null>(null)
+  const [viewTarget, setViewTarget]     = useState<MeterData | null>(null)
   const [showView, setShowView]         = useState(false)
   const [showAddMeter, setShowAddMeter] = useState(false)
 
-  const consumerMeters = METERS.filter(m => !m.meter_role || m.meter_role === 'consumer')
+  // Live data state
+  const [meters, setMeters]       = useState<MeterData[]>([])
+  const [readings, setReadings]   = useState<MeterReadingData[]>([])
+  const [suppliers, setSuppliers] = useState<WaterSupplierData[]>([])
+  const [tanks, setTanks]         = useState<ReserveTankData[]>([])
+  const [zones, setZones]         = useState<WaterZoneData[]>([])
+  const [loadingMeters, setLoadingMeters]   = useState(true)
+  const [loadingReadings, setLoadingReadings] = useState(true)
+  const [loadingWater, setLoadingWater]     = useState(true)
+
+  const fetchMeters = useCallback(async () => {
+    try {
+      const data = await getAllMeters()
+      setMeters(data)
+    } catch {
+      // keep empty
+    } finally {
+      setLoadingMeters(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchMeters() }, [fetchMeters])
+
+  useEffect(() => {
+    getMeterReadings()
+      .then(setReadings)
+      .catch(() => {})
+      .finally(() => setLoadingReadings(false))
+  }, [])
+
+  useEffect(() => {
+    Promise.all([getWaterSuppliers(), getReserveTanks(), getWaterZones()])
+      .then(([s, t, z]) => { setSuppliers(s); setTanks(t); setZones(z) })
+      .catch(() => {})
+      .finally(() => setLoadingWater(false))
+  }, [])
+
+  const consumerMeters = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
   const latestBalance  = WATER_BALANCE_PERIODS[WATER_BALANCE_PERIODS.length - 1]
   const lossFlag       = latestBalance?.flagged
 
@@ -1148,17 +1319,17 @@ export function UtilitiesPageClient() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">Consumer Meters</p>
-          <p className="text-2xl font-bold text-text">{consumerMeters.length}</p>
-          <p className="text-xs text-text-muted">{consumerMeters.filter(m => m.status === 'active').length} active</p>
+          <p className="text-2xl font-bold text-text">{loadingMeters ? '…' : consumerMeters.length}</p>
+          <p className="text-xs text-text-muted">{loadingMeters ? '' : `${consumerMeters.filter(m => m.status === 'active').length} active`}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">Smart Meters</p>
-          <p className="text-2xl font-bold text-success">{METERS.filter(m => m.meter_type === 'smart').length}</p>
+          <p className="text-2xl font-bold text-success">{loadingMeters ? '…' : meters.filter(m => m.meter_type === 'smart').length}</p>
           <p className="text-xs text-text-muted">IoT auto-read</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">Pending Billing</p>
-          <p className="text-2xl font-bold text-warning">{METER_READINGS.filter(r => r.status === 'pending_bill').length}</p>
+          <p className="text-2xl font-bold text-warning">{loadingReadings ? '…' : readings.filter(r => r.status === 'pending_bill').length}</p>
           <p className="text-xs text-text-muted">Readings not billed</p>
         </Card>
         <Card className="p-4">
@@ -1200,6 +1371,8 @@ export function UtilitiesPageClient() {
 
         <TabsContent value="meters" className="pt-5">
           <MetersTab
+            meters={meters}
+            loading={loadingMeters}
             onRead={m => { setReadTarget(m); setShowRead(true) }}
             onView={m => { setViewTarget(m); setShowView(true) }}
             onAddMeter={() => setShowAddMeter(true)}
@@ -1209,20 +1382,31 @@ export function UtilitiesPageClient() {
           <InventoryTab onAssign={m => alert(`Assign ${m.serial_number} to unit — coming soon`)} />
         </TabsContent>
         <TabsContent value="supply" className="pt-5">
-          <WaterSupplyTab />
+          <WaterSupplyTab
+            suppliers={suppliers}
+            tanks={tanks}
+            zones={zones}
+            meters={meters}
+            loading={loadingWater}
+          />
         </TabsContent>
         <TabsContent value="balance" className="pt-5">
           <WaterBalanceTab />
         </TabsContent>
         <TabsContent value="readings" className="pt-5">
-          <ReadingsTab />
+          <ReadingsTab readings={readings} loading={loadingReadings} />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
           <DisconnectionTab />
         </TabsContent>
       </Tabs>
 
-      <ReadingEntryModal meter={readTarget} open={showRead} onClose={() => setShowRead(false)} />
+      <ReadingEntryModal
+        meter={readTarget}
+        open={showRead}
+        onClose={() => setShowRead(false)}
+        onSaved={() => { fetchMeters(); getMeterReadings().then(setReadings).catch(() => {}) }}
+      />
       <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} />
       <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} />
     </main>

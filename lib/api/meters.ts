@@ -41,3 +41,52 @@ export async function updateMeter(unitId: string, meterId: string, payload: Reco
 export async function deleteMeter(unitId: string, meterId: string): Promise<void> {
   await apiFetch<unknown>(`/units/${unitId}/meters/${meterId}`, { method: 'DELETE' })
 }
+
+export async function getAllMeters(params?: { utilityType?: string; meterType?: string; meterRole?: string }): Promise<MeterData[]> {
+  const qs = new URLSearchParams()
+  if (params?.utilityType) qs.set('utilityType', params.utilityType)
+  if (params?.meterType) qs.set('meterType', params.meterType)
+  if (params?.meterRole) qs.set('meterRole', params.meterRole)
+  const query = qs.toString()
+  return apiFetch<MeterData[]>(`/meters${query ? '?' + query : ''}`)
+}
+
+export interface MeterReadingData {
+  id: string
+  meter_id: string
+  meter_number: string
+  unit_label: string | null
+  utility_type: string
+  previous_value: number
+  current_value: number
+  units_consumed: number
+  reading_date: string | null
+  billing_period: string | null
+  source: string | null
+  read_by: string | null
+  unit_cost: number | null
+  amount_due: number
+  management_fee: number | null
+  status: string
+  notes: string | null
+  created_at: string | null
+}
+
+export async function getMeterReadings(params?: { period?: string; meterId?: string }): Promise<MeterReadingData[]> {
+  const qs = new URLSearchParams()
+  if (params?.period) qs.set('period', params.period)
+  if (params?.meterId) qs.set('meterId', params.meterId)
+  const query = qs.toString()
+  return apiFetch<MeterReadingData[]>(`/meter-readings${query ? '?' + query : ''}`)
+}
+
+export async function getReadingsForMeter(meterId: string): Promise<MeterReadingData[]> {
+  return apiFetch<MeterReadingData[]>(`/meters/${meterId}/readings`)
+}
+
+export async function createMeterReading(meterId: string, payload: Record<string, unknown>): Promise<MeterReadingData> {
+  return apiFetch<MeterReadingData>(`/meters/${meterId}/readings`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
