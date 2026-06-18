@@ -23,6 +23,7 @@ export type ResourceType =
   | 'unit' | 'person' | 'lease' | 'charge'
   | 'work_order' | 'booking' | 'access_event'
   | 'access_credential' | 'document' | 'system_config'
+  | 'utility'
 
 export interface Resource {
   type: ResourceType

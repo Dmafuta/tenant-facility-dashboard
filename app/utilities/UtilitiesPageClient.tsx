@@ -33,6 +33,9 @@ import {
 import type { WaterSupplierData, ReserveTankData, WaterZoneData } from '@/lib/api/water'
 import { getUnitsFromApi } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
+import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice } from '@/lib/api/disconnection'
+import type { DisconnectionNoticeData } from '@/lib/api/disconnection'
+import type { ChargeData } from '@/lib/api/charges'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -134,6 +137,7 @@ function ReadingEntryModal({
 
   async function handleSave() {
     if (!reading) { setError('Current reading is required.'); return }
+    if (!meter) return
     setSaving(true)
     setError(null)
     try {
@@ -818,6 +822,7 @@ function TankLevelModal({
   if (!tank) return null
 
   async function handleSave() {
+    if (!tank) return
     const val = parseFloat(level)
     if (isNaN(val) || val < 0) { setError('Enter a valid level.'); return }
     if (tank.capacityM3 != null && val > Number(tank.capacityM3)) { setError(`Cannot exceed capacity of ${tank.capacityM3} m³.`); return }
@@ -1644,40 +1649,49 @@ const DISCONNECTION_CONFIG = {
 }
 
 interface DisconnectionCandidate {
-  meter: Meter
+  meter: MeterData
   days_overdue: number
   outstanding_amount: number
   stage: 'overdue' | 'reminder_due' | 'formal_due' | 'clear'
 }
 
-// Uses mock data — wired to live data in a future iteration
-function DisconnectionTab() {
-  const [sentNotices, setSentNotices] = useState<Set<string>>(new Set())
+function DisconnectionTab({
+  meters,
+  overdueCharges,
+  sentNotices,
+  loading,
+  onRefresh,
+}: {
+  meters: MeterData[]
+  overdueCharges: ChargeData[]
+  sentNotices: DisconnectionNoticeData[]
+  loading: boolean
+  onRefresh: () => void
+}) {
+  const [sending, setSending] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
   const showToast = (msg: string) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 3000)
+    setTimeout(() => setToast(null), 3500)
   }
 
   const candidates = useMemo((): DisconnectionCandidate[] => {
-    const postpaidMeters = MOCK_METERS.filter((m: Meter) =>
+    const postpaidMeters = meters.filter(m =>
       m.meter_type === 'postpaid' && m.status === 'active' && m.unit_id
     )
 
-    return postpaidMeters.map((meter: Meter) => {
-      const overdueCharges = CHARGES.filter(c =>
-        c.unit_id === meter.unit_id &&
-        (c.status === 'overdue' || c.status === 'pending') &&
-        c.type.startsWith('utility')
-      )
-      const outstanding = overdueCharges.reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
+    return postpaidMeters.map(meter => {
+      const meterCharges = overdueCharges.filter(c => c.unit_id === meter.unit_id)
+      const outstanding = meterCharges.reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
 
-      const oldestCharge = overdueCharges.sort((a, b) => a.due_date.localeCompare(b.due_date))[0]
+      const oldestCharge = [...meterCharges].sort((a, b) =>
+        (a.due_date ?? '').localeCompare(b.due_date ?? '')
+      )[0]
       let daysOverdue = 0
-      if (oldestCharge) {
+      if (oldestCharge?.due_date) {
         const due = new Date(oldestCharge.due_date)
-        const today = new Date('2026-06-13')
+        const today = new Date()
         daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
       }
 
@@ -1687,23 +1701,60 @@ function DisconnectionTab() {
       else if (daysOverdue > 0) stage = 'overdue'
 
       return { meter, days_overdue: daysOverdue, outstanding_amount: outstanding, stage }
-    }).filter((c: DisconnectionCandidate) => c.stage !== 'clear' || c.outstanding_amount > 0)
-  }, [MOCK_METERS])
+    }).filter(c => c.stage !== 'clear' || c.outstanding_amount > 0)
+  }, [meters, overdueCharges])
 
-  const formalDue   = candidates.filter(c => c.stage === 'formal_due')
-  const reminderDue = candidates.filter(c => c.stage === 'reminder_due')
-  const overdueClear= candidates.filter(c => c.stage === 'overdue')
+  const formalDue    = candidates.filter(c => c.stage === 'formal_due')
+  const reminderDue  = candidates.filter(c => c.stage === 'reminder_due')
+  const overdueClear = candidates.filter(c => c.stage === 'overdue')
 
-  function sendNotice(candidate: DisconnectionCandidate, type: 'reminder' | 'formal') {
-    setSentNotices(prev => new Set([...prev, `${candidate.meter.id}_${type}`]))
-    const label = type === 'formal' ? 'Formal disconnection notice' : 'Reminder notice'
-    showToast(`✅ ${label} sent to ${candidate.meter.current_billing_person?.name ?? 'tenant'} (${candidate.meter.unit_label})`)
+  function noticeSent(meterId: string, type: 'reminder' | 'formal') {
+    return sentNotices.some(n => n.meter_id === meterId && n.notice_type === type)
+  }
+
+  async function sendNotice(candidate: DisconnectionCandidate, type: 'reminder' | 'formal') {
+    const key = `${candidate.meter.id}_${type}`
+    setSending(key)
+    try {
+      await sendDisconnectionNotice({
+        meter_id: candidate.meter.id,
+        meter_number: candidate.meter.meter_number,
+        unit_id: candidate.meter.unit_id,
+        unit_label: candidate.meter.unit_label,
+        person_id: candidate.meter.current_billing_person?.person_id ?? null,
+        person_name: candidate.meter.current_billing_person?.name ?? null,
+        person_phone: null,
+        person_email: null,
+        notice_type: type,
+        outstanding_amount_kes: candidate.outstanding_amount,
+        utility_type: candidate.meter.utility_type,
+      })
+      const label = type === 'formal' ? 'Formal disconnection notice' : 'Reminder notice'
+      showToast(`✅ ${label} sent for ${candidate.meter.unit_label ?? candidate.meter.meter_number}`)
+      onRefresh()
+    } catch {
+      showToast('❌ Failed to send notice. Please try again.')
+    } finally {
+      setSending(null)
+    }
+  }
+
+  async function sendAllFormal() {
+    for (const c of formalDue) {
+      if (!noticeSent(c.meter.id, 'formal')) {
+        await sendNotice(c, 'formal')
+      }
+    }
   }
 
   const stageBadge = (stage: DisconnectionCandidate['stage']) => {
     if (stage === 'formal_due')   return <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Formal Notice Due</span>
     if (stage === 'reminder_due') return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Reminder Due</span>
     return <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Overdue</span>
+  }
+
+  if (loading) {
+    return <div className="py-16 text-center text-sm text-gray-400">Loading disconnection data…</div>
   }
 
   return (
@@ -1761,13 +1812,16 @@ function DisconnectionTab() {
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center">
           <h4 className="text-sm font-semibold text-gray-900 flex-1">Postpaid Meters — Overdue Bills</h4>
-          {formalDue.length > 0 && (
-            <button
-              onClick={() => formalDue.forEach(c => sendNotice(c, 'formal'))}
-              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-            >
-              Send All Formal Notices ({formalDue.length})
-            </button>
+          {formalDue.some(c => !noticeSent(c.meter.id, 'formal')) && (
+            <CanDo action="write" resource={{ type: 'utility' }}>
+              <button
+                onClick={sendAllFormal}
+                disabled={sending !== null}
+                className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Send All Formal Notices ({formalDue.filter(c => !noticeSent(c.meter.id, 'formal')).length})
+              </button>
+            </CanDo>
           )}
         </div>
         {candidates.length === 0 ? (
@@ -1789,19 +1843,20 @@ function DisconnectionTab() {
             </thead>
             <tbody>
               {candidates.map(c => {
-                const reminderSent = sentNotices.has(`${c.meter.id}_reminder`)
-                const formalSent   = sentNotices.has(`${c.meter.id}_formal`)
+                const reminderSent = noticeSent(c.meter.id, 'reminder')
+                const formalSent   = noticeSent(c.meter.id, 'formal')
+                const isSending    = sending === `${c.meter.id}_reminder` || sending === `${c.meter.id}_formal`
                 return (
                   <tr key={c.meter.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{c.meter.unit_label}</p>
+                      <p className="font-medium text-gray-900">{c.meter.unit_label ?? '—'}</p>
                       <p className="text-xs text-gray-500">{c.meter.current_billing_person?.name ?? '—'}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-mono text-xs text-gray-700">{c.meter.meter_number}</p>
                       <p className="text-[11px] text-gray-400">{c.meter.account_number}</p>
                     </td>
-                    <td className="px-4 py-3 capitalize text-xs text-gray-600">{c.meter.utility_type.replace('_', ' ')}</td>
+                    <td className="px-4 py-3 capitalize text-xs text-gray-600">{c.meter.utility_type.replace(/_/g, ' ')}</td>
                     <td className="px-4 py-3 text-right font-semibold text-red-600">
                       {c.outstanding_amount > 0 ? `KES ${c.outstanding_amount.toLocaleString()}` : '—'}
                     </td>
@@ -1812,27 +1867,29 @@ function DisconnectionTab() {
                     </td>
                     <td className="px-4 py-3">{stageBadge(c.stage)}</td>
                     <td className="px-4 py-3">
-                      {c.stage === 'formal_due' && (
-                        <button
-                          disabled={formalSent}
-                          onClick={() => sendNotice(c, 'formal')}
-                          className="rounded border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40"
-                        >
-                          {formalSent ? '✓ Sent' : 'Send Formal Notice'}
-                        </button>
-                      )}
-                      {c.stage === 'reminder_due' && (
-                        <button
-                          disabled={reminderSent}
-                          onClick={() => sendNotice(c, 'reminder')}
-                          className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-40"
-                        >
-                          {reminderSent ? '✓ Sent' : 'Send Reminder'}
-                        </button>
-                      )}
-                      {c.stage === 'overdue' && (
-                        <span className="text-xs text-gray-400">In grace period</span>
-                      )}
+                      <CanDo action="write" resource={{ type: 'utility' }}>
+                        {c.stage === 'formal_due' && (
+                          <button
+                            disabled={formalSent || isSending}
+                            onClick={() => sendNotice(c, 'formal')}
+                            className="rounded border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40"
+                          >
+                            {formalSent ? '✓ Sent' : isSending ? 'Sending…' : 'Send Formal Notice'}
+                          </button>
+                        )}
+                        {c.stage === 'reminder_due' && (
+                          <button
+                            disabled={reminderSent || isSending}
+                            onClick={() => sendNotice(c, 'reminder')}
+                            className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-40"
+                          >
+                            {reminderSent ? '✓ Sent' : isSending ? 'Sending…' : 'Send Reminder'}
+                          </button>
+                        )}
+                        {c.stage === 'overdue' && (
+                          <span className="text-xs text-gray-400">In grace period</span>
+                        )}
+                      </CanDo>
                     </td>
                   </tr>
                 )
@@ -1841,6 +1898,53 @@ function DisconnectionTab() {
           </table>
         )}
       </div>
+
+      {/* Sent notices log */}
+      {sentNotices.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <h4 className="text-sm font-semibold text-gray-900">Recently Sent Notices</h4>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <th className="px-4 py-3 font-medium">Unit · Tenant</th>
+                <th className="px-4 py-3 font-medium">Meter</th>
+                <th className="px-4 py-3 font-medium">Utility</th>
+                <th className="px-4 py-3 font-medium">Type</th>
+                <th className="px-4 py-3 text-right font-medium">Outstanding</th>
+                <th className="px-4 py-3 font-medium">Sent By</th>
+                <th className="px-4 py-3 font-medium">Sent At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sentNotices.slice(0, 20).map(n => (
+                <tr key={n.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{n.unit_label ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{n.person_name ?? '—'}</p>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-700">{n.meter_number}</td>
+                  <td className="px-4 py-3 capitalize text-xs text-gray-600">{(n.utility_type ?? '').replace(/_/g, ' ')}</td>
+                  <td className="px-4 py-3">
+                    {n.notice_type === 'formal'
+                      ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Formal</span>
+                      : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Reminder</span>
+                    }
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-red-600">
+                    {n.outstanding_amount_kes != null ? `KES ${Number(n.outstanding_amount_kes).toLocaleString()}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-600">{n.sent_by ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-500">
+                    {n.sent_at ? new Date(n.sent_at).toLocaleString() : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -1969,9 +2073,12 @@ export function UtilitiesPageClient() {
   const [suppliers, setSuppliers] = useState<WaterSupplierData[]>([])
   const [tanks, setTanks]         = useState<ReserveTankData[]>([])
   const [zones, setZones]         = useState<WaterZoneData[]>([])
-  const [loadingMeters, setLoadingMeters]   = useState(true)
+  const [overdueCharges, setOverdueCharges]   = useState<ChargeData[]>([])
+  const [sentNotices, setSentNotices]         = useState<DisconnectionNoticeData[]>([])
+  const [loadingMeters, setLoadingMeters]     = useState(true)
   const [loadingReadings, setLoadingReadings] = useState(true)
-  const [loadingWater, setLoadingWater]     = useState(true)
+  const [loadingWater, setLoadingWater]       = useState(true)
+  const [loadingDisconn, setLoadingDisconn]   = useState(true)
 
   const fetchMeters = useCallback(async () => {
     try {
@@ -2003,6 +2110,17 @@ export function UtilitiesPageClient() {
   }, [])
 
   useEffect(() => { fetchWater() }, [fetchWater])
+
+  const fetchDisconn = useCallback(async () => {
+    try {
+      const [charges, notices] = await Promise.all([getOverdueUtilityCharges(), getDisconnectionNotices()])
+      setOverdueCharges(charges)
+      setSentNotices(notices)
+    } catch { /* ignore */ }
+    finally { setLoadingDisconn(false) }
+  }, [])
+
+  useEffect(() => { fetchDisconn() }, [fetchDisconn])
 
   const consumerMeters = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
   const latestBalance  = WATER_BALANCE_PERIODS[WATER_BALANCE_PERIODS.length - 1]
@@ -2093,7 +2211,13 @@ export function UtilitiesPageClient() {
           <ReadingsTab readings={readings} loading={loadingReadings} onRefresh={fetchReadings} />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
-          <DisconnectionTab />
+          <DisconnectionTab
+            meters={meters}
+            overdueCharges={overdueCharges}
+            sentNotices={sentNotices}
+            loading={loadingDisconn || loadingMeters}
+            onRefresh={fetchDisconn}
+          />
         </TabsContent>
       </Tabs>
 
