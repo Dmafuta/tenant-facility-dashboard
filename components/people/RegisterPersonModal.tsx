@@ -371,7 +371,7 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
   }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register New Tenant" size="lg">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register New Tenant" size="lg" noPadding>
       <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
         <Steps steps={['Profile', 'Verify Phone', 'Documents', 'Vehicles', 'Confirm']} current={step} />
 
@@ -584,7 +584,7 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
   }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register Individual Owner" size="lg">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register Individual Owner" size="lg" noPadding>
       <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
         <Steps steps={['Profile', 'Verify Phone', 'Ownership Docs', 'Vehicles', 'Confirm']} current={step} />
 
@@ -786,7 +786,7 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
   }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register Corporate Owner" size="lg">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register Corporate Owner" size="lg" noPadding>
       <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
         <Steps steps={['Company', 'Rep & Contact', 'Verify Phone', 'Documents', 'Vehicles', 'Confirm']} current={step} />
 
@@ -1036,7 +1036,7 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
   }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register Staff Member" size="lg">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title="Register Staff Member" size="lg" noPadding>
       <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
         <Steps steps={stepLabels} current={step} />
 

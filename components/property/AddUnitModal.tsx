@@ -283,7 +283,7 @@ export function AddUnitModal({
   }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title={isEditing ? `Edit Unit ${unit?.block ? unit.block + '-' : ''}${unit?.number ?? ''}` : 'Add New Unit'} size="lg">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title={isEditing ? `Edit Unit ${unit?.block ? unit.block + '-' : ''}${unit?.number ?? ''}` : 'Add New Unit'} size="lg" noPadding>
       <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
         <Steps steps={STEP_LABELS} current={step} />
 

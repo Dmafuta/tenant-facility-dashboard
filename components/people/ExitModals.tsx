@@ -142,7 +142,7 @@ export function TenantExitModal({ open, onClose, personName, currentUnit }: {
 
   return (
     <Modal open={open} onClose={() => { onClose(); reset() }}
-      title={`Tenant Exit — ${personName}`} size="md">
+      title={`Tenant Exit — ${personName}`} size="md" noPadding>
       <div className="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
 
         <ModeToggle
@@ -332,7 +332,7 @@ export function OwnerExitModal({ open, onClose, personName, ownedUnitLabels }: {
 
   return (
     <Modal open={open} onClose={() => { onClose(); reset() }}
-      title={`Ownership Exit — ${personName}`} size="md">
+      title={`Ownership Exit — ${personName}`} size="md" noPadding>
       <div className="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
 
         <ModeToggle
@@ -520,7 +520,7 @@ export function StaffExitModal({ open, onClose, personName, jobTitle, contractTy
 
   return (
     <Modal open={open} onClose={() => { onClose(); reset() }}
-      title={`End Contract — ${personName}`} size="md">
+      title={`End Contract — ${personName}`} size="md" noPadding>
       <div className="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
 
         {step === 0 && (

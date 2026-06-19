@@ -256,8 +256,8 @@ export function AddMeterModal({ open, onClose }: { open: boolean; onClose: () =>
   const BILLING_MODE_LABEL: Record<MeterBillingMode, string> = { postpaid: 'Postpaid', prepaid: 'Prepaid (top-up tracking)' }
 
   return (
-    <Modal open={open} onClose={() => { onClose(); reset() }} title="Add New Meter" size="lg">
-      <div className="px-6 py-5 overflow-y-auto max-h-[calc(100vh-12rem)]">
+    <Modal open={open} onClose={() => { onClose(); reset() }} title="Add New Meter" size="lg" noPadding>
+      <div className="px-6 py-5">
         <Steps steps={STEP_LABELS} current={step} />
 
         {/* ── Step 0: Category & Type ── */}

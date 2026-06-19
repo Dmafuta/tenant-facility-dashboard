@@ -1579,7 +1579,7 @@ function WaterBalanceTab({
       {/* ── Create / Edit Modal ─────────────────────────────────────────── */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)}
         title={editTarget ? `Edit Balance — ${editTarget.period}` : 'New Water Balance Period'}>
-        <form onSubmit={handleSubmit} className="space-y-4 p-1">
+        <form onSubmit={handleSubmit} className="space-y-4">
 
           {/* Period */}
           <div>
