@@ -480,7 +480,7 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
                   </div>
                 </div>
               ) : (
-                <CanDo action="write" resource="utility">
+                <CanDo action="write" resource={{ type: 'utility' }}>
                   <button
                     onClick={() => setShowMigForm(true)}
                     className="w-full text-sm text-primary border border-dashed border-primary/40 rounded-lg py-2 hover:bg-primary/5 transition-colors"
