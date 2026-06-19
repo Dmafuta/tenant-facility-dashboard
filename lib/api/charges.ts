@@ -39,3 +39,19 @@ export async function updateCharge(unitId: string, chargeId: string, payload: Re
 export async function deleteCharge(unitId: string, chargeId: string): Promise<void> {
   await apiFetch<unknown>(`/units/${unitId}/charges/${chargeId}`, { method: 'DELETE' })
 }
+
+export async function recordPayment(
+  unitId: string,
+  chargeId: string,
+  payload: { amount: number; paid_date?: string; receipt_no?: string }
+): Promise<ChargeData> {
+  return apiFetch<ChargeData>(`/units/${unitId}/charges/${chargeId}/pay`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function getAllCharges(status?: string): Promise<ChargeData[]> {
+  const qs = status && status !== 'all' ? `?status=${status}` : ''
+  return apiFetch<ChargeData[]>(`/charges${qs}`)
+}

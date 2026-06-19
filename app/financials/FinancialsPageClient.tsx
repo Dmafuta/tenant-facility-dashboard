@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -7,9 +7,13 @@ import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { CanDo } from '@/components/ui/CanDo'
-import { CHARGES, PAYMENT_TRANSACTIONS, LEASES } from '@/lib/mock-data'
-import type { Charge, ChargeType, ChargeStatus, PaymentTransaction, PaymentMethod, PaymentStatus, BillingCycle, BillingRunItem } from '@/lib/types'
+import { LEASES } from '@/lib/mock-data'
+import type { ChargeType, ChargeStatus, BillingCycle, BillingRunItem } from '@/lib/types'
 import { cn } from '@/lib/cn'
+import { getAllCharges, recordPayment } from '@/lib/api/charges'
+import type { ChargeData } from '@/lib/api/charges'
+import { initiateStkPush, getMpesaTransactions } from '@/lib/api/mpesa'
+import type { MpesaTransactionData } from '@/lib/api/mpesa'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -49,8 +53,8 @@ function chargeTypeGroup(t: ChargeType): string {
   return 'other'
 }
 
-function statusBadge(s: ChargeStatus) {
-  const MAP: Record<ChargeStatus, { label: string; color: string }> = {
+function statusBadge(s: string) {
+  const MAP: Record<string, { label: string; color: string }> = {
     pending: { label: 'Pending',  color: 'bg-warning/10 text-warning' },
     paid:    { label: 'Paid',     color: 'bg-success/10 text-success' },
     overdue: { label: 'Overdue',  color: 'bg-danger/10 text-danger' },
@@ -61,8 +65,8 @@ function statusBadge(s: ChargeStatus) {
   return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', color)}>{label}</span>
 }
 
-function typeChip(t: ChargeType) {
-  const group = chargeTypeGroup(t)
+function typeChip(t: string) {
+  const group = chargeTypeGroup(t as ChargeType)
   const colorMap: Record<string, string> = {
     rent:           'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400',
     utility:        'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400',
@@ -203,25 +207,44 @@ function AddChargeModal({ open, onClose }: { open: boolean; onClose: () => void 
 // ── Mark Paid Modal ────────────────────────────────────────────────────────
 
 function MarkPaidModal({
-  charge, open, onClose,
-}: { charge: Charge | null; open: boolean; onClose: () => void }) {
-  const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [ref, setRef] = useState('')
+  charge, open, onClose, onSaved,
+}: { charge: ChargeData | null; open: boolean; onClose: () => void; onSaved: () => void }) {
+  const [amount, setAmount]   = useState('')
+  const [date,   setDate]     = useState(new Date().toISOString().slice(0, 10))
+  const [ref,    setRef]      = useState('')
+  const [saving, setSaving]   = useState(false)
+  const [error,  setError]    = useState('')
 
   if (!charge) return null
-
   const outstanding = charge.amount - (charge.paid_amount ?? 0)
+
+  async function handleSave() {
+    const amt = parseFloat(amount || outstanding.toString())
+    if (!amt || amt <= 0) { setError('Enter a valid amount.'); return }
+    setSaving(true); setError('')
+    try {
+      await recordPayment(charge.unit_id, charge.id, {
+        amount: amt,
+        paid_date: date,
+        receipt_no: ref || undefined,
+      })
+      onSaved()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to record payment.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <Modal open={open} onClose={onClose} title="Record Payment" size="sm">
       <div className="space-y-4">
         <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card text-sm">
           <p className="font-medium text-text">{charge.unit_label}</p>
-          <p className="text-text-muted">{charge.person_name} · {chargeTypeLabel(charge.type)}</p>
+          <p className="text-text-muted">{charge.person_name} · {chargeTypeLabel(charge.type as ChargeType)}</p>
           <p className="text-text mt-1">Outstanding: <span className="font-semibold text-danger">{fmt(outstanding)}</span></p>
         </div>
-
         <div>
           <label className="block text-xs font-medium text-text-muted mb-1">Amount Received (KES)</label>
           <input
@@ -250,11 +273,11 @@ function MarkPaidModal({
             onChange={e => setRef(e.target.value)}
           />
         </div>
-
+        {error && <p className="text-xs text-danger">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={() => { alert('Payment recorded (demo)'); onClose() }}>
-            Confirm Payment
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Confirm Payment'}
           </Button>
         </div>
       </div>
@@ -270,41 +293,57 @@ const ALL_TYPES    = ['all', 'rent', 'utility', 'service_charge', 'fine', 'penal
 
 // ── Payments tab ──────────────────────────────────────────────────────────────
 
-function payMethodLabel(m: PaymentMethod): string {
-  const MAP: Record<PaymentMethod, string> = {
-    mpesa_stk:    'STK Push',
-    mpesa_c2b:    'C2B Paybill',
-    bank_transfer:'Bank Transfer',
-    cash:         'Cash',
-    cheque:       'Cheque',
-  }
-  return MAP[m] ?? m
-}
-
-function payStatusBadge(s: PaymentStatus) {
-  const MAP: Record<PaymentStatus, { label: string; classes: string }> = {
-    pending:     { label: 'Pending',      classes: 'bg-amber-100 text-amber-700' },
-    completed:   { label: 'Completed',    classes: 'bg-green-100 text-green-700' },
-    failed:      { label: 'Failed',       classes: 'bg-red-100 text-red-700' },
-    cancelled:   { label: 'Cancelled',    classes: 'bg-gray-100 text-gray-500' },
-    reversed:    { label: 'Reversed',     classes: 'bg-orange-100 text-orange-700' },
-    reconciled:  { label: 'Reconciled',   classes: 'bg-blue-100 text-blue-700' },
+function payStatusBadge(s: string) {
+  const MAP: Record<string, { label: string; classes: string }> = {
+    pending:   { label: 'Pending',   classes: 'bg-amber-100 text-amber-700' },
+    completed: { label: 'Completed', classes: 'bg-green-100 text-green-700' },
+    failed:    { label: 'Failed',    classes: 'bg-red-100 text-red-700' },
+    cancelled: { label: 'Cancelled', classes: 'bg-gray-100 text-gray-500' },
   }
   const { label, classes } = MAP[s] ?? { label: s, classes: '' }
   return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${classes}`}>{label}</span>
 }
 
-function StkPushModal({ charge, open, onClose }: { charge: Charge | null; open: boolean; onClose: () => void }) {
-  const [phone, setPhone] = useState('')
+function StkPushModal({
+  charge, open, onClose, onSent,
+}: { charge: ChargeData | null; open: boolean; onClose: () => void; onSent?: () => void }) {
+  const [phone,   setPhone]   = useState('')
   const [loading, setLoading] = useState(false)
-  const [sent, setSent] = useState(false)
+  const [result,  setResult]  = useState<'idle' | 'success' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
 
-  function handleSend() {
-    setLoading(true)
-    setTimeout(() => {
+  async function handleSend() {
+    if (!charge) return
+    setLoading(true); setErrorMsg('')
+    try {
+      const outstanding = charge.amount - (charge.paid_amount ?? 0)
+      const res = await initiateStkPush({
+        phone,
+        amount: outstanding,
+        charge_id: charge.id,
+        unit_id: charge.unit_id,
+        unit_label: charge.unit_label,
+        person_name: charge.person_name,
+        description: `Payment for ${charge.unit_label ?? charge.type}`,
+      })
+      if (res.accepted) {
+        setResult('success')
+        onSent?.()
+      } else {
+        setErrorMsg(res.customer_message ?? 'STK push was not accepted by Safaricom.')
+        setResult('error')
+      }
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to send STK push.')
+      setResult('error')
+    } finally {
       setLoading(false)
-      setSent(true)
-    }, 1500)
+    }
+  }
+
+  function handleClose() {
+    setResult('idle'); setPhone(''); setErrorMsg('')
+    onClose()
   }
 
   if (!open || !charge) return null
@@ -318,9 +357,16 @@ function StkPushModal({ charge, open, onClose }: { charge: Charge | null; open: 
             <span className="text-xl">💚</span>
             <h3 className="text-sm font-semibold text-gray-900">M-Pesa STK Push</h3>
           </div>
-          <button onClick={() => { setSent(false); onClose() }} className="text-gray-400 hover:text-gray-600">✕</button>
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
-        {!sent ? (
+        {result === 'success' ? (
+          <div className="px-5 py-8 flex flex-col items-center gap-3 text-center">
+            <div className="text-4xl">✅</div>
+            <p className="text-sm font-semibold text-gray-900">Prompt sent to {phone}</p>
+            <p className="text-xs text-gray-500">The tenant will receive a PIN prompt on their phone. The charge will be marked paid automatically once Safaricom confirms.</p>
+            <button onClick={handleClose} className="mt-2 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Close</button>
+          </div>
+        ) : (
           <div className="px-5 py-4 space-y-4">
             <div className="rounded-lg bg-green-50 border border-green-100 p-3 text-sm">
               <p className="font-semibold text-green-900">{charge.unit_label} — {charge.person_name}</p>
@@ -335,26 +381,16 @@ function StkPushModal({ charge, open, onClose }: { charge: Charge | null; open: 
                 placeholder="07XXXXXXXX"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
-              <p className="text-xs text-gray-400">A payment prompt will be sent to this number for KES {outstanding.toLocaleString()}</p>
+              <p className="text-xs text-gray-400">A payment prompt for KES {outstanding.toLocaleString()} will be sent to this number.</p>
             </div>
-            <div className="rounded bg-gray-50 px-3 py-2 text-xs text-gray-500 space-y-1">
-              <p><span className="font-medium">Paybill:</span> 174379</p>
-              <p><span className="font-medium">Account Ref:</span> RENT</p>
-            </div>
+            {errorMsg && <p className="text-xs text-red-600 bg-red-50 rounded p-2">{errorMsg}</p>}
             <button
               onClick={handleSend}
-              disabled={loading || !phone}
+              disabled={loading || !phone.trim()}
               className="w-full rounded-lg bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
             >
               {loading ? 'Sending prompt…' : 'Send STK Push'}
             </button>
-          </div>
-        ) : (
-          <div className="px-5 py-8 flex flex-col items-center gap-3 text-center">
-            <div className="text-4xl">✅</div>
-            <p className="text-sm font-semibold text-gray-900">Prompt sent to {phone}</p>
-            <p className="text-xs text-gray-500">Ask the tenant to check their phone and enter their M-Pesa PIN. Status will update automatically once confirmed.</p>
-            <button onClick={() => { setSent(false); onClose() }} className="mt-2 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Close</button>
           </div>
         )}
       </div>
@@ -362,29 +398,30 @@ function StkPushModal({ charge, open, onClose }: { charge: Charge | null; open: 
   )
 }
 
-function PaymentsTabContent() {
+function PaymentsTabContent({
+  transactions, charges, onRefresh,
+}: {
+  transactions: MpesaTransactionData[]
+  charges: ChargeData[]
+  onRefresh: () => void
+}) {
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [methodFilter, setMethodFilter] = useState<string>('all')
-  const [stkTarget, setStkTarget] = useState<Charge | null>(null)
+  const [stkTarget, setStkTarget] = useState<ChargeData | null>(null)
   const [showStk, setShowStk] = useState(false)
 
   const filtered = useMemo(() => {
-    return PAYMENT_TRANSACTIONS.filter(p => {
-      const matchStatus = statusFilter === 'all' || p.status === statusFilter
-      const matchMethod = methodFilter === 'all' || p.method === methodFilter
-      return matchStatus && matchMethod
-    })
-  }, [statusFilter, methodFilter])
+    return transactions.filter(p => statusFilter === 'all' || p.status === statusFilter)
+  }, [transactions, statusFilter])
 
   const kpis = useMemo(() => {
-    const completed = PAYMENT_TRANSACTIONS.filter(p => p.status === 'completed' || p.status === 'reconciled')
-    const totalReceived = completed.reduce((s, p) => s + p.amount, 0)
-    const pending = PAYMENT_TRANSACTIONS.filter(p => p.status === 'pending').reduce((s, p) => s + p.amount, 0)
-    const unmatched = PAYMENT_TRANSACTIONS.filter(p => p.status === 'pending' && p.unit_id === '').length
+    const completed    = transactions.filter(p => p.status === 'completed')
+    const totalReceived = completed.reduce((s, p) => s + Number(p.amount), 0)
+    const pending       = transactions.filter(p => p.status === 'pending').reduce((s, p) => s + Number(p.amount), 0)
+    const unmatched     = transactions.filter(p => p.status === 'pending' && !p.charge_id).length
     return { totalReceived, pending, unmatched, count: completed.length }
-  }, [])
+  }, [transactions])
 
-  const unpaidCharges = CHARGES.filter(c => c.status === 'pending' || c.status === 'overdue' || c.status === 'partial')
+  const unpaidCharges = charges.filter(c => c.status === 'pending' || c.status === 'overdue' || c.status === 'partial')
 
   return (
     <div className="space-y-5">
@@ -420,7 +457,7 @@ function PaymentsTabContent() {
                 <tr key={c.id} className="border-b border-green-100 last:border-0">
                   <td className="py-2 pr-4 font-medium text-gray-900">{c.unit_label}</td>
                   <td className="py-2 pr-4 text-gray-600">{c.person_name}</td>
-                  <td className="py-2 pr-4 text-gray-500 text-xs">{c.description || chargeTypeLabel(c.type)}</td>
+                  <td className="py-2 pr-4 text-gray-500 text-xs">{c.description || chargeTypeLabel(c.type as ChargeType)}</td>
                   <td className="py-2 pr-4 text-right font-semibold text-red-600">
                     {fmt(c.amount - (c.paid_amount ?? 0))}
                   </td>
@@ -440,27 +477,22 @@ function PaymentsTabContent() {
         </div>
       </div>
 
-      {/* Unmatched C2B alert */}
-      {PAYMENT_TRANSACTIONS.filter(p => p.unit_id === '' && p.status === 'pending').length > 0 && (
+      {/* Unmatched STK pushes */}
+      {transactions.filter(p => p.status === 'pending' && !p.charge_id).length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <div className="flex items-center gap-2 mb-2">
             <span>⚠️</span>
-            <h4 className="text-sm font-semibold text-amber-900">Unmatched C2B Payments — Needs Reconciliation</h4>
+            <h4 className="text-sm font-semibold text-amber-900">Pending STK Pushes — Awaiting Confirmation</h4>
           </div>
-          {PAYMENT_TRANSACTIONS.filter(p => p.unit_id === '' && p.status === 'pending').map(p => (
+          {transactions.filter(p => p.status === 'pending' && !p.charge_id).map(p => (
             <div key={p.id} className="mt-2 flex items-center gap-3 rounded bg-white border border-amber-100 px-3 py-2 text-sm">
               <div className="flex-1">
-                <span className="font-mono font-semibold text-gray-800">{p.mpesa_receipt_number}</span>
+                <span className="text-gray-600">{p.phone}</span>
                 <span className="mx-2 text-gray-400">·</span>
-                <span className="text-gray-600">{p.mpesa_phone}</span>
-                <span className="mx-2 text-gray-400">·</span>
-                <span className="font-medium text-gray-900">{fmt(p.amount)}</span>
-                <span className="mx-2 text-gray-400">·</span>
-                <span className="text-xs text-gray-500">Ref: {p.mpesa_account_ref}</span>
+                <span className="font-medium text-gray-900">{fmt(Number(p.amount))}</span>
+                {p.unit_label && <><span className="mx-2 text-gray-400">·</span><span className="text-xs text-gray-500">{p.unit_label}</span></>}
               </div>
-              <button className="rounded border border-amber-300 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-100">
-                Match to Unit
-              </button>
+              <span className="text-xs text-amber-600">Awaiting PIN</span>
             </div>
           ))}
         </div>
@@ -480,18 +512,6 @@ function PaymentsTabContent() {
             <option value="pending">Pending</option>
             <option value="cancelled">Cancelled</option>
             <option value="failed">Failed</option>
-            <option value="reconciled">Reconciled</option>
-          </select>
-          <select
-            value={methodFilter}
-            onChange={e => setMethodFilter(e.target.value)}
-            className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
-          >
-            <option value="all">All Methods</option>
-            <option value="mpesa_stk">M-Pesa STK Push</option>
-            <option value="mpesa_c2b">M-Pesa C2B</option>
-            <option value="cash">Cash</option>
-            <option value="bank_transfer">Bank Transfer</option>
           </select>
         </div>
         <div className="overflow-x-auto">
@@ -511,10 +531,8 @@ function PaymentsTabContent() {
               {filtered.map((p, i) => (
                 <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i === filtered.length - 1 ? 'border-b-0' : ''}`}>
                   <td className="px-4 py-3">
-                    {p.mpesa_receipt_number ? (
-                      <span className="font-mono text-xs font-semibold text-gray-800">{p.mpesa_receipt_number}</span>
-                    ) : p.reference ? (
-                      <span className="text-xs text-gray-500">{p.reference}</span>
+                    {p.mpesa_receipt ? (
+                      <span className="font-mono text-xs font-semibold text-gray-800">{p.mpesa_receipt}</span>
                     ) : (
                       <span className="text-xs text-gray-400 italic">Pending</span>
                     )}
@@ -524,17 +542,17 @@ function PaymentsTabContent() {
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{p.unit_label || '—'}</p>
-                    <p className="text-xs text-gray-500">{p.tenant_name}</p>
+                    <p className="text-xs text-gray-500">{p.person_name || '—'}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${p.method.startsWith('mpesa') ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {p.method.startsWith('mpesa') ? '💚' : '💵'} {payMethodLabel(p.method)}
+                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-green-100 text-green-700">
+                      💚 STK Push
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-900">{fmt(p.amount)}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500">{p.mpesa_phone || '—'}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-900">{fmt(Number(p.amount))}</td>
+                  <td className="px-4 py-3 text-xs text-gray-500">{p.phone || '—'}</td>
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                    {new Date(p.initiated_at).toLocaleDateString()}
+                    {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-3">{payStatusBadge(p.status)}</td>
                 </tr>
@@ -728,39 +746,61 @@ export function FinancialsPageClient() {
   const [typeFilter, setType]         = useState<string>('all')
   const [periodFilter, setPeriod]     = useState<string>('all')
   const [showAdd, setShowAdd]         = useState(false)
-  const [payTarget, setPayTarget]     = useState<Charge | null>(null)
+  const [payTarget, setPayTarget]     = useState<ChargeData | null>(null)
   const [showPay, setShowPay]         = useState(false)
+
+  const [charges, setCharges]               = useState<ChargeData[]>([])
+  const [transactions, setTransactions]     = useState<MpesaTransactionData[]>([])
+  const [chargesLoading, setChargesLoading] = useState(true)
+
+  const fetchCharges = useCallback(async () => {
+    try {
+      const data = await getAllCharges()
+      setCharges(data)
+    } catch { /* silently fail */ }
+    finally { setChargesLoading(false) }
+  }, [])
+
+  const fetchTransactions = useCallback(async () => {
+    try {
+      const data = await getMpesaTransactions()
+      setTransactions(data)
+    } catch { /* silently fail */ }
+  }, [])
+
+  useEffect(() => { fetchCharges() }, [fetchCharges])
+  useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
   // Unique periods for filter
   const periods = useMemo(() => {
-    const set = new Set(CHARGES.map(c => c.period))
+    const set = new Set(charges.map(c => c.period).filter(Boolean) as string[])
     return ['all', ...Array.from(set).sort().reverse()]
-  }, [])
+  }, [charges])
 
   // Filtered charges
   const filtered = useMemo(() => {
-    return CHARGES.filter(c => {
+    return charges.filter(c => {
       const q = search.toLowerCase()
-      const matchSearch = !q || c.unit_label.toLowerCase().includes(q) || c.person_name.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q)
+      const matchSearch = !q || (c.unit_label ?? '').toLowerCase().includes(q) || (c.person_name ?? '').toLowerCase().includes(q) || c.description?.toLowerCase().includes(q)
       const matchStatus = statusFilter === 'all' || c.status === statusFilter
       const matchType   = typeFilter   === 'all' || c.type === typeFilter || (typeFilter === 'utility' && c.type.startsWith('utility'))
       const matchPeriod = periodFilter === 'all' || c.period === periodFilter
       return matchSearch && matchStatus && matchType && matchPeriod
     })
-  }, [search, statusFilter, typeFilter, periodFilter])
+  }, [charges, search, statusFilter, typeFilter, periodFilter])
 
   // KPIs
   const kpis = useMemo(() => {
-    const totalBilled   = CHARGES.reduce((s, c) => s + c.amount, 0)
-    const totalCollected = CHARGES.reduce((s, c) => s + (c.paid_amount ?? 0), 0)
-    const outstanding   = CHARGES.filter(c => c.status !== 'paid' && c.status !== 'waived')
-                                  .reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
-    const overdue       = CHARGES.filter(c => c.status === 'overdue')
-                                  .reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
+    const totalBilled    = charges.reduce((s, c) => s + c.amount, 0)
+    const totalCollected = charges.reduce((s, c) => s + (c.paid_amount ?? 0), 0)
+    const outstanding    = charges.filter(c => c.status !== 'paid' && c.status !== 'waived')
+                                   .reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
+    const overdue        = charges.filter(c => c.status === 'overdue')
+                                   .reduce((s, c) => s + (c.amount - (c.paid_amount ?? 0)), 0)
     return { totalBilled, totalCollected, outstanding, overdue }
-  }, [])
+  }, [charges])
 
-  function openPay(c: Charge) {
+  function openPay(c: ChargeData) {
     setPayTarget(c)
     setShowPay(true)
   }
@@ -785,7 +825,13 @@ export function FinancialsPageClient() {
         ))}
       </div>
 
-      {activeTab === 'payments' && <PaymentsTabContent />}
+      {activeTab === 'payments' && (
+        <PaymentsTabContent
+          transactions={transactions}
+          charges={charges}
+          onRefresh={() => { fetchCharges(); fetchTransactions() }}
+        />
+      )}
 
       {activeTab === 'charges' && <>
 
@@ -844,7 +890,7 @@ export function FinancialsPageClient() {
       {/* Summary chips */}
       <div className="flex gap-2 flex-wrap text-xs">
         {(['pending','overdue','partial','paid','waived'] as ChargeStatus[]).map(s => {
-          const count = CHARGES.filter(c => c.status === s).length
+          const count = charges.filter(c => c.status === s).length
           return (
             <button
               key={s}
@@ -947,14 +993,14 @@ export function FinancialsPageClient() {
           </table>
         </div>
         <div className="px-4 py-2 border-t border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-xs text-text-muted">
-          Showing {filtered.length} of {CHARGES.length} charges
+          {chargesLoading ? 'Loading…' : `Showing ${filtered.length} of ${charges.length} charges`}
         </div>
       </Card>
 
       {/* Modals */}
       <RunBillingCycleModal open={showBillingCycle} onClose={() => setShowBillingCycle(false)} />
       <AddChargeModal open={showAdd} onClose={() => setShowAdd(false)} />
-      <MarkPaidModal  charge={payTarget} open={showPay} onClose={() => setShowPay(false)} />
+      <MarkPaidModal  charge={payTarget} open={showPay} onClose={() => setShowPay(false)} onSaved={() => { fetchCharges(); setShowPay(false) }} />
 
       </>}
     </div>
