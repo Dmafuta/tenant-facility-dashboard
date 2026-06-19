@@ -1,6 +1,7 @@
 'use client'
 import { cn } from '@/lib/cn'
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 interface DrawerProps {
   open: boolean
@@ -16,7 +17,7 @@ export function Drawer({ open, onClose, title, children, width = 'w-[480px]' }: 
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  return (
+  return createPortal(
     <>
       <div className={cn('fixed inset-0 z-40 bg-black/40 transition-opacity', open ? 'opacity-100' : 'opacity-0 pointer-events-none')} onClick={onClose} />
       <aside className={cn('fixed top-0 right-0 h-full z-50 bg-white dark:bg-dark-card shadow-dropdown flex flex-col transition-transform duration-300 max-w-[calc(100vw-1rem)]', width, open ? 'translate-x-0' : 'translate-x-full')}>
@@ -28,6 +29,7 @@ export function Drawer({ open, onClose, title, children, width = 'w-[480px]' }: 
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </aside>
-    </>
+    </>,
+    document.body
   )
 }

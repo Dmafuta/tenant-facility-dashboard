@@ -7,12 +7,18 @@ import { Badge } from '@/components/ui/Badge'
 import { useCountUp } from '@/hooks/useCountUp'
 import {
   UNITS, CHARGES, WORK_ORDERS, LEASES,
-  CONSUMABLE_STOCK, CONSUMABLE_TYPES, WATER_BALANCE_PERIODS,
+  WATER_BALANCE_PERIODS,
   ONBOARDING_APPLICATIONS, BREACH_RECORDS, INSPECTIONS,
-  DOCUMENTS, METERS,
+  DOCUMENTS,
 } from '@/lib/mock-data'
 import { getMpesaTransactions } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
+import { getAllMeters } from '@/lib/api/meters'
+import type { MeterData } from '@/lib/api/meters'
+import { getOverdueUtilityCharges } from '@/lib/api/disconnection'
+import type { ChargeData } from '@/lib/api/disconnection'
+import { getConsumableStock } from '@/lib/api/consumables'
+import type { ConsumableStockData } from '@/lib/api/consumables'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmt(n: number) { return `KES ${n.toLocaleString()}` }
@@ -92,6 +98,20 @@ export default function DashboardPageClient({ unitStats }: {
     getMpesaTransactions().then(setMpesaTxns).catch(() => {})
   }, [])
 
+  // ── Live utilities: postpaid meters + overdue utility charges ─────────────
+  const [liveMeters, setLiveMeters] = useState<MeterData[]>([])
+  const [overdueUtility, setOverdueUtility] = useState<ChargeData[]>([])
+  useEffect(() => {
+    getAllMeters({ meterType: 'postpaid' }).then(setLiveMeters).catch(() => {})
+    getOverdueUtilityCharges().then(setOverdueUtility).catch(() => {})
+  }, [])
+
+  // ── Live consumable stock ─────────────────────────────────────────────────
+  const [liveStock, setLiveStock] = useState<ConsumableStockData[]>([])
+  useEffect(() => {
+    getConsumableStock().then(setLiveStock).catch(() => {})
+  }, [])
+
   // ── Occupancy — live from server props, fallback to mock ──────────────────
   const total    = unitStats?.total       ?? UNITS.length
   const occupied = unitStats?.occupied    ?? UNITS.filter(u => u.status === 'occupied').length
@@ -139,10 +159,7 @@ export default function DashboardPageClient({ unitStats }: {
   const inProgressOnboarding = ONBOARDING_APPLICATIONS.filter(o => o.status === 'in_progress')
 
   // ── Low stock consumables ─────────────────────────────────────────────────
-  const lowStock = CONSUMABLE_STOCK.filter(s => {
-    const type = CONSUMABLE_TYPES.find(t => t.id === s.consumable_type_id)
-    return type && s.current_stock < s.reorder_level
-  })
+  const lowStock = liveStock.filter(s => s.current_stock < s.reorder_level)
 
   // ── Water loss trend (last 3 periods) ────────────────────────────────────
   const waterLossData = WATER_BALANCE_PERIODS.slice(-4).map(p => ({
@@ -160,10 +177,10 @@ export default function DashboardPageClient({ unitStats }: {
     { label: 'Jun', value: collectedThisMonth || 180000 },
   ]
 
-  // ── Disconnection alerts (postpaid meters overdue) ────────────────────────
-  const postpaidOverdue = METERS.filter(m =>
-    m.meter_type === 'postpaid' && m.status === 'active' && m.unit_id &&
-    CHARGES.some(c => c.unit_id === m.unit_id && c.status === 'overdue' && c.type.startsWith('utility'))
+  // ── Disconnection alerts (postpaid meters with overdue utility charges) ───
+  const overdueUnitIds = new Set(overdueUtility.map(c => c.unit_id))
+  const postpaidOverdue = liveMeters.filter(m =>
+    m.status === 'active' && m.unit_id && overdueUnitIds.has(m.unit_id)
   )
 
   // ── Document expiries ─────────────────────────────────────────────────────

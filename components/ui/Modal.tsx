@@ -1,6 +1,7 @@
 'use client'
 import { cn } from '@/lib/cn'
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 interface ModalProps {
   open: boolean
@@ -22,7 +23,7 @@ export function Modal({ open, onClose, title, children, size = 'md', className, 
   }, [open, onClose])
 
   if (!open) return null
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
@@ -40,6 +41,7 @@ export function Modal({ open, onClose, title, children, size = 'md', className, 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
