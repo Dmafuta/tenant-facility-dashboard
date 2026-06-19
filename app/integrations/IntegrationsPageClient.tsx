@@ -425,7 +425,7 @@ function RegisterC2bModal({
   account: MpesaAccount
   onClose: () => void
 }) {
-  const derived = deriveC2bUrls(account.callbackUrl)
+  const derived = deriveC2bUrls(account.callbackUrl ?? undefined)
   const [confirmationUrl, setConfirmationUrl] = useState(derived.confirmationUrl)
   const [validationUrl,   setValidationUrl]   = useState(derived.validationUrl)
   const [responseType,    setResponseType]    = useState('Completed')
