@@ -219,6 +219,7 @@ function MarkPaidModal({
   const outstanding = charge.amount - (charge.paid_amount ?? 0)
 
   async function handleSave() {
+    if (!charge) return
     const amt = parseFloat(amount || outstanding.toString())
     if (!amt || amt <= 0) { setError('Enter a valid amount.'); return }
     setSaving(true); setError('')
