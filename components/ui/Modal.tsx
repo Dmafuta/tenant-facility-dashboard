@@ -1,6 +1,6 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 interface ModalProps {
@@ -16,13 +16,15 @@ interface ModalProps {
 const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl' }
 
 export function Modal({ open, onClose, title, children, size = 'md', className, noPadding }: ModalProps) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     if (open) document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  if (!open) return null
+  if (!open || !mounted) return null
   return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />

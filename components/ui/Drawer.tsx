@@ -1,6 +1,6 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 interface DrawerProps {
@@ -11,12 +11,15 @@ interface DrawerProps {
   width?: string
 }
 export function Drawer({ open, onClose, title, children, width = 'w-[480px]' }: DrawerProps) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     if (open) document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
+  if (!mounted) return null
   return createPortal(
     <>
       <div className={cn('fixed inset-0 z-40 bg-black/40 transition-opacity', open ? 'opacity-100' : 'opacity-0 pointer-events-none')} onClick={onClose} />
