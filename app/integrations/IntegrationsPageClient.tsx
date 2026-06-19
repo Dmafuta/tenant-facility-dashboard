@@ -385,7 +385,7 @@ function MpesaAccountForm({
             <Field label="B2C Initiator Name" value={form.initiatorName} onChange={f('initiatorName')} />
             <Field label="B2C Security Credential" value={form.securityCredential} onChange={f('securityCredential')} sensitive alreadySet={initial?.securityCredential === '***'} />
           </div>
-          <Field label="STK Callback URL" value={form.callbackUrl} onChange={f('callbackUrl')} placeholder="https://yourdomain.com/api/mpesa/stk-callback" />
+          <Field label="STK Callback URL" value={form.callbackUrl} onChange={f('callbackUrl')} placeholder="https://yourdomain.com/api/pay/notify" />
           <div className="grid grid-cols-2 gap-3">
             <Field label="B2C Result URL" value={form.b2cResultUrl} onChange={f('b2cResultUrl')} />
             <Field label="B2C Timeout URL" value={form.b2cTimeoutUrl} onChange={f('b2cTimeoutUrl')} />
@@ -412,10 +412,10 @@ function MpesaAccountForm({
 
 function deriveC2bUrls(callbackUrl: string | undefined) {
   if (!callbackUrl) return { confirmationUrl: '', validationUrl: '' }
-  const base = callbackUrl.replace(/\/api\/mpesa\/.*$/, '')
+  const base = callbackUrl.replace(/\/api\/.*$/, '')
   return {
-    confirmationUrl: base + '/api/mpesa/c2b-confirmation',
-    validationUrl:   base + '/api/mpesa/c2b-validation',
+    confirmationUrl: base + '/api/pay/confirm',
+    validationUrl:   base + '/api/pay/validate',
   }
 }
 
@@ -484,7 +484,7 @@ function RegisterC2bModal({
                 value={confirmationUrl}
                 onChange={e => setConfirmationUrl(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
-                placeholder="https://yourdomain.com/api/mpesa/c2b-confirmation"
+                placeholder="https://yourdomain.com/api/pay/confirm"
               />
               <p className="text-xs text-gray-400">Called by Safaricom after payment succeeds.</p>
             </div>
@@ -495,7 +495,7 @@ function RegisterC2bModal({
                 value={validationUrl}
                 onChange={e => setValidationUrl(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
-                placeholder="https://yourdomain.com/api/mpesa/c2b-validation"
+                placeholder="https://yourdomain.com/api/pay/validate"
               />
               <p className="text-xs text-gray-400">Called before payment is accepted. Leave as-is unless you need custom validation.</p>
             </div>
@@ -774,10 +774,10 @@ function MpesaCard({ initial, onSave }: { initial: IntegrationSettings['mpesa'];
         <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-700">
           Callback URLs must be publicly reachable. Use <strong>ngrok</strong> in development.
         </div>
-        <Field label="Default STK Push Callback URL" value={form.callbackUrl} onChange={f('callbackUrl')} placeholder="https://yourdomain.com/api/mpesa/stk-callback" />
+        <Field label="Default STK Push Callback URL" value={form.callbackUrl} onChange={f('callbackUrl')} placeholder="https://yourdomain.com/api/pay/notify" />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Default B2C Result URL" value={form.b2cResultUrl} onChange={f('b2cResultUrl')} placeholder="https://yourdomain.com/api/mpesa/b2c/result" />
-          <Field label="Default B2C Timeout URL" value={form.b2cTimeoutUrl} onChange={f('b2cTimeoutUrl')} placeholder="https://yourdomain.com/api/mpesa/b2c/timeout" />
+          <Field label="Default B2C Result URL" value={form.b2cResultUrl} onChange={f('b2cResultUrl')} placeholder="https://yourdomain.com/api/pay/disburse" />
+          <Field label="Default B2C Timeout URL" value={form.b2cTimeoutUrl} onChange={f('b2cTimeoutUrl')} placeholder="https://yourdomain.com/api/pay/disburse-timeout" />
         </div>
         <div className="flex justify-end pt-1">
           <SaveBtn loading={saving} saved={saved} />
