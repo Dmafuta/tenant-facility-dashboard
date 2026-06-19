@@ -308,19 +308,23 @@ function payStatusBadge(s: string) {
 function StkPushModal({
   charge, open, onClose, onSent,
 }: { charge: ChargeData | null; open: boolean; onClose: () => void; onSent?: () => void }) {
-  const [phone,   setPhone]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result,  setResult]  = useState<'idle' | 'success' | 'error'>('idle')
+  const [phone,    setPhone]   = useState('')
+  const [amount,   setAmount]  = useState('')
+  const [loading,  setLoading] = useState(false)
+  const [result,   setResult]  = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+
+  const outstanding = charge ? charge.amount - (charge.paid_amount ?? 0) : 0
 
   async function handleSend() {
     if (!charge) return
+    const amt = parseFloat(amount) || outstanding
+    if (amt <= 0) { setErrorMsg('Enter a valid amount.'); return }
     setLoading(true); setErrorMsg('')
     try {
-      const outstanding = charge.amount - (charge.paid_amount ?? 0)
       const res = await initiateStkPush({
         phone,
-        amount: outstanding,
+        amount: amt,
         charge_id: charge.id,
         unit_id: charge.unit_id,
         unit_label: charge.unit_label,
@@ -343,12 +347,11 @@ function StkPushModal({
   }
 
   function handleClose() {
-    setResult('idle'); setPhone(''); setErrorMsg('')
+    setResult('idle'); setPhone(''); setAmount(''); setErrorMsg('')
     onClose()
   }
 
   if (!open || !charge) return null
-  const outstanding = charge.amount - (charge.paid_amount ?? 0)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -374,6 +377,23 @@ function StkPushModal({
               <p className="text-green-700">{fmt(outstanding)} outstanding</p>
             </div>
             <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">Amount (KES)</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                placeholder={outstanding.toString()}
+                min={1}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+              <p className="text-xs text-gray-400">
+                Outstanding: KES {outstanding.toLocaleString()} · Leave blank to charge full amount.
+                {parseFloat(amount) > outstanding && (
+                  <span className="ml-1 text-teal-600 font-medium">Excess will credit the next charge.</span>
+                )}
+              </p>
+            </div>
+            <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Tenant M-Pesa Phone Number</label>
               <input
                 type="tel"
@@ -382,7 +402,7 @@ function StkPushModal({
                 placeholder="07XXXXXXXX"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
-              <p className="text-xs text-gray-400">A payment prompt for KES {outstanding.toLocaleString()} will be sent to this number.</p>
+              <p className="text-xs text-gray-400">A prompt for KES {(parseFloat(amount) || outstanding).toLocaleString()} will be sent to this number.</p>
             </div>
             {errorMsg && <p className="text-xs text-red-600 bg-red-50 rounded p-2">{errorMsg}</p>}
             <button
