@@ -1,16 +1,18 @@
 'use client'
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { useCountUp } from '@/hooks/useCountUp'
 import {
-  UNITS, CHARGES, WORK_ORDERS, LEASES, PAYMENT_TRANSACTIONS,
+  UNITS, CHARGES, WORK_ORDERS, LEASES,
   CONSUMABLE_STOCK, CONSUMABLE_TYPES, WATER_BALANCE_PERIODS,
   ONBOARDING_APPLICATIONS, BREACH_RECORDS, INSPECTIONS,
   DOCUMENTS, METERS,
 } from '@/lib/mock-data'
+import { getMpesaTransactions } from '@/lib/api/mpesa'
+import type { MpesaTransactionData } from '@/lib/api/mpesa'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmt(n: number) { return `KES ${n.toLocaleString()}` }
@@ -84,6 +86,12 @@ export default function DashboardPageClient({ unitStats }: {
 }) {
   const today = new Date('2026-06-13')
 
+  // ── M-Pesa live transactions ──────────────────────────────────────────────
+  const [mpesaTxns, setMpesaTxns] = useState<MpesaTransactionData[]>([])
+  useEffect(() => {
+    getMpesaTransactions().then(setMpesaTxns).catch(() => {})
+  }, [])
+
   // ── Occupancy — live from server props, fallback to mock ──────────────────
   const total    = unitStats?.total       ?? UNITS.length
   const occupied = unitStats?.occupied    ?? UNITS.filter(u => u.status === 'occupied').length
@@ -94,11 +102,18 @@ export default function DashboardPageClient({ unitStats }: {
   // ── Financials ───────────────────────────────────────────────────────────
   const overdueCharges  = CHARGES.filter(c => c.status === 'overdue')
   const overdueAmt      = overdueCharges.reduce((s, c) => s + c.amount - (c.paid_amount ?? 0), 0)
-  const recentPayments  = PAYMENT_TRANSACTIONS
-    .filter(p => p.status === 'completed' || p.status === 'reconciled')
-    .sort((a, b) => b.initiated_at.localeCompare(a.initiated_at))
+  const recentPayments  = mpesaTxns
+    .filter(p => p.status === 'completed')
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
     .slice(0, 5)
-  const collectedThisMonth = recentPayments.reduce((s, p) => s + p.amount, 0)
+  const now = new Date()
+  const collectedThisMonth = mpesaTxns
+    .filter(p => {
+      if (p.status !== 'completed' || !p.created_at) return false
+      const d = new Date(p.created_at)
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+    })
+    .reduce((s, p) => s + p.amount, 0)
 
   // ── Expiring leases (within 60 days) ─────────────────────────────────────
   const expiringLeases = LEASES.filter(l => {
@@ -250,12 +265,12 @@ export default function DashboardPageClient({ unitStats }: {
                   <div key={p.id} className="flex items-center gap-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-100 px-3 py-2">
                     <span className="text-base">💚</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-text truncate">{p.unit_label} · {p.tenant_name}</p>
-                      <p className="text-[11px] text-text-muted font-mono">{p.mpesa_receipt_number ?? 'Pending'}</p>
+                      <p className="text-xs font-semibold text-text truncate">{p.unit_label ?? '—'} · {p.person_name ?? p.phone}</p>
+                      <p className="text-[11px] text-text-muted font-mono">{p.mpesa_receipt ?? 'Pending'}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs font-bold text-green-700">{fmt(p.amount)}</p>
-                      <p className="text-[10px] text-text-muted">{new Date(p.initiated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</p>
+                      <p className="text-[10px] text-text-muted">{p.created_at ? new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}</p>
                     </div>
                   </div>
                 ))}
