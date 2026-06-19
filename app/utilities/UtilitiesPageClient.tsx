@@ -547,6 +547,7 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
   if (!meter) return null
 
   async function handleSave() {
+    if (!meter) return
     if (!meterNumber.trim()) { setError('Meter number is required.'); return }
     setSaving(true); setError(null)
     try {
