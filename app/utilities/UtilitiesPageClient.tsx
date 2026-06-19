@@ -9,18 +9,14 @@ import { Select } from '@/components/ui/Select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
-import {
-  METER_TYPE_HISTORY,
-} from '@/lib/mock-data'
 import type {
-  MeterTypeHistory,
   UtilityType, MeterType, MeterRole,
   WaterSupplier, ReserveTank, WaterZone, WaterBalancePeriod,
   Meter,
 } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter } from '@/lib/api/meters'
-import type { MeterData, MeterReadingData } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration } from '@/lib/api/meters'
+import type { MeterData, MeterReadingData, MeterTypeHistoryData } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
   getReserveTanks, createReserveTank, updateReserveTank, updateTankLevel,
@@ -258,10 +254,29 @@ function ReadingEntryModal({
 
 // ── Meter Detail Drawer ────────────────────────────────────────────────────
 
-function MeterDetailDrawer({ meter, open, onClose }: { meter: MeterData | null; open: boolean; onClose: () => void }) {
+const METER_TYPES = ['postpaid', 'prepaid', 'smart'] as const
+
+function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
+  meter: MeterData | null
+  open: boolean
+  onClose: () => void
+  onMeterUpdated?: () => void
+}) {
   const [readings, setReadings] = useState<MeterReadingData[]>([])
   const [loadingR, setLoadingR] = useState(false)
-  const history = useMemo(() => meter ? METER_TYPE_HISTORY.filter((h: MeterTypeHistory) => h.meter_id === meter.id) : [], [meter])
+  const [history, setHistory] = useState<MeterTypeHistoryData[]>([])
+  const [loadingH, setLoadingH] = useState(false)
+  const [showMigForm, setShowMigForm] = useState(false)
+  const [migForm, setMigForm] = useState({ fromType: '', toType: '', migrationDate: '', finalReading: '', migratedBy: '', notes: '' })
+  const [savingMig, setSavingMig] = useState(false)
+
+  const fetchHistory = useCallback((meterId: string) => {
+    setLoadingH(true)
+    getMeterTypeHistory(meterId)
+      .then(setHistory)
+      .catch(() => setHistory([]))
+      .finally(() => setLoadingH(false))
+  }, [])
 
   useEffect(() => {
     if (open && meter) {
@@ -270,8 +285,31 @@ function MeterDetailDrawer({ meter, open, onClose }: { meter: MeterData | null; 
         .then(setReadings)
         .catch(() => setReadings([]))
         .finally(() => setLoadingR(false))
+      fetchHistory(meter.id)
+      setShowMigForm(false)
+      setMigForm({ fromType: meter.meter_type, toType: '', migrationDate: '', finalReading: '', migratedBy: '', notes: '' })
     }
-  }, [open, meter])
+  }, [open, meter, fetchHistory])
+
+  async function submitMigration() {
+    if (!meter || !migForm.fromType || !migForm.toType) return
+    setSavingMig(true)
+    try {
+      await recordMeterTypeMigration(meter.id, {
+        fromType: migForm.fromType,
+        toType: migForm.toType,
+        migrationDate: migForm.migrationDate || null,
+        finalReading: migForm.finalReading ? Number(migForm.finalReading) : null,
+        migratedBy: migForm.migratedBy || null,
+        notes: migForm.notes || null,
+      })
+      setShowMigForm(false)
+      fetchHistory(meter.id)
+      onMeterUpdated?.()
+    } finally {
+      setSavingMig(false)
+    }
+  }
 
   if (!meter) return null
   return (
@@ -347,9 +385,12 @@ function MeterDetailDrawer({ meter, open, onClose }: { meter: MeterData | null; 
           </TabsContent>
           <TabsContent value="history">
             <div className="space-y-2">
-              {history.length === 0
-                ? <p className="text-sm text-text-muted py-4 text-center">No meter type migrations recorded.</p>
-                : history.map((h: MeterTypeHistory) => (
+              {loadingH ? (
+                <p className="text-sm text-text-muted py-4 text-center">Loading…</p>
+              ) : history.length === 0 && !showMigForm ? (
+                <p className="text-sm text-text-muted py-4 text-center">No meter type migrations recorded.</p>
+              ) : (
+                history.map((h) => (
                   <div key={h.id} className="p-3 rounded-lg border border-surface-border dark:border-dark-border text-sm">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="px-2 py-0.5 rounded bg-surface-border text-text-muted text-xs">{h.from_type}</span>
@@ -357,11 +398,99 @@ function MeterDetailDrawer({ meter, open, onClose }: { meter: MeterData | null; 
                       <span className="px-2 py-0.5 rounded bg-success/10 text-success text-xs">{h.to_type}</span>
                       <span className="ml-auto text-xs text-text-muted">{h.migration_date}</span>
                     </div>
-                    <p className="text-xs text-text-muted">Final reading: <span className="font-medium text-text">{h.final_reading.toLocaleString()}</span></p>
-                    <p className="text-xs text-text-muted">By: {h.migrated_by}</p>
+                    {h.final_reading != null && (
+                      <p className="text-xs text-text-muted">Final reading: <span className="font-medium text-text">{Number(h.final_reading).toLocaleString()}</span></p>
+                    )}
+                    {h.migrated_by && <p className="text-xs text-text-muted">By: {h.migrated_by}</p>}
                     {h.notes && <p className="text-xs text-text-muted mt-1 italic">{h.notes}</p>}
                   </div>
-                ))}
+                ))
+              )}
+
+              {showMigForm ? (
+                <div className="p-3 rounded-lg border border-primary/30 bg-primary/5 space-y-3 text-sm">
+                  <p className="font-medium text-text">Record Migration</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">From Type</label>
+                      <select
+                        value={migForm.fromType}
+                        onChange={e => setMigForm(f => ({ ...f, fromType: e.target.value }))}
+                        className="w-full border border-surface-border rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-dark-card text-text"
+                      >
+                        {METER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">To Type</label>
+                      <select
+                        value={migForm.toType}
+                        onChange={e => setMigForm(f => ({ ...f, toType: e.target.value }))}
+                        className="w-full border border-surface-border rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-dark-card text-text"
+                      >
+                        <option value="">Select…</option>
+                        {METER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">Migration Date</label>
+                      <input
+                        type="date"
+                        value={migForm.migrationDate}
+                        onChange={e => setMigForm(f => ({ ...f, migrationDate: e.target.value }))}
+                        className="w-full border border-surface-border rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-dark-card text-text"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">Final Reading</label>
+                      <input
+                        type="number"
+                        value={migForm.finalReading}
+                        onChange={e => setMigForm(f => ({ ...f, finalReading: e.target.value }))}
+                        placeholder="0"
+                        className="w-full border border-surface-border rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-dark-card text-text"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-text-muted mb-1 block">Migrated By</label>
+                    <input
+                      type="text"
+                      value={migForm.migratedBy}
+                      onChange={e => setMigForm(f => ({ ...f, migratedBy: e.target.value }))}
+                      placeholder="Name or staff ID"
+                      className="w-full border border-surface-border rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-dark-card text-text"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-text-muted mb-1 block">Notes</label>
+                    <textarea
+                      value={migForm.notes}
+                      onChange={e => setMigForm(f => ({ ...f, notes: e.target.value }))}
+                      rows={2}
+                      placeholder="Optional notes…"
+                      className="w-full border border-surface-border rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-dark-card text-text resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" size="sm" onClick={() => setShowMigForm(false)}>Cancel</Button>
+                    <Button size="sm" onClick={submitMigration} disabled={savingMig || !migForm.toType}>
+                      {savingMig ? 'Saving…' : 'Save Migration'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <CanDo action="write" resource="utility">
+                  <button
+                    onClick={() => setShowMigForm(true)}
+                    className="w-full text-sm text-primary border border-dashed border-primary/40 rounded-lg py-2 hover:bg-primary/5 transition-colors"
+                  >
+                    + Record Migration
+                  </button>
+                </CanDo>
+              )}
             </div>
           </TabsContent>
         </Tabs>
@@ -2622,7 +2751,7 @@ export function UtilitiesPageClient() {
         onClose={() => setShowRead(false)}
         onSaved={() => { fetchMeters(); fetchReadings() }}
       />
-      <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} />
+      <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} onMeterUpdated={fetchMeters} />
       <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} />
       <AssignMeterModal
         meter={assignTarget}

@@ -104,3 +104,27 @@ export async function assignMeter(meterId: string, unitId: string, unitLabel: st
     body: JSON.stringify({ unitId, unitLabel }),
   })
 }
+
+export interface MeterTypeHistoryData {
+  id: string
+  meter_id: string
+  unit_label: string | null
+  from_type: string
+  to_type: string
+  migration_date: string | null
+  final_reading: number | null
+  migrated_by: string | null
+  notes: string | null
+  created_at: string | null
+}
+
+export async function getMeterTypeHistory(meterId: string): Promise<MeterTypeHistoryData[]> {
+  return apiFetch<MeterTypeHistoryData[]>(`/meters/${meterId}/history`)
+}
+
+export async function recordMeterTypeMigration(meterId: string, payload: Record<string, unknown>): Promise<MeterTypeHistoryData> {
+  return apiFetch<MeterTypeHistoryData>(`/meters/${meterId}/history`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
