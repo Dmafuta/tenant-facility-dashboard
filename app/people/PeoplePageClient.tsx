@@ -1063,7 +1063,12 @@ const KYC_STATUS_MAP: Record<string, { label: string; cls: string; icon: string 
   partial:      { label: 'Partial',       cls: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400', icon: '~' },
 }
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+
 async function compressImageToBase64(file: File): Promise<string> {
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Please choose an image under 10 MB.`)
+  }
   return new Promise((resolve, reject) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
@@ -1082,7 +1087,10 @@ async function compressImageToBase64(file: File): Promise<string> {
       const dataUrl = canvas.toDataURL('image/jpeg', 0.75)
       resolve(dataUrl.split(',')[1]) // strip data: prefix
     }
-    img.onerror = reject
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Could not read image file. Please ensure it is a valid JPG, PNG, or WebP.'))
+    }
     img.src = url
   })
 }
