@@ -206,6 +206,7 @@ export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClo
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormState>(EMPTY)
   const [units, setUnits] = useState<UnitData[]>([])
+  const [certFile, setCertFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -249,11 +250,12 @@ export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClo
     form.category === 'water'       ? !!form.meter_class && !!form.connection_type :
     form.category === 'electricity' ? !!form.phase :
     form.category === 'gas'         ? !!form.gas_type && !!form.capacity_m3_per_hr : false
+  const canStep4 = isBulk || form.in_inventory || !!form.unit_id
   const canStep5 = !!form.rate_per_unit && !!form.opening_reading_date
 
   const STEP_LABELS = ['Category', 'Identity', 'Specs', 'Assignment', 'Billing', 'Calibration', 'Confirm']
 
-  function reset() { setForm(EMPTY); setStep(0); setSubmitError(null) }
+  function reset() { setForm(EMPTY); setStep(0); setSubmitError(null); setCertFile(null) }
 
   async function handleSubmit() {
     setSubmitting(true)
@@ -294,7 +296,8 @@ export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClo
         lastReading:        form.opening_reading ? Number(form.opening_reading) : 0,
         lastReadingDate:    form.opening_reading_date || null,
         meterRole,
-        notes:              form.notes || null,
+        ratePerUnit:        form.rate_per_unit ? Number(form.rate_per_unit) : null,
+        notes:              [form.notes, certFile ? `Cert doc: ${certFile.name}` : ''].filter(Boolean).join(' | ') || null,
       }
 
       await createGlobalMeter(payload)
@@ -591,7 +594,7 @@ export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClo
 
             <FooterNav>
               <Button variant="ghost" onClick={() => setStep(2)}>← Back</Button>
-              <Button onClick={() => setStep(4)}>Next: Billing →</Button>
+              <Button onClick={() => setStep(4)} disabled={!canStep4}>Next: Billing →</Button>
             </FooterNav>
           </div>
         )}
@@ -690,10 +693,25 @@ export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClo
               </Field>
             </div>
 
-            <div className="flex items-center gap-2 p-3 rounded-lg border border-dashed border-surface-border dark:border-dark-border text-xs text-text-muted cursor-pointer hover:border-primary-400 hover:text-primary-600 transition-colors">
+            <label className="flex items-center gap-2 p-3 rounded-lg border border-dashed border-surface-border dark:border-dark-border text-xs text-text-muted cursor-pointer hover:border-primary-400 hover:text-primary-600 transition-colors">
               <span className="text-base">📎</span>
-              <span>Upload certificate document (PDF or image) — optional</span>
-            </div>
+              <span className="flex-1">
+                {certFile ? certFile.name : 'Upload certificate document (PDF or image) — optional'}
+              </span>
+              {certFile && (
+                <button
+                  type="button"
+                  onClick={e => { e.preventDefault(); setCertFile(null) }}
+                  className="text-text-muted hover:text-danger ml-auto"
+                >✕</button>
+              )}
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="sr-only"
+                onChange={e => setCertFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
 
             <FooterNav>
               <Button variant="ghost" onClick={() => setStep(4)}>← Back</Button>
@@ -744,6 +762,7 @@ export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClo
               <ConfirmRow label="Rate"            value={`KES ${form.rate_per_unit} / ${form.unit_of_measure}`} />
               <ConfirmRow label="Billing Cycle"   value={form.billing_cycle} />
               {form.cert_number && <ConfirmRow label="Calibration" value={`${form.cert_number} · expires ${form.expiry_date || 'not set'}`} />}
+              {certFile && <ConfirmRow label="Cert Document" value={certFile.name} />}
             </div>
 
             {form.in_inventory && !isBulk && (

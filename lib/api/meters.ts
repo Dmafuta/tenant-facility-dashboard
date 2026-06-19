@@ -16,6 +16,7 @@ export interface MeterData {
   last_reading_date: string | null
   current_billing_person: { person_id: string; name: string } | null
   meter_role: string | null
+  rate_per_unit: number | null
   notes: string | null
   created_at: string | null
 }

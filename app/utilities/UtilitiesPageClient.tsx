@@ -1433,7 +1433,9 @@ function WaterBalanceTab({
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<WaterBalancePeriodData | null>(null)
   const [saving, setSaving]         = useState(false)
+  const [saveError, setSaveError]   = useState<string | null>(null)
   const [deleting, setDeleting]     = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     if (periods.length > 0 && !selected) {
@@ -1458,6 +1460,7 @@ function WaterBalanceTab({
   function openCreate() {
     setForm(blankForm())
     setEditTarget(null)
+    setSaveError(null)
     setShowCreate(true)
   }
   function openEdit(p: WaterBalancePeriodData) {
@@ -1476,6 +1479,7 @@ function WaterBalanceTab({
         : zones.map(z => ({ zoneId: z.id, zoneName: z.name, distributionM3: '', consumerM3: '' })),
     })
     setEditTarget(p)
+    setSaveError(null)
     setShowCreate(true)
   }
 
@@ -1514,7 +1518,7 @@ function WaterBalanceTab({
       setSelected(saved.id)
       onRefresh()
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to save balance period')
+      setSaveError(err instanceof Error ? err.message : 'Failed to save balance period')
     } finally {
       setSaving(false)
     }
@@ -1522,13 +1526,14 @@ function WaterBalanceTab({
 
   async function handleDelete() {
     if (!period || !confirm(`Delete balance report for ${period.period}?`)) return
+    setDeleteError(null)
     setDeleting(true)
     try {
       await deleteWaterBalancePeriod(period.id)
       setSelected('')
       onRefresh()
     } catch {
-      alert('Failed to delete period')
+      setDeleteError('Failed to delete period. Please try again.')
     } finally {
       setDeleting(false)
     }
@@ -1812,12 +1817,19 @@ function WaterBalanceTab({
               placeholder="Any observations for this period…" />
           </div>
 
+          {saveError && (
+            <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">{saveError}</p>
+          )}
           <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={() => { setShowCreate(false); setSaveError(null) }}>Cancel</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Saving…' : editTarget ? 'Update Period' : 'Create Period'}</Button>
           </div>
         </form>
       </Modal>
+
+      {deleteError && (
+        <div className="mt-2 text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">{deleteError}</div>
+      )}
     </div>
   )
 }
