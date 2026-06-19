@@ -1,11 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import type {
   MeterCategory, MeterBillingMode,
   WaterMeterSubtype, ElectricityMeterSubtype, GasMeterSubtype,
 } from '@/lib/types'
+import { createGlobalMeter } from '@/lib/api/meters'
+import { getUnitsFromApi } from '@/lib/api/units'
+import type { UnitData } from '@/lib/api/units'
 
 type CommunicationProtocol = 'manual' | 'tokenized' | 'iot' | 'pulse' | 'rs485'
 
@@ -199,9 +202,16 @@ const EMPTY: FormState = {
   notes: '',
 }
 
-export function AddMeterModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AddMeterModal({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved?: () => void }) {
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormState>(EMPTY)
+  const [units, setUnits] = useState<UnitData[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) getUnitsFromApi().then(setUnits).catch(() => {})
+  }, [open])
 
   const set = (k: keyof FormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -243,12 +253,59 @@ export function AddMeterModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const STEP_LABELS = ['Category', 'Identity', 'Specs', 'Assignment', 'Billing', 'Calibration', 'Confirm']
 
-  function reset() { setForm(EMPTY); setStep(0) }
+  function reset() { setForm(EMPTY); setStep(0); setSubmitError(null) }
 
-  function handleSubmit() {
-    const dest = form.in_inventory ? 'inventory' : 'active'
-    alert(`Meter ${form.serial_number} registered (demo). Status: ${dest}.`)
-    onClose(); reset()
+  async function handleSubmit() {
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      // Derive utilityType from category + gas subtype
+      const utilityType =
+        form.category === 'electricity' ? 'electricity' :
+        form.category === 'gas' ? (form.gas_type === 'lpg' ? 'gas_cylinder' : 'gas_piped') :
+        'water'
+
+      // Derive meterType from communication protocol / billing mode
+      const meterType =
+        form.communication_protocol === 'iot' ? 'smart' :
+        (form.billing_mode === 'prepaid' || form.communication_protocol === 'tokenized') ? 'prepaid' :
+        'postpaid'
+
+      // Derive meterRole from subtype
+      const meterRole =
+        ['bulk', 'borehole', 'solar_export', 'lpg_tank'].includes(form.meter_subtype) ? 'supplier' :
+        ['fire_main', 'recycled'].includes(form.meter_subtype) ? 'distribution' :
+        'consumer'
+
+      // Resolve unit info
+      const selectedUnit = units.find(u => u.id === form.unit_id)
+      const hasUnit = !isBulk && !form.in_inventory && !!form.unit_id
+
+      const payload: Record<string, unknown> = {
+        unitId:             hasUnit ? form.unit_id : null,
+        unitLabel:          hasUnit ? (selectedUnit?.unit_label ?? null) : null,
+        utilityType,
+        meterType,
+        meterNumber:        form.meter_number || form.serial_number,
+        accountNumber:      form.utility_account_number || null,
+        installationDate:   (!form.in_inventory && form.installed_at) ? form.installed_at : null,
+        status:             'active',
+        billingArrangement: 'billed_to_occupant',
+        lastReading:        form.opening_reading ? Number(form.opening_reading) : 0,
+        lastReadingDate:    form.opening_reading_date || null,
+        meterRole,
+        notes:              form.notes || null,
+      }
+
+      await createGlobalMeter(payload)
+      onClose()
+      reset()
+      onSaved?.()
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to register meter. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   // Confirm summary fields
@@ -508,12 +565,9 @@ export function AddMeterModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Field label="Assign to Unit" required>
                     <select className={INPUT} value={form.unit_id} onChange={set('unit_id')}>
                       <option value="">Select unit…</option>
-                      <option value="U-101">Block A — Unit 101</option>
-                      <option value="U-102">Block A — Unit 102</option>
-                      <option value="U-201">Block B — Unit 201</option>
-                      <option value="U-202">Block B — Unit 202</option>
-                      <option value="U-301">Block C — Unit 301</option>
-                      <option value="COMMON">Common Area</option>
+                      {units.map(u => (
+                        <option key={u.id} value={u.id}>{u.unit_label}{u.block ? ` — ${u.block}` : ''}</option>
+                      ))}
                     </select>
                   </Field>
                 )}
@@ -698,9 +752,14 @@ export function AddMeterModal({ open, onClose }: { open: boolean; onClose: () =>
               </div>
             )}
 
+            {submitError && (
+              <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">{submitError}</p>
+            )}
             <FooterNav>
-              <Button variant="ghost" onClick={() => setStep(5)}>← Back</Button>
-              <Button onClick={handleSubmit}>✓ Register Meter</Button>
+              <Button variant="ghost" onClick={() => setStep(5)} disabled={submitting}>← Back</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? 'Registering…' : '✓ Register Meter'}
+              </Button>
             </FooterNav>
           </div>
         )}

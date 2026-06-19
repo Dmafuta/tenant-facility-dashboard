@@ -2752,7 +2752,7 @@ export function UtilitiesPageClient() {
         onSaved={() => { fetchMeters(); fetchReadings() }}
       />
       <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} onMeterUpdated={fetchMeters} />
-      <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} />
+      <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} onSaved={fetchMeters} />
       <AssignMeterModal
         meter={assignTarget}
         open={showAssign}

@@ -42,6 +42,13 @@ export async function deleteMeter(unitId: string, meterId: string): Promise<void
   await apiFetch<unknown>(`/units/${unitId}/meters/${meterId}`, { method: 'DELETE' })
 }
 
+export async function createGlobalMeter(payload: Record<string, unknown>): Promise<MeterData> {
+  return apiFetch<MeterData>('/meters', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function getAllMeters(params?: { utilityType?: string; meterType?: string; meterRole?: string }): Promise<MeterData[]> {
   const qs = new URLSearchParams()
   if (params?.utilityType) qs.set('utilityType', params.utilityType)
