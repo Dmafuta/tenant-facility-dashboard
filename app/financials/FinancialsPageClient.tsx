@@ -79,7 +79,7 @@ function typeChip(t: string) {
   }
   return (
     <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', colorMap[group] ?? '')}>
-      {chargeTypeLabel(t)}
+      {chargeTypeLabel(t as ChargeType)}
     </span>
   )
 }
