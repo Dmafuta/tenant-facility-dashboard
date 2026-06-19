@@ -671,11 +671,6 @@ function MpesaAccountsList() {
                     {deletingId === account.id ? '…' : 'Delete'}
                   </button>
                 </div>
-                {registerResult?.id === account.id && (
-                  <p className={`mt-1.5 text-xs px-2 py-1 rounded ${registerResult.msg.startsWith('✗') || registerResult.msg.toLowerCase().includes('failed') || registerResult.msg.toLowerCase().includes('not configured') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>
-                    {registerResult.msg}
-                  </p>
-                )}
               </div>
             </div>
           )}
