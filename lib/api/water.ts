@@ -86,3 +86,58 @@ export async function updateWaterZone(id: string, payload: Record<string, unknow
 export async function deleteWaterZone(id: string): Promise<void> {
   await apiFetch<unknown>(`/water/zones/${id}`, { method: 'DELETE' })
 }
+
+// ── Water Balance Periods ──────────────────────────────────────────────────
+
+export interface ZoneEntryData {
+  zoneId: string
+  zoneName: string
+  distributionM3: number
+  consumerM3: number
+  lossM3: number
+  lossPct: number
+}
+
+export interface WaterBalancePeriodData {
+  id: string
+  period: string
+  periodStart: string
+  periodEnd: string
+  totalInflowM3: number
+  totalOutflowM3: number
+  tankLevelStartM3: number
+  tankLevelEndM3: number
+  tankChangeM3: number
+  grossLossM3: number
+  lossPct: number
+  flagged: boolean
+  zoneBreakdown: ZoneEntryData[]
+  notes: string | null
+  generatedAt: string
+}
+
+export interface BalancePeriodRequest {
+  period: string
+  totalInflowM3: number
+  totalOutflowM3: number
+  tankLevelStartM3: number
+  tankLevelEndM3: number
+  zoneBreakdown?: { zoneId: string; zoneName: string; distributionM3: number; consumerM3: number }[]
+  notes?: string
+}
+
+export async function getWaterBalancePeriods(): Promise<WaterBalancePeriodData[]> {
+  return apiFetch<WaterBalancePeriodData[]>('/water/balance')
+}
+
+export async function createWaterBalancePeriod(payload: BalancePeriodRequest): Promise<WaterBalancePeriodData> {
+  return apiFetch<WaterBalancePeriodData>('/water/balance', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateWaterBalancePeriod(id: string, payload: BalancePeriodRequest): Promise<WaterBalancePeriodData> {
+  return apiFetch<WaterBalancePeriodData>(`/water/balance/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function deleteWaterBalancePeriod(id: string): Promise<void> {
+  await apiFetch<unknown>(`/water/balance/${id}`, { method: 'DELETE' })
+}

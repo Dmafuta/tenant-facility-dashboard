@@ -10,10 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import {
-  METERS as MOCK_METERS,
   METER_TYPE_HISTORY,
-  WATER_SUPPLIERS, RESERVE_TANKS, WATER_ZONES, WATER_BALANCE_PERIODS,
-  CHARGES, INVENTORY_METERS,
+  INVENTORY_METERS,
 } from '@/lib/mock-data'
 import type {
   MeterTypeHistory,
@@ -29,8 +27,9 @@ import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
   getReserveTanks, createReserveTank, updateReserveTank, updateTankLevel,
   getWaterZones, createWaterZone, updateWaterZone, deleteWaterZone,
+  getWaterBalancePeriods, createWaterBalancePeriod, updateWaterBalancePeriod, deleteWaterBalancePeriod,
 } from '@/lib/api/water'
-import type { WaterSupplierData, ReserveTankData, WaterZoneData } from '@/lib/api/water'
+import type { WaterSupplierData, ReserveTankData, WaterZoneData, WaterBalancePeriodData } from '@/lib/api/water'
 import { getUnitsFromApi } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
 import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice } from '@/lib/api/disconnection'
@@ -1296,41 +1295,168 @@ function WaterSupplyTab({
 
 // ── WaterBalanceTab ────────────────────────────────────────────────────────
 
-function WaterBalanceTab() {
-  const [selected, setSelected] = useState(WATER_BALANCE_PERIODS[WATER_BALANCE_PERIODS.length - 1]?.id ?? '')
-  const period = WATER_BALANCE_PERIODS.find(p => p.id === selected)
-  const periodOptions = WATER_BALANCE_PERIODS.slice().reverse().map(p => ({
+function WaterBalanceTab({
+  periods, suppliers, zones, loading, onRefresh,
+}: {
+  periods: WaterBalancePeriodData[]
+  suppliers: WaterSupplierData[]
+  zones: WaterZoneData[]
+  loading: boolean
+  onRefresh: () => void
+}) {
+  const [selected, setSelected]     = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const [editTarget, setEditTarget] = useState<WaterBalancePeriodData | null>(null)
+  const [saving, setSaving]         = useState(false)
+  const [deleting, setDeleting]     = useState(false)
+
+  useEffect(() => {
+    if (periods.length > 0 && !selected) {
+      setSelected(periods[periods.length - 1].id)
+    }
+  }, [periods, selected])
+
+  const period      = periods.find(p => p.id === selected)
+  const periodOpts  = [...periods].reverse().map(p => ({
     value: p.id,
     label: `${p.period}${p.flagged ? ' ⚠️' : ''}`,
   }))
 
+  // ── Create / Edit form state ────────────────────────────────────────────
+  const blankForm = () => ({
+    period: '', totalInflowM3: '', totalOutflowM3: '',
+    tankLevelStartM3: '', tankLevelEndM3: '', notes: '',
+    zoneRows: zones.map(z => ({ zoneId: z.id, zoneName: z.name, distributionM3: '', consumerM3: '' })),
+  })
+  const [form, setForm] = useState(blankForm)
+
+  function openCreate() {
+    setForm(blankForm())
+    setEditTarget(null)
+    setShowCreate(true)
+  }
+  function openEdit(p: WaterBalancePeriodData) {
+    setForm({
+      period: p.period,
+      totalInflowM3: String(p.totalInflowM3),
+      totalOutflowM3: String(p.totalOutflowM3),
+      tankLevelStartM3: String(p.tankLevelStartM3),
+      tankLevelEndM3: String(p.tankLevelEndM3),
+      notes: p.notes ?? '',
+      zoneRows: p.zoneBreakdown.length > 0
+        ? p.zoneBreakdown.map(z => ({
+            zoneId: z.zoneId, zoneName: z.zoneName,
+            distributionM3: String(z.distributionM3), consumerM3: String(z.consumerM3),
+          }))
+        : zones.map(z => ({ zoneId: z.id, zoneName: z.name, distributionM3: '', consumerM3: '' })),
+    })
+    setEditTarget(p)
+    setShowCreate(true)
+  }
+
+  // Live loss preview
+  const inflow   = parseFloat(form.totalInflowM3)  || 0
+  const outflow  = parseFloat(form.totalOutflowM3) || 0
+  const tankStart = parseFloat(form.tankLevelStartM3) || 0
+  const tankEnd   = parseFloat(form.tankLevelEndM3)   || 0
+  const tankChg  = tankEnd - tankStart
+  const grossLoss = inflow - outflow - tankChg
+  const previewLossPct = inflow > 0 ? (grossLoss / inflow) * 100 : 0
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload = {
+        period: form.period,
+        totalInflowM3: parseFloat(form.totalInflowM3),
+        totalOutflowM3: parseFloat(form.totalOutflowM3),
+        tankLevelStartM3: parseFloat(form.tankLevelStartM3),
+        tankLevelEndM3: parseFloat(form.tankLevelEndM3),
+        notes: form.notes || undefined,
+        zoneBreakdown: form.zoneRows
+          .filter(r => r.distributionM3 && r.consumerM3)
+          .map(r => ({
+            zoneId: r.zoneId, zoneName: r.zoneName,
+            distributionM3: parseFloat(r.distributionM3),
+            consumerM3: parseFloat(r.consumerM3),
+          })),
+      }
+      const saved = editTarget
+        ? await updateWaterBalancePeriod(editTarget.id, payload)
+        : await createWaterBalancePeriod(payload)
+      setShowCreate(false)
+      setSelected(saved.id)
+      onRefresh()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to save balance period')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!period || !confirm(`Delete balance report for ${period.period}?`)) return
+    setDeleting(true)
+    try {
+      await deleteWaterBalancePeriod(period.id)
+      setSelected('')
+      onRefresh()
+    } catch {
+      alert('Failed to delete period')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  if (loading) return <p className="py-12 text-center text-text-muted text-sm">Loading…</p>
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-4">
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Period</label>
-          <select value={selected} onChange={e => setSelected(e.target.value)}
-            className="rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
-            {periodOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
+      <div className="flex items-center gap-4 flex-wrap">
+        {periods.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Period</label>
+            <select value={selected} onChange={e => setSelected(e.target.value)}
+              className="rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+              {periodOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        )}
         {period?.flagged && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-danger/10 border border-danger/20 text-sm text-danger font-medium">
             ⚠️ Loss exceeds 10% threshold — investigation recommended
           </div>
         )}
-        <Button variant="outline" size="sm" className="ml-auto">⬇ Export Report</Button>
+        <div className="ml-auto flex items-center gap-2">
+          {period && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => openEdit(period)}>Edit</Button>
+              <Button variant="ghost" size="sm" className="text-danger" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </Button>
+            </>
+          )}
+          <Button size="sm" onClick={openCreate}>+ New Period</Button>
+        </div>
       </div>
 
-      {period ? (
+      {periods.length === 0 ? (
+        <div className="py-16 text-center">
+          <p className="text-2xl mb-2">💧</p>
+          <p className="text-sm font-medium text-text mb-1">No balance reports yet</p>
+          <p className="text-xs text-text-muted mb-4">Create your first monthly water balance report to track system loss.</p>
+          <Button size="sm" onClick={openCreate}>+ New Period</Button>
+        </div>
+      ) : period ? (
         <>
           {/* Balance summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Total Inflow',  value: `${period.total_inflow_m3} m³`,  sub: 'All suppliers',      icon: '⬆', color: 'text-blue-600' },
-              { label: 'Total Outflow', value: `${period.total_outflow_m3} m³`, sub: 'All unit meters',    icon: '⬇', color: 'text-text' },
-              { label: 'Tank Change',   value: `${period.tank_change_m3 >= 0 ? '+' : ''}${period.tank_change_m3} m³`, sub: `${period.tank_level_start_m3} → ${period.tank_level_end_m3} m³`, icon: '🛢', color: 'text-teal-600' },
-              { label: 'System Loss',   value: `${period.gross_loss_m3} m³`,    sub: `${period.loss_pct.toFixed(1)}% of inflow`, icon: '⚠', color: lossColor(period.loss_pct) },
+              { label: 'Total Inflow',  value: `${period.totalInflowM3} m³`,  sub: 'All suppliers',      icon: '⬆', color: 'text-blue-600' },
+              { label: 'Total Outflow', value: `${period.totalOutflowM3} m³`, sub: 'All unit meters',    icon: '⬇', color: 'text-text' },
+              { label: 'Tank Change',   value: `${period.tankChangeM3 >= 0 ? '+' : ''}${period.tankChangeM3} m³`, sub: `${period.tankLevelStartM3} → ${period.tankLevelEndM3} m³`, icon: '🛢', color: 'text-teal-600' },
+              { label: 'System Loss',   value: `${period.grossLossM3} m³`,    sub: `${Number(period.lossPct).toFixed(1)}% of inflow`, icon: '⚠', color: lossColor(Number(period.lossPct)) },
             ].map(k => (
               <Card key={k.label} className={cn('p-4', k.label === 'System Loss' && period.flagged ? 'border-danger/40 bg-danger/5' : '')}>
                 <div className="flex items-center gap-2 mb-1">
@@ -1348,95 +1474,99 @@ function WaterBalanceTab() {
             <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-3">Balance Equation</p>
             <div className="flex items-center gap-3 text-sm flex-wrap">
               <div className="text-center">
-                <p className="text-xl font-bold text-blue-600">{period.total_inflow_m3}</p>
+                <p className="text-xl font-bold text-blue-600">{period.totalInflowM3}</p>
                 <p className="text-xs text-text-muted">Inflow (m³)</p>
               </div>
               <span className="text-text-muted text-lg">−</span>
               <div className="text-center">
-                <p className="text-xl font-bold text-text">{period.total_outflow_m3}</p>
+                <p className="text-xl font-bold text-text">{period.totalOutflowM3}</p>
                 <p className="text-xs text-text-muted">Outflow (m³)</p>
               </div>
               <span className="text-text-muted text-lg">−</span>
               <div className="text-center">
-                <p className="text-xl font-bold text-teal-600">{period.tank_change_m3 >= 0 ? '(+' : '('}{period.tank_change_m3})</p>
+                <p className="text-xl font-bold text-teal-600">{period.tankChangeM3 >= 0 ? '(+' : '('}{period.tankChangeM3})</p>
                 <p className="text-xs text-text-muted">Tank Δ (m³)</p>
               </div>
               <span className="text-text-muted text-lg">=</span>
               <div className="text-center">
-                <p className={cn('text-xl font-bold', lossColor(period.loss_pct))}>{period.gross_loss_m3}</p>
+                <p className={cn('text-xl font-bold', lossColor(Number(period.lossPct)))}>{period.grossLossM3}</p>
                 <p className="text-xs text-text-muted">Loss (m³)</p>
               </div>
-              <div className={cn('ml-4 px-3 py-2 rounded-lg border text-sm font-semibold', lossBg(period.loss_pct), lossColor(period.loss_pct))}>
-                {period.loss_pct.toFixed(1)}% loss rate
+              <div className={cn('ml-4 px-3 py-2 rounded-lg border text-sm font-semibold', lossBg(Number(period.lossPct)), lossColor(Number(period.lossPct)))}>
+                {Number(period.lossPct).toFixed(1)}% loss rate
               </div>
             </div>
           </Card>
 
           {/* Zone breakdown */}
-          <div>
-            <h3 className="text-sm font-semibold text-text mb-3">Zone Breakdown</h3>
-            <div className="rounded-lg border border-surface-border overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-surface-muted text-text-muted">
-                  <tr>
-                    {['Zone', 'Distribution Meter (m³)', 'Consumer Meters (m³)', 'Loss (m³)', 'Loss %', 'Status'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {period.zone_breakdown.map((z, i) => (
-                    <tr key={z.zone_id} className={cn('border-t border-surface-border hover:bg-surface-hover', i % 2 === 0 ? '' : 'bg-surface-muted/30')}>
-                      <td className="px-4 py-3 font-medium text-text">{z.zone_name}</td>
-                      <td className="px-4 py-3 text-text">{z.distribution_m3.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-text">{z.consumer_m3.toLocaleString()}</td>
-                      <td className={cn('px-4 py-3 font-medium', lossColor(z.loss_pct))}>−{z.loss_m3.toLocaleString()}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn('font-bold', lossColor(z.loss_pct))}>{z.loss_pct.toFixed(1)}%</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn('text-xs px-2 py-0.5 rounded font-medium border', lossBg(z.loss_pct), lossColor(z.loss_pct))}>
-                          {z.loss_pct >= 15 ? '🔴 Critical' : z.loss_pct >= 10 ? '🟡 Investigate' : '🟢 Normal'}
-                        </span>
-                      </td>
+          {period.zoneBreakdown.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-text mb-3">Zone Breakdown</h3>
+              <div className="rounded-lg border border-surface-border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-muted text-text-muted">
+                    <tr>
+                      {['Zone', 'Distribution (m³)', 'Consumer (m³)', 'Loss (m³)', 'Loss %', 'Status'].map(h => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-medium">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {period.zoneBreakdown.map((z, i) => (
+                      <tr key={z.zoneId} className={cn('border-t border-surface-border hover:bg-surface-hover', i % 2 === 0 ? '' : 'bg-surface-muted/30')}>
+                        <td className="px-4 py-3 font-medium text-text">{z.zoneName}</td>
+                        <td className="px-4 py-3 text-text">{Number(z.distributionM3).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-text">{Number(z.consumerM3).toLocaleString()}</td>
+                        <td className={cn('px-4 py-3 font-medium', lossColor(Number(z.lossPct)))}>−{Number(z.lossM3).toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn('font-bold', lossColor(Number(z.lossPct)))}>{Number(z.lossPct).toFixed(1)}%</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={cn('text-xs px-2 py-0.5 rounded font-medium border', lossBg(Number(z.lossPct)), lossColor(Number(z.lossPct)))}>
+                            {Number(z.lossPct) >= 15 ? '🔴 Critical' : Number(z.lossPct) >= 10 ? '🟡 Investigate' : '🟢 Normal'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Supplier breakdown */}
-          <div>
-            <h3 className="text-sm font-semibold text-text mb-3">Supplier Contribution</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {WATER_SUPPLIERS.filter(s => s.active).map(s => {
-                const approxM3 = s.source_type === 'municipal'
-                  ? Math.round(period.total_inflow_m3 * 0.62)
-                  : period.total_inflow_m3 - Math.round(period.total_inflow_m3 * 0.62)
-                const cost = approxM3 * s.contracted_rate_per_m3
-                return (
-                  <Card key={s.id} className="p-4">
-                    <p className="font-medium text-text mb-2">{s.name}</p>
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <p className="text-xs text-text-muted">Volume</p>
-                        <p className="font-bold text-text">{approxM3} m³</p>
+          {/* Supplier contribution (estimated from active suppliers) */}
+          {suppliers.filter(s => s.active).length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-text mb-1">Supplier Contribution</h3>
+              <p className="text-xs text-text-muted mb-3">Estimated — proportional split of total inflow across active suppliers</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {suppliers.filter(s => s.active).map((s, idx, arr) => {
+                  const share   = Math.round(period.totalInflowM3 / arr.length)
+                  const rate    = s.contractedRatePerM3 ?? 0
+                  const cost    = share * rate
+                  return (
+                    <Card key={s.id} className="p-4">
+                      <p className="font-medium text-text mb-2">{s.name}</p>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div>
+                          <p className="text-xs text-text-muted">Est. Volume</p>
+                          <p className="font-bold text-text">{share} m³</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-text-muted">Rate</p>
+                          <p className="font-medium text-text">KES {rate}/m³</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-text-muted">Est. Cost</p>
+                          <p className="font-bold text-text">KES {cost.toLocaleString()}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-text-muted">Rate</p>
-                        <p className="font-medium text-text">KES {s.contracted_rate_per_m3}/m³</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-text-muted">Est. Cost</p>
-                        <p className="font-bold text-text">KES {cost.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </Card>
-                )
-              })}
+                    </Card>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {period.notes && (
             <div className={cn('p-4 rounded-lg border text-sm', period.flagged ? 'bg-danger/5 border-danger/20 text-danger' : 'bg-surface-muted border-surface-border text-text-muted')}>
@@ -1444,9 +1574,125 @@ function WaterBalanceTab() {
             </div>
           )}
         </>
-      ) : (
-        <p className="text-center text-text-muted py-12">No balance report for selected period.</p>
-      )}
+      ) : null}
+
+      {/* ── Create / Edit Modal ─────────────────────────────────────────── */}
+      <Modal open={showCreate} onClose={() => setShowCreate(false)}
+        title={editTarget ? `Edit Balance — ${editTarget.period}` : 'New Water Balance Period'}>
+        <form onSubmit={handleSubmit} className="space-y-4 p-1">
+
+          {/* Period */}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Period (YYYY-MM) *</label>
+            <input
+              type="month"
+              required
+              value={form.period}
+              onChange={e => setForm(f => ({ ...f, period: e.target.value }))}
+              className="w-full rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          {/* Inflow / Outflow */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Total Inflow (m³) *</label>
+              <input type="number" step="0.01" min="0" required
+                value={form.totalInflowM3}
+                onChange={e => setForm(f => ({ ...f, totalInflowM3: e.target.value }))}
+                className="w-full rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g. 602" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Total Outflow (m³) *</label>
+              <input type="number" step="0.01" min="0" required
+                value={form.totalOutflowM3}
+                onChange={e => setForm(f => ({ ...f, totalOutflowM3: e.target.value }))}
+                className="w-full rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g. 519" />
+            </div>
+          </div>
+
+          {/* Tank levels */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Tank Level — Start (m³) *</label>
+              <input type="number" step="0.01" min="0" required
+                value={form.tankLevelStartM3}
+                onChange={e => setForm(f => ({ ...f, tankLevelStartM3: e.target.value }))}
+                className="w-full rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g. 74" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Tank Level — End (m³) *</label>
+              <input type="number" step="0.01" min="0" required
+                value={form.tankLevelEndM3}
+                onChange={e => setForm(f => ({ ...f, tankLevelEndM3: e.target.value }))}
+                className="w-full rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="e.g. 71" />
+            </div>
+          </div>
+
+          {/* Live loss preview */}
+          {inflow > 0 && (
+            <div className={cn('p-3 rounded-lg border text-sm', lossBg(previewLossPct))}>
+              <span className="font-medium">Preview: </span>
+              Loss = {inflow} − {outflow} − ({tankChg >= 0 ? '+' : ''}{tankChg.toFixed(2)}) =&nbsp;
+              <span className={cn('font-bold', lossColor(previewLossPct))}>
+                {grossLoss.toFixed(2)} m³ ({previewLossPct.toFixed(1)}%)
+              </span>
+              {previewLossPct > 10 && <span className="ml-2 text-danger font-semibold">⚠ Will be flagged</span>}
+            </div>
+          )}
+
+          {/* Zone breakdown */}
+          {form.zoneRows.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-2">Zone Readings (optional)</label>
+              <div className="space-y-2">
+                {form.zoneRows.map((row, i) => (
+                  <div key={row.zoneId} className="grid grid-cols-3 gap-2 items-center">
+                    <p className="text-xs font-medium text-text truncate">{row.zoneName}</p>
+                    <input type="number" step="0.01" min="0"
+                      value={row.distributionM3}
+                      onChange={e => setForm(f => {
+                        const rows = [...f.zoneRows]
+                        rows[i] = { ...rows[i], distributionM3: e.target.value }
+                        return { ...f, zoneRows: rows }
+                      })}
+                      className="rounded border border-surface-border bg-surface px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      placeholder="Distribution m³" />
+                    <input type="number" step="0.01" min="0"
+                      value={row.consumerM3}
+                      onChange={e => setForm(f => {
+                        const rows = [...f.zoneRows]
+                        rows[i] = { ...rows[i], consumerM3: e.target.value }
+                        return { ...f, zoneRows: rows }
+                      })}
+                      className="rounded border border-surface-border bg-surface px-2 py-1.5 text-xs text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      placeholder="Consumer m³" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
+            <textarea rows={2}
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              className="w-full rounded-md border border-surface-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              placeholder="Any observations for this period…" />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : editTarget ? 'Update Period' : 'Create Period'}</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
@@ -2073,11 +2319,13 @@ export function UtilitiesPageClient() {
   const [suppliers, setSuppliers] = useState<WaterSupplierData[]>([])
   const [tanks, setTanks]         = useState<ReserveTankData[]>([])
   const [zones, setZones]         = useState<WaterZoneData[]>([])
+  const [periods, setPeriods]     = useState<WaterBalancePeriodData[]>([])
   const [overdueCharges, setOverdueCharges]   = useState<ChargeData[]>([])
   const [sentNotices, setSentNotices]         = useState<DisconnectionNoticeData[]>([])
   const [loadingMeters, setLoadingMeters]     = useState(true)
   const [loadingReadings, setLoadingReadings] = useState(true)
   const [loadingWater, setLoadingWater]       = useState(true)
+  const [loadingBalance, setLoadingBalance]   = useState(true)
   const [loadingDisconn, setLoadingDisconn]   = useState(true)
 
   const fetchMeters = useCallback(async () => {
@@ -2111,6 +2359,14 @@ export function UtilitiesPageClient() {
 
   useEffect(() => { fetchWater() }, [fetchWater])
 
+  const fetchBalance = useCallback(async () => {
+    try { const data = await getWaterBalancePeriods(); setPeriods(data) }
+    catch { /* ignore */ }
+    finally { setLoadingBalance(false) }
+  }, [])
+
+  useEffect(() => { fetchBalance() }, [fetchBalance])
+
   const fetchDisconn = useCallback(async () => {
     try {
       const [charges, notices] = await Promise.all([getOverdueUtilityCharges(), getDisconnectionNotices()])
@@ -2123,7 +2379,7 @@ export function UtilitiesPageClient() {
   useEffect(() => { fetchDisconn() }, [fetchDisconn])
 
   const consumerMeters = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
-  const latestBalance  = WATER_BALANCE_PERIODS[WATER_BALANCE_PERIODS.length - 1]
+  const latestBalance  = periods[periods.length - 1]
   const lossFlag       = latestBalance?.flagged
 
   return (
@@ -2152,8 +2408,8 @@ export function UtilitiesPageClient() {
         </Card>
         <Card className={cn('p-4', lossFlag ? 'border-danger/40 bg-danger/5' : '')}>
           <p className="text-xs text-text-muted font-medium mb-1">Water Loss (Latest)</p>
-          <p className={cn('text-2xl font-bold', lossColor(latestBalance?.loss_pct ?? 0))}>
-            {latestBalance ? `${latestBalance.loss_pct.toFixed(1)}%` : '—'}
+          <p className={cn('text-2xl font-bold', lossColor(Number(latestBalance?.lossPct ?? 0)))}>
+            {latestBalance ? `${Number(latestBalance.lossPct).toFixed(1)}%` : '—'}
           </p>
           <p className="text-xs text-text-muted">{latestBalance?.period ?? 'No report yet'}{lossFlag ? ' Flagged' : ''}</p>
         </Card>
@@ -2205,7 +2461,13 @@ export function UtilitiesPageClient() {
           />
         </TabsContent>
         <TabsContent value="balance" className="pt-5">
-          <WaterBalanceTab />
+          <WaterBalanceTab
+            periods={periods}
+            suppliers={suppliers}
+            zones={zones}
+            loading={loadingBalance}
+            onRefresh={fetchBalance}
+          />
         </TabsContent>
         <TabsContent value="readings" className="pt-5">
           <ReadingsTab readings={readings} loading={loadingReadings} onRefresh={fetchReadings} />
