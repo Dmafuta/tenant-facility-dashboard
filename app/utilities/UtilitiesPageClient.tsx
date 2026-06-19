@@ -11,17 +11,15 @@ import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import {
   METER_TYPE_HISTORY,
-  INVENTORY_METERS,
 } from '@/lib/mock-data'
 import type {
   MeterTypeHistory,
   UtilityType, MeterType, MeterRole,
   WaterSupplier, ReserveTank, WaterZone, WaterBalancePeriod,
-  MeterExtended, MeterCategory,
   Meter,
 } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -2195,43 +2193,174 @@ function DisconnectionTab({
   )
 }
 
+// ── Assign Meter Modal ─────────────────────────────────────────────────────
+
+function AssignMeterModal({
+  meter, open, onClose, onAssigned,
+}: {
+  meter: MeterData | null
+  open: boolean
+  onClose: () => void
+  onAssigned: () => void
+}) {
+  const [units, setUnits]           = useState<UnitData[]>([])
+  const [search, setSearch]         = useState('')
+  const [selectedUnit, setSelected] = useState<UnitData | null>(null)
+  const [saving, setSaving]         = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setSearch(''); setSelected(null); setError(null)
+      getUnitsFromApi().then(setUnits).catch(() => {})
+    }
+  }, [open])
+
+  const filteredUnits = useMemo(() => {
+    const q = search.toLowerCase()
+    return units.filter(u =>
+      !q || u.unit_label.toLowerCase().includes(q) || (u.block ?? '').toLowerCase().includes(q)
+    )
+  }, [units, search])
+
+  async function handleAssign() {
+    if (!meter || !selectedUnit) return
+    setSaving(true); setError(null)
+    try {
+      await assignMeter(meter.id, selectedUnit.id, selectedUnit.unit_label)
+      onAssigned()
+      onClose()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to assign meter.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!meter) return null
+
+  return (
+    <Modal open={open} onClose={onClose} title="Assign Meter to Unit" size="md">
+      <div className="space-y-4">
+        {/* Meter summary */}
+        <div className="rounded-lg bg-surface-muted dark:bg-dark-card p-3 flex gap-4 text-sm">
+          <div>
+            <p className="text-xs text-text-muted">Meter</p>
+            <p className="font-mono font-medium text-text">{meter.meter_number}</p>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted">Utility</p>
+            <p className="font-medium text-text">{utilityIcon(meter.utility_type)} {utilityLabel(meter.utility_type)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted">Type</p>
+            <div className="mt-0.5">{meterTypeBadge(meter.meter_type)}</div>
+          </div>
+        </div>
+
+        {/* Unit search */}
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Search Unit</label>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Unit label or block…"
+            containerClassName="w-full"
+          />
+        </div>
+
+        {/* Unit list */}
+        <div className="max-h-64 overflow-y-auto rounded-lg border border-surface-border dark:border-dark-border divide-y divide-surface-border dark:divide-dark-border">
+          {filteredUnits.length === 0 ? (
+            <p className="py-6 text-center text-xs text-text-muted">No units found</p>
+          ) : (
+            filteredUnits.map(u => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => setSelected(u)}
+                className={cn(
+                  'w-full text-left px-4 py-3 text-sm transition-colors flex items-center justify-between',
+                  selectedUnit?.id === u.id
+                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                    : 'hover:bg-surface-hover dark:hover:bg-dark-hover text-text'
+                )}
+              >
+                <div>
+                  <span className="font-medium">{u.unit_label}</span>
+                  {u.block && <span className="text-text-muted ml-2 text-xs">Block {u.block}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    'text-xs px-2 py-0.5 rounded',
+                    u.status === 'occupied' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300' :
+                    u.status === 'vacant'   ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
+                    'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                  )}>
+                    {u.status}
+                  </span>
+                  {u.current_occupant && <span className="text-xs text-text-muted truncate max-w-[120px]">{u.current_occupant}</span>}
+                  {selectedUnit?.id === u.id && <span className="text-primary-600 font-bold">✓</span>}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        {error && <p className="text-xs text-danger">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleAssign} disabled={saving || !selectedUnit}>
+            {saving ? 'Assigning…' : `Assign to ${selectedUnit?.unit_label ?? '—'}`}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 // ── Inventory Tab ──────────────────────────────────────────────────────────
 
-const CATEGORY_ICON: Record<MeterCategory, string> = {
-  water: '💧', electricity: '⚡', gas: '🔥',
-}
-const CATEGORY_LABEL: Record<MeterCategory, string> = {
-  water: 'Water', electricity: 'Electricity', gas: 'Gas',
-}
-
-function InventoryTab({ onAssign }: { onAssign?: (m: MeterExtended) => void }) {
-  const [search, setSearch] = useState('')
-  const [catFilter, setCatFilter] = useState<MeterCategory | 'all'>('all')
+function InventoryTab({
+  meters, loading, onAssign,
+}: {
+  meters: MeterData[]
+  loading: boolean
+  onAssign: (m: MeterData) => void
+}) {
+  const [search, setSearch]   = useState('')
+  const [typeFilter, setType] = useState<string>('all')
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return INVENTORY_METERS.filter(m => {
+    return meters.filter(m => {
       const matchSearch = !q ||
-        m.serial_number.toLowerCase().includes(q) ||
-        (m.make ?? '').toLowerCase().includes(q) ||
-        (m.model ?? '').toLowerCase().includes(q)
-      const matchCat = catFilter === 'all' || m.category === catFilter
-      return matchSearch && matchCat
+        m.meter_number.toLowerCase().includes(q) ||
+        (m.account_number ?? '').toLowerCase().includes(q) ||
+        m.utility_type.toLowerCase().includes(q)
+      const matchType = typeFilter === 'all' || m.utility_type === typeFilter
+      return matchSearch && matchType
     })
-  }, [search, catFilter])
+  }, [meters, search, typeFilter])
+
+  if (loading) return <p className="py-12 text-center text-text-muted text-sm">Loading…</p>
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <SearchInput value={search} onChange={setSearch} placeholder="Serial number, make, model…" containerClassName="w-full sm:w-64" />
+        <SearchInput value={search} onChange={setSearch} placeholder="Meter number, account, utility…" containerClassName="w-full sm:w-64" />
         <Select
-          value={catFilter}
-          onChange={v => setCatFilter(v as MeterCategory | 'all')}
+          value={typeFilter}
+          onChange={setType}
           options={[
-            { value: 'all',         label: 'All categories' },
-            { value: 'water',       label: '💧 Water' },
-            { value: 'electricity', label: '⚡ Electricity' },
-            { value: 'gas',         label: '🔥 Gas' },
+            { value: 'all',          label: 'All utilities' },
+            { value: 'water',        label: '💧 Water' },
+            { value: 'electricity',  label: '⚡ Electricity' },
+            { value: 'gas_piped',    label: '🔥 Gas (Piped)' },
+            { value: 'gas_cylinder', label: '🔥 Gas (Cylinder)' },
+            { value: 'sewerage',     label: '🚰 Sewerage' },
+            { value: 'internet',     label: '📶 Internet' },
           ]}
           className="w-44"
         />
@@ -2241,19 +2370,23 @@ function InventoryTab({ onAssign }: { onAssign?: (m: MeterExtended) => void }) {
       {filtered.length === 0 ? (
         <div className="py-14 text-center">
           <p className="text-2xl mb-2">📦</p>
-          <p className="text-sm font-medium text-text">No meters in inventory</p>
-          <p className="text-xs text-text-muted mt-1">Meters registered without a unit assignment appear here.</p>
+          <p className="text-sm font-medium text-text">No unassigned meters</p>
+          <p className="text-xs text-text-muted mt-1">
+            {meters.length === 0
+              ? 'Meters registered without a unit assignment appear here.'
+              : 'All meters have been assigned to units.'}
+          </p>
         </div>
       ) : (
         <div className="rounded-xl border border-surface-border dark:border-dark-border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface-muted dark:bg-dark-hover border-b border-surface-border dark:border-dark-border">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Category</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Serial Number</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Make / Model</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Utility</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Meter Number</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Account No.</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Type</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Billing</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Status</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Registered</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-text-muted">Action</th>
               </tr>
@@ -2261,31 +2394,24 @@ function InventoryTab({ onAssign }: { onAssign?: (m: MeterExtended) => void }) {
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
               {filtered.map(m => (
                 <tr key={m.id} className="hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors">
-                  <td className="px-4 py-3">
-                    <span className="text-base">{CATEGORY_ICON[m.category]}</span>
-                    <span className="text-xs text-text-muted ml-1.5">{CATEGORY_LABEL[m.category]}</span>
+                  <td className="px-4 py-3 text-sm">
+                    <span>{utilityIcon(m.utility_type)}</span>
+                    <span className="text-xs text-text-muted ml-1.5">{utilityLabel(m.utility_type)}</span>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-text">{m.serial_number}</td>
-                  <td className="px-4 py-3 text-xs text-text">
-                    {[m.make, m.model].filter(Boolean).join(' ') || <span className="text-text-muted">—</span>}
-                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-text">{m.meter_number}</td>
+                  <td className="px-4 py-3 text-xs text-text-muted">{m.account_number ?? '—'}</td>
+                  <td className="px-4 py-3">{meterTypeBadge(m.meter_type)}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs bg-surface-muted dark:bg-dark-hover px-2 py-0.5 rounded border border-surface-border dark:border-dark-border text-text-muted capitalize">
-                      {m.meter_subtype.replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {m.billing_mode === 'prepaid' ? (
-                      <span className="text-xs bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded">Prepaid</span>
-                    ) : (
-                      <span className="text-xs bg-surface-border dark:bg-dark-border text-text-muted px-2 py-0.5 rounded">Postpaid</span>
-                    )}
+                    {statusDot(m.status)}
+                    <span className="text-xs text-text-muted capitalize">{m.status}</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-text-muted">
-                    {new Date(m.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {m.created_at
+                      ? new Date(m.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : '—'}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button size="sm" variant="ghost" onClick={() => onAssign?.(m)}>
+                    <Button size="sm" variant="ghost" onClick={() => onAssign(m)}>
                       Assign to Unit
                     </Button>
                   </td>
@@ -2307,11 +2433,13 @@ function InventoryTab({ onAssign }: { onAssign?: (m: MeterExtended) => void }) {
 // ── Main Page ──────────────────────────────────────────────────────────────────────────
 
 export function UtilitiesPageClient() {
-  const [readTarget, setReadTarget]     = useState<MeterData | null>(null)
-  const [showRead, setShowRead]         = useState(false)
-  const [viewTarget, setViewTarget]     = useState<MeterData | null>(null)
-  const [showView, setShowView]         = useState(false)
-  const [showAddMeter, setShowAddMeter] = useState(false)
+  const [readTarget, setReadTarget]       = useState<MeterData | null>(null)
+  const [showRead, setShowRead]           = useState(false)
+  const [viewTarget, setViewTarget]       = useState<MeterData | null>(null)
+  const [showView, setShowView]           = useState(false)
+  const [showAddMeter, setShowAddMeter]   = useState(false)
+  const [assignTarget, setAssignTarget]   = useState<MeterData | null>(null)
+  const [showAssign, setShowAssign]       = useState(false)
 
   // Live data state
   const [meters, setMeters]       = useState<MeterData[]>([])
@@ -2378,7 +2506,8 @@ export function UtilitiesPageClient() {
 
   useEffect(() => { fetchDisconn() }, [fetchDisconn])
 
-  const consumerMeters = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
+  const consumerMeters   = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
+  const inventoryMeters  = meters.filter(m => !m.unit_id)
   const latestBalance  = periods[periods.length - 1]
   const lossFlag       = latestBalance?.flagged
 
@@ -2403,7 +2532,7 @@ export function UtilitiesPageClient() {
         </Card>
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">In Inventory</p>
-          <p className="text-2xl font-bold text-text">{INVENTORY_METERS.length}</p>
+          <p className="text-2xl font-bold text-text">{loadingMeters ? '…' : inventoryMeters.length}</p>
           <p className="text-xs text-text-muted">Awaiting assignment</p>
         </Card>
         <Card className={cn('p-4', lossFlag ? 'border-danger/40 bg-danger/5' : '')}>
@@ -2421,9 +2550,9 @@ export function UtilitiesPageClient() {
           <TabsTrigger value="meters">Meters</TabsTrigger>
           <TabsTrigger value="inventory">
             Inventory
-            {INVENTORY_METERS.length > 0 && (
+            {inventoryMeters.length > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-[10px] font-bold px-1">
-                {INVENTORY_METERS.length}
+                {inventoryMeters.length}
               </span>
             )}
           </TabsTrigger>
@@ -2448,7 +2577,11 @@ export function UtilitiesPageClient() {
           />
         </TabsContent>
         <TabsContent value="inventory" className="pt-5">
-          <InventoryTab onAssign={m => alert(`Assign ${m.serial_number} to unit — coming soon`)} />
+          <InventoryTab
+            meters={inventoryMeters}
+            loading={loadingMeters}
+            onAssign={m => { setAssignTarget(m); setShowAssign(true) }}
+          />
         </TabsContent>
         <TabsContent value="supply" className="pt-5">
           <WaterSupplyTab
@@ -2491,6 +2624,12 @@ export function UtilitiesPageClient() {
       />
       <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} />
       <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} />
+      <AssignMeterModal
+        meter={assignTarget}
+        open={showAssign}
+        onClose={() => setShowAssign(false)}
+        onAssigned={fetchMeters}
+      />
     </main>
   )
 }

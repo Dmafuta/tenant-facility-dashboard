@@ -97,3 +97,10 @@ export async function updateReadingStatus(readingId: string, status: string): Pr
     body: JSON.stringify({ status }),
   })
 }
+
+export async function assignMeter(meterId: string, unitId: string, unitLabel: string): Promise<MeterData> {
+  return apiFetch<MeterData>(`/meters/${meterId}/assign`, {
+    method: 'PATCH',
+    body: JSON.stringify({ unitId, unitLabel }),
+  })
+}
