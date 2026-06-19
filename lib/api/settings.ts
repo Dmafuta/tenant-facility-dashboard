@@ -220,6 +220,11 @@ export function testMpesaAccount(id: string, phone: string): Promise<{ accepted:
   return apiFetch(`/settings/integrations/mpesa/accounts/${id}/test`, { method: 'POST', body: JSON.stringify({ phone }) })
 }
 
-export function registerC2bUrls(accountId: string): Promise<string> {
-  return apiFetch('/mpesa/register-c2b-urls', { method: 'POST', body: JSON.stringify({ account_id: accountId }) })
+export function registerC2bUrls(payload: {
+  account_id: string
+  confirmation_url: string
+  validation_url: string
+  response_type: string
+}): Promise<string> {
+  return apiFetch('/mpesa/register-c2b-urls', { method: 'POST', body: JSON.stringify(payload) })
 }

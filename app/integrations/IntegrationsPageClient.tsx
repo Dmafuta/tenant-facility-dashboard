@@ -408,6 +408,135 @@ function MpesaAccountForm({
   )
 }
 
+// ── Register C2B Modal ────────────────────────────────────────────────────────
+
+function deriveC2bUrls(callbackUrl: string | undefined) {
+  if (!callbackUrl) return { confirmationUrl: '', validationUrl: '' }
+  const base = callbackUrl.replace(/\/api\/mpesa\/.*$/, '')
+  return {
+    confirmationUrl: base + '/api/mpesa/c2b-confirmation',
+    validationUrl:   base + '/api/mpesa/c2b-validation',
+  }
+}
+
+function RegisterC2bModal({
+  account, onClose,
+}: {
+  account: MpesaAccount
+  onClose: () => void
+}) {
+  const derived = deriveC2bUrls(account.callbackUrl)
+  const [confirmationUrl, setConfirmationUrl] = useState(derived.confirmationUrl)
+  const [validationUrl,   setValidationUrl]   = useState(derived.validationUrl)
+  const [responseType,    setResponseType]    = useState('Completed')
+  const [registering,     setRegistering]     = useState(false)
+  const [result,          setResult]          = useState<string | null>(null)
+  const [error,           setError]           = useState<string | null>(null)
+
+  async function handleRegister() {
+    if (!confirmationUrl.trim() || !validationUrl.trim()) {
+      setError('Both URLs are required.')
+      return
+    }
+    setRegistering(true); setError(null); setResult(null)
+    try {
+      const msg = await registerC2bUrls({
+        account_id:       account.id,
+        confirmation_url: confirmationUrl.trim(),
+        validation_url:   validationUrl.trim(),
+        response_type:    responseType,
+      })
+      setResult(msg)
+    } catch (e: any) {
+      setError(e?.message ?? 'Registration failed')
+    } finally { setRegistering(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Register C2B URLs</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Shortcode: <strong>{account.shortcode}</strong> · {account.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        </div>
+
+        {result ? (
+          <div className="px-5 py-8 text-center space-y-3">
+            <div className="text-3xl">{result.toLowerCase().includes('success') ? '✅' : '⚠️'}</div>
+            <p className="text-sm font-medium text-gray-900">{result}</p>
+            <p className="text-xs text-gray-400">Safaricom may take a few minutes to activate the new URLs.</p>
+            <button onClick={onClose} className="mt-2 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="px-5 py-5 space-y-4">
+            <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-800">
+              These URLs will be registered with Safaricom Daraja. Tenants who pay your paybill will trigger the confirmation URL, which auto-reconciles their charge.
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">Confirmation URL <span className="text-red-400">*</span></label>
+              <input
+                value={confirmationUrl}
+                onChange={e => setConfirmationUrl(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
+                placeholder="https://yourdomain.com/api/mpesa/c2b-confirmation"
+              />
+              <p className="text-xs text-gray-400">Called by Safaricom after payment succeeds.</p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">Validation URL <span className="text-red-400">*</span></label>
+              <input
+                value={validationUrl}
+                onChange={e => setValidationUrl(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-teal-400"
+                placeholder="https://yourdomain.com/api/mpesa/c2b-validation"
+              />
+              <p className="text-xs text-gray-400">Called before payment is accepted. Leave as-is unless you need custom validation.</p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">Response Type</label>
+              <select
+                value={responseType}
+                onChange={e => setResponseType(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              >
+                <option value="Completed">Completed — process payment even if validation URL is unreachable</option>
+                <option value="Cancelled">Cancelled — reject payment if validation URL is unreachable</option>
+              </select>
+              <p className="text-xs text-gray-400">
+                <strong>Recommended: Completed</strong> — prevents payments being rejected due to temporary server downtime.
+              </p>
+            </div>
+
+            {error && <p className="text-xs text-red-600 bg-red-50 rounded p-2">{error}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={onClose}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={handleRegister}
+                disabled={registering}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {registering ? 'Registering…' : '💚 Register with Safaricom'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── MPesa Accounts List ───────────────────────────────────────────────────────
 
 function MpesaAccountsList() {
@@ -417,9 +546,8 @@ function MpesaAccountsList() {
   const [testPhone, setTestPhone] = useState('')
   const [testingId, setTestingId] = useState<string | null>(null)
   const [result, setResult]       = useState<string | null>(null)
-  const [deletingId, setDeletingId]     = useState<string | null>(null)
-  const [registeringId, setRegisteringId] = useState<string | null>(null)
-  const [registerResult, setRegisterResult] = useState<{ id: string; msg: string } | null>(null)
+  const [deletingId, setDeletingId]         = useState<string | null>(null)
+  const [registerTarget, setRegisterTarget] = useState<MpesaAccount | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -453,17 +581,6 @@ function MpesaAccountsList() {
     } finally { setTestingId(null) }
   }
 
-  const handleRegisterC2b = async (id: string) => {
-    setRegisteringId(id)
-    setRegisterResult(null)
-    try {
-      const msg = await registerC2bUrls(id)
-      setRegisterResult({ id, msg })
-    } catch (e: any) {
-      setRegisterResult({ id, msg: '✗ ' + (e?.message ?? 'Registration failed') })
-    } finally { setRegisteringId(null) }
-  }
-
   const handleDone = (saved: MpesaAccount) => {
     setAccounts(prev => {
       const idx = prev.findIndex(a => a.id === saved.id)
@@ -476,6 +593,9 @@ function MpesaAccountsList() {
 
   return (
     <div className="space-y-3">
+      {registerTarget && (
+        <RegisterC2bModal account={registerTarget} onClose={() => setRegisterTarget(null)} />
+      )}
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Paybill Accounts</p>
         <button
@@ -535,11 +655,10 @@ function MpesaAccountsList() {
                     </button>
                   )}
                   <button
-                    onClick={() => handleRegisterC2b(account.id)}
-                    disabled={registeringId === account.id}
+                    onClick={() => setRegisterTarget(account)}
                     title="Register C2B confirmation & validation URLs with Safaricom Daraja"
-                    className="rounded px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50">
-                    {registeringId === account.id ? 'Registering…' : '💚 Register C2B'}
+                    className="rounded px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-50">
+                    💚 Register C2B
                   </button>
                   <button onClick={() => setEditing(account)}
                     className="rounded px-2 py-1 text-xs text-gray-600 border border-gray-200 hover:bg-gray-50">
