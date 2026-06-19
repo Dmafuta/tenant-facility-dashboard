@@ -136,3 +136,14 @@ export async function recordMeterTypeMigration(meterId: string, payload: Record<
     body: JSON.stringify(payload),
   })
 }
+
+export async function patchMeter(meterId: string, payload: Record<string, unknown>): Promise<MeterData> {
+  return apiFetch<MeterData>(`/meters/${meterId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteGlobalMeter(meterId: string): Promise<void> {
+  await apiFetch<unknown>(`/meters/${meterId}`, { method: 'DELETE' })
+}

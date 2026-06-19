@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -497,6 +497,138 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   )
 }
 
+// ── Edit Meter Modal ────────────────────────────────────────────────────────
+
+const BILLING_ARRANGEMENTS = [
+  { value: 'billed_to_occupant', label: 'Billed to Occupant' },
+  { value: 'billed_to_owner',    label: 'Billed to Owner' },
+  { value: 'included_in_rent',   label: 'Included in Rent' },
+  { value: 'not_billed',         label: 'Not Billed' },
+]
+const METER_ROLES_OPTS = [
+  { value: 'consumer',     label: 'Consumer (Unit)' },
+  { value: 'supplier',     label: 'Supplier' },
+  { value: 'tank_inflow',  label: 'Tank Inflow' },
+  { value: 'tank_outflow', label: 'Tank Outflow' },
+  { value: 'distribution', label: 'Distribution' },
+]
+
+function EditMeterModal({ meter, open, onClose, onSaved }: {
+  meter: MeterData | null
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [meterNumber, setMeterNumber] = useState('')
+  const [accountNo, setAccountNo]     = useState('')
+  const [meterRole, setMeterRole]     = useState('consumer')
+  const [billingArr, setBillingArr]   = useState('billed_to_occupant')
+  const [mgmtFee, setMgmtFee]         = useState('')
+  const [ratePerUnit, setRatePerUnit] = useState('')
+  const [status, setStatus]           = useState('active')
+  const [notes, setNotes]             = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open && meter) {
+      setMeterNumber(meter.meter_number)
+      setAccountNo(meter.account_number ?? '')
+      setMeterRole(meter.meter_role ?? 'consumer')
+      setBillingArr(meter.billing_arrangement ?? 'billed_to_occupant')
+      setMgmtFee(meter.management_fee_pct?.toString() ?? '')
+      setRatePerUnit(meter.rate_per_unit?.toString() ?? '')
+      setStatus(meter.status)
+      setNotes(meter.notes ?? '')
+      setError(null)
+    }
+  }, [open, meter])
+
+  if (!meter) return null
+
+  async function handleSave() {
+    if (!meterNumber.trim()) { setError('Meter number is required.'); return }
+    setSaving(true); setError(null)
+    try {
+      await patchMeter(meter.id, {
+        meterNumber: meterNumber.trim(),
+        accountNumber: accountNo || null,
+        meterRole,
+        billingArrangement: billingArr,
+        managementFeePct: mgmtFee ? Number(mgmtFee) : null,
+        ratePerUnit: ratePerUnit ? Number(ratePerUnit) : null,
+        status,
+        notes: notes || null,
+      })
+      onSaved()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save changes.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Edit Meter — ${meter.meter_number}`} size="md">
+      <div className="space-y-4">
+        <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card text-xs text-text-muted flex gap-4 flex-wrap">
+          <span>{utilityIcon(meter.utility_type)} <strong className="text-text">{utilityLabel(meter.utility_type)}</strong></span>
+          <span>{meterTypeBadge(meter.meter_type)}</span>
+          {meter.unit_label && <span>📍 {meter.unit_label}</span>}
+          <span className="text-[11px] italic">To change meter type use Migration History in the detail drawer.</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={LABEL}>Meter Number *</label>
+            <input className={INPUT} value={meterNumber} onChange={e => setMeterNumber(e.target.value)} />
+          </div>
+          <div>
+            <label className={LABEL}>Account Number</label>
+            <input className={INPUT} value={accountNo} onChange={e => setAccountNo(e.target.value)} placeholder="Optional" />
+          </div>
+          <div>
+            <label className={LABEL}>Meter Role</label>
+            <select className={INPUT} value={meterRole} onChange={e => setMeterRole(e.target.value)}>
+              {METER_ROLES_OPTS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Status</label>
+            <select className={INPUT} value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Billing Arrangement</label>
+            <select className={INPUT} value={billingArr} onChange={e => setBillingArr(e.target.value)}>
+              {BILLING_ARRANGEMENTS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Management Fee %</label>
+            <input type="number" className={INPUT} value={mgmtFee} onChange={e => setMgmtFee(e.target.value)} placeholder="e.g. 5" min="0" max="100" />
+          </div>
+          <div>
+            <label className={LABEL}>Rate Per Unit (KES)</label>
+            <input type="number" className={INPUT} value={ratePerUnit} onChange={e => setRatePerUnit(e.target.value)} placeholder="e.g. 80" min="0" step="0.01" />
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Notes</label>
+            <textarea className={INPUT} rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
+          </div>
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || !meterNumber.trim()}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 // ── MetersTab ──────────────────────────────────────────────────────────────
 
 const UTILITY_FILTERS = [
@@ -526,18 +658,36 @@ const TH = 'px-4 py-3 text-left text-xs font-medium text-text-muted whitespace-n
 const TD = 'px-4 py-3.5 text-sm text-text whitespace-nowrap'
 
 function MetersTab({
-  meters, loading, onRead, onView, onAddMeter,
+  meters, loading, onRead, onView, onAddMeter, onRefresh,
 }: {
   meters: MeterData[]
   loading: boolean
   onRead: (m: MeterData) => void
   onView: (m: MeterData) => void
   onAddMeter: () => void
+  onRefresh: () => void
 }) {
   const [search, setSearch]   = useState('')
   const [utility, setUtility] = useState('all')
   const [type, setType]       = useState('all')
   const [role, setRole]       = useState('all')
+  const [editTarget, setEditTarget]               = useState<MeterData | null>(null)
+  const [showEdit, setShowEdit]                   = useState(false)
+  const [deleteTarget, setDeleteTarget]           = useState<MeterData | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting]                   = useState(false)
+
+  async function handleDeleteMeter() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteGlobalMeter(deleteTarget.id)
+      setShowDeleteConfirm(false)
+      setDeleteTarget(null)
+      onRefresh()
+    } catch { /* ignore */ }
+    finally { setDeleting(false) }
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -666,6 +816,24 @@ function MetersTab({
                       >
                         View
                       </button>
+                      <span className="text-text-muted">·</span>
+                      <CanDo action="write" resource={{ type: 'unit' }}>
+                        <button
+                          onClick={() => { setEditTarget(m); setShowEdit(true) }}
+                          className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap"
+                        >
+                          Edit
+                        </button>
+                      </CanDo>
+                      <span className="text-text-muted">·</span>
+                      <CanDo action="write" resource={{ type: 'unit' }}>
+                        <button
+                          onClick={() => { setDeleteTarget(m); setShowDeleteConfirm(true) }}
+                          className="text-xs font-medium text-danger hover:text-red-700 whitespace-nowrap"
+                        >
+                          Delete
+                        </button>
+                      </CanDo>
                     </div>
                   </td>
                 </tr>
@@ -673,6 +841,30 @@ function MetersTab({
             </tbody>
           </table>
         </div>
+      )}
+
+      <EditMeterModal
+        meter={editTarget}
+        open={showEdit}
+        onClose={() => setShowEdit(false)}
+        onSaved={() => { setShowEdit(false); onRefresh() }}
+      />
+      {deleteTarget && (
+        <Modal open={showDeleteConfirm} onClose={() => { setShowDeleteConfirm(false); setDeleteTarget(null) }} title="Delete Meter" size="sm">
+          <div className="space-y-4">
+            <p className="text-sm text-text">
+              Delete meter <strong className="font-mono">{deleteTarget.meter_number}</strong>
+              {deleteTarget.unit_label ? ` (${deleteTarget.unit_label})` : ''}? This cannot be undone.
+            </p>
+            <p className="text-xs text-text-muted">All readings and migration history for this meter will also be deleted.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => { setShowDeleteConfirm(false); setDeleteTarget(null) }} disabled={deleting}>Cancel</Button>
+              <Button variant="danger" size="sm" onClick={handleDeleteMeter} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete Meter'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   )
@@ -1432,10 +1624,11 @@ function WaterBalanceTab({
   const [selected, setSelected]     = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [editTarget, setEditTarget] = useState<WaterBalancePeriodData | null>(null)
-  const [saving, setSaving]         = useState(false)
-  const [saveError, setSaveError]   = useState<string | null>(null)
-  const [deleting, setDeleting]     = useState(false)
+  const [saving, setSaving]           = useState(false)
+  const [saveError, setSaveError]     = useState<string | null>(null)
+  const [deleting, setDeleting]       = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     if (periods.length > 0 && !selected) {
@@ -1525,12 +1718,13 @@ function WaterBalanceTab({
   }
 
   async function handleDelete() {
-    if (!period || !confirm(`Delete balance report for ${period.period}?`)) return
+    if (!period) return
     setDeleteError(null)
     setDeleting(true)
     try {
       await deleteWaterBalancePeriod(period.id)
       setSelected('')
+      setShowDeleteConfirm(false)
       onRefresh()
     } catch {
       setDeleteError('Failed to delete period. Please try again.')
@@ -1562,8 +1756,8 @@ function WaterBalanceTab({
           {period && (
             <>
               <Button variant="ghost" size="sm" onClick={() => openEdit(period)}>Edit</Button>
-              <Button variant="ghost" size="sm" className="text-danger" onClick={handleDelete} disabled={deleting}>
-                {deleting ? 'Deleting…' : 'Delete'}
+              <Button variant="ghost" size="sm" className="text-danger" onClick={() => setShowDeleteConfirm(true)}>
+                Delete
               </Button>
             </>
           )}
@@ -1830,6 +2024,18 @@ function WaterBalanceTab({
       {deleteError && (
         <div className="mt-2 text-sm text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">{deleteError}</div>
       )}
+
+      <Modal open={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} title="Delete Balance Period" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-text">Delete water balance report for <strong>{period?.period}</strong>? This cannot be undone.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete Period'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -1848,6 +2054,7 @@ function ReadingsTab({
   const [utilityFilter, setUtility] = useState('all')
   const [statusFilter, setStatus]   = useState('all')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [markingAll, setMarkingAll] = useState(false)
 
   // Collect unique billing periods for the dropdown
   const periods = useMemo(() => {
@@ -1878,9 +2085,11 @@ function ReadingsTab({
 
   async function handleMarkAllBilled() {
     const pending = filtered.filter(r => r.status === 'pending_bill')
+    setMarkingAll(true)
     for (const r of pending) {
       await updateReadingStatus(r.id, 'billed').catch(() => {})
     }
+    setMarkingAll(false)
     onRefresh()
   }
 
@@ -1949,8 +2158,8 @@ function ReadingsTab({
         <div className="ml-auto flex items-center gap-2">
           {pendingCount > 0 && (
             <CanDo action="write" resource={{ type: 'unit' }}>
-              <Button size="sm" variant="outline" onClick={handleMarkAllBilled}>
-                Mark All Billed ({pendingCount})
+              <Button size="sm" variant="outline" onClick={handleMarkAllBilled} disabled={markingAll}>
+                {markingAll ? 'Marking…' : `Mark All Billed (${pendingCount})`}
               </Button>
             </CanDo>
           )}
@@ -2730,6 +2939,7 @@ export function UtilitiesPageClient() {
             onRead={m => { setReadTarget(m); setShowRead(true) }}
             onView={m => { setViewTarget(m); setShowView(true) }}
             onAddMeter={() => setShowAddMeter(true)}
+            onRefresh={fetchMeters}
           />
         </TabsContent>
         <TabsContent value="inventory" className="pt-5">
