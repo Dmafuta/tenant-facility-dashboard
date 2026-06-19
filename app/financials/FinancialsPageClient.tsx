@@ -12,7 +12,7 @@ import type { ChargeType, ChargeStatus, BillingCycle, BillingRunItem } from '@/l
 import { cn } from '@/lib/cn'
 import { getAllCharges, recordPayment } from '@/lib/api/charges'
 import type { ChargeData } from '@/lib/api/charges'
-import { initiateStkPush, getMpesaTransactions } from '@/lib/api/mpesa'
+import { initiateStkPush, getMpesaTransactions, reconcileTransaction } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -398,6 +398,103 @@ function StkPushModal({
   )
 }
 
+function UnmatchedC2bSection({
+  transactions, charges, onReconciled,
+}: {
+  transactions: MpesaTransactionData[]
+  charges: ChargeData[]
+  onReconciled: () => void
+}) {
+  const unmatched = transactions.filter(
+    p => p.status === 'completed' && p.transaction_type === 'c2b' && !p.charge_id
+  )
+
+  const [linking, setLinking]   = useState<Record<string, string>>({})   // txId → selected chargeId
+  const [saving,  setSaving]    = useState<string | null>(null)           // txId being saved
+  const [error,   setError]     = useState<string | null>(null)
+
+  if (unmatched.length === 0) return null
+
+  const unpaidCharges = charges.filter(c => c.status === 'pending' || c.status === 'overdue' || c.status === 'partial')
+
+  async function handleLink(txId: string) {
+    const chargeId = linking[txId]
+    if (!chargeId) return
+    setSaving(txId); setError(null)
+    try {
+      await reconcileTransaction(txId, chargeId)
+      onReconciled()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to link transaction.')
+    } finally { setSaving(null) }
+  }
+
+  return (
+    <div className="rounded-xl border border-orange-200 bg-orange-50 overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-orange-200">
+        <span className="text-base">🔗</span>
+        <h4 className="text-sm font-semibold text-orange-900 flex-1">
+          Unmatched C2B Payments — Manual Reconciliation
+        </h4>
+        <span className="rounded-full bg-orange-100 border border-orange-200 px-2 py-0.5 text-xs font-medium text-orange-700">
+          {unmatched.length} unmatched
+        </span>
+      </div>
+      <p className="px-4 py-2 text-xs text-orange-700 border-b border-orange-100 bg-orange-50/60">
+        These C2B payments arrived but couldn&apos;t be auto-matched to a unit. Select the correct charge and click Link.
+      </p>
+      <div className="divide-y divide-orange-100">
+        {unmatched.map(p => (
+          <div key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white hover:bg-orange-50/30">
+            {/* Payment info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-xs font-semibold text-gray-800">{p.mpesa_receipt || '—'}</span>
+                <span className="text-xs text-gray-400">·</span>
+                <span className="font-semibold text-gray-900">{fmt(Number(p.amount))}</span>
+                <span className="text-xs text-gray-400">·</span>
+                <span className="text-xs text-gray-500">{p.phone}</span>
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-400">
+                {p.bill_ref_number && (
+                  <span>Typed account: <strong className="text-orange-700">&quot;{p.bill_ref_number}&quot;</strong></span>
+                )}
+                {p.person_name && <span>· {p.person_name}</span>}
+                <span>· {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</span>
+              </div>
+            </div>
+            {/* Charge picker */}
+            <div className="flex items-center gap-2 shrink-0">
+              <select
+                value={linking[p.id] ?? ''}
+                onChange={e => setLinking(prev => ({ ...prev, [p.id]: e.target.value }))}
+                className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300 min-w-[200px]"
+              >
+                <option value="">— select charge to link —</option>
+                {unpaidCharges.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.unit_label} · {c.person_name} · {fmt(c.amount - (c.paid_amount ?? 0))} ({c.type})
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => handleLink(p.id)}
+                disabled={!linking[p.id] || saving === p.id}
+                className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-40"
+              >
+                {saving === p.id ? 'Linking…' : 'Link'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {error && (
+        <div className="px-4 py-2 text-xs text-red-600 bg-red-50 border-t border-red-100">{error}</div>
+      )}
+    </div>
+  )
+}
+
 function PaymentsTabContent({
   transactions, charges, onRefresh,
 }: {
@@ -414,10 +511,10 @@ function PaymentsTabContent({
   }, [transactions, statusFilter])
 
   const kpis = useMemo(() => {
-    const completed    = transactions.filter(p => p.status === 'completed')
+    const completed     = transactions.filter(p => p.status === 'completed')
     const totalReceived = completed.reduce((s, p) => s + Number(p.amount), 0)
     const pending       = transactions.filter(p => p.status === 'pending').reduce((s, p) => s + Number(p.amount), 0)
-    const unmatched     = transactions.filter(p => p.status === 'pending' && !p.charge_id).length
+    const unmatched     = transactions.filter(p => p.status === 'completed' && p.transaction_type === 'c2b' && !p.charge_id).length
     return { totalReceived, pending, unmatched, count: completed.length }
   }, [transactions])
 
@@ -497,6 +594,13 @@ function PaymentsTabContent({
           ))}
         </div>
       )}
+
+      {/* Unmatched C2B — manual reconciliation */}
+      <UnmatchedC2bSection
+        transactions={transactions}
+        charges={charges}
+        onReconciled={onRefresh}
+      />
 
       {/* Transactions ledger */}
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">

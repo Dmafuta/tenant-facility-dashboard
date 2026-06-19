@@ -50,6 +50,13 @@ export interface RegisterC2bResult {
   message: string
 }
 
+export async function reconcileTransaction(txId: string, chargeId: string): Promise<MpesaTransactionData> {
+  return apiFetch<MpesaTransactionData>(`/mpesa/transactions/${txId}/reconcile`, {
+    method: 'PATCH',
+    body: JSON.stringify({ charge_id: chargeId }),
+  })
+}
+
 export async function registerC2bUrls(payload: {
   account_id?: string
   confirmation_url?: string
