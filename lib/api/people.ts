@@ -29,6 +29,10 @@ export async function getPeopleFromApi(): Promise<PersonData[]> {
   return apiFetch<PersonData[]>('/people')
 }
 
+export async function getPersonById(id: string): Promise<PersonData> {
+  return apiFetch<PersonData>(`/people/${id}`)
+}
+
 export async function createPerson(payload: Record<string, unknown>): Promise<PersonData> {
   return apiFetch<PersonData>('/people', { method: 'POST', body: JSON.stringify(payload) })
 }

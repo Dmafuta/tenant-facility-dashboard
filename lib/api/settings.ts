@@ -12,6 +12,8 @@ export interface FacilitySettings {
   deposit_months: number | null
   service_charge_enabled: boolean | null
   auto_generate_charges: boolean | null
+  disconnection_reminder_days: number | null
+  disconnection_formal_days: number | null
   notify_rent_overdue: boolean | null
   notify_payment_received: boolean | null
   notify_arrears_escalation: boolean | null

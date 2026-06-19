@@ -9,11 +9,6 @@ import { Select } from '@/components/ui/Select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
-import type {
-  UtilityType, MeterType, MeterRole,
-  WaterSupplier, ReserveTank, WaterZone, WaterBalancePeriod,
-  Meter,
-} from '@/lib/types'
 import { cn } from '@/lib/cn'
 import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData } from '@/lib/api/meters'
@@ -29,6 +24,9 @@ import type { UnitData } from '@/lib/api/units'
 import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice } from '@/lib/api/disconnection'
 import type { DisconnectionNoticeData } from '@/lib/api/disconnection'
 import type { ChargeData } from '@/lib/api/charges'
+import { getSettings } from '@/lib/api/settings'
+import type { FacilitySettings } from '@/lib/api/settings'
+import { getPersonById } from '@/lib/api/people'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -2016,11 +2014,6 @@ function ReadingsTab({
 
 // ── Disconnection Notices Tab ─────────────────────────────────────────────────
 
-const DISCONNECTION_CONFIG = {
-  reminder_notice_days: 7,
-  formal_notice_days: 14,
-}
-
 interface DisconnectionCandidate {
   meter: MeterData
   days_overdue: number
@@ -2032,15 +2025,20 @@ function DisconnectionTab({
   meters,
   overdueCharges,
   sentNotices,
+  settings,
   loading,
   onRefresh,
 }: {
   meters: MeterData[]
   overdueCharges: ChargeData[]
   sentNotices: DisconnectionNoticeData[]
+  settings: FacilitySettings | null
   loading: boolean
   onRefresh: () => void
 }) {
+  const reminderDays = settings?.disconnection_reminder_days ?? 7
+  const formalDays   = settings?.disconnection_formal_days   ?? 14
+
   const [sending, setSending] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -2069,8 +2067,8 @@ function DisconnectionTab({
       }
 
       let stage: DisconnectionCandidate['stage'] = 'clear'
-      if (daysOverdue >= DISCONNECTION_CONFIG.formal_notice_days) stage = 'formal_due'
-      else if (daysOverdue >= DISCONNECTION_CONFIG.reminder_notice_days) stage = 'reminder_due'
+      if (daysOverdue >= formalDays) stage = 'formal_due'
+      else if (daysOverdue >= reminderDays) stage = 'reminder_due'
       else if (daysOverdue > 0) stage = 'overdue'
 
       return { meter, days_overdue: daysOverdue, outstanding_amount: outstanding, stage }
@@ -2089,15 +2087,26 @@ function DisconnectionTab({
     const key = `${candidate.meter.id}_${type}`
     setSending(key)
     try {
+      const personId = candidate.meter.current_billing_person?.person_id ?? null
+      let personPhone: string | null = null
+      let personEmail: string | null = null
+      if (personId) {
+        try {
+          const person = await getPersonById(personId)
+          personPhone = person.phone ?? null
+          personEmail = person.email ?? null
+        } catch { /* proceed without contact details */ }
+      }
+
       await sendDisconnectionNotice({
         meter_id: candidate.meter.id,
         meter_number: candidate.meter.meter_number,
         unit_id: candidate.meter.unit_id,
         unit_label: candidate.meter.unit_label,
-        person_id: candidate.meter.current_billing_person?.person_id ?? null,
+        person_id: personId,
         person_name: candidate.meter.current_billing_person?.name ?? null,
-        person_phone: null,
-        person_email: null,
+        person_phone: personPhone,
+        person_email: personEmail,
         notice_type: type,
         outstanding_amount_kes: candidate.outstanding_amount,
         utility_type: candidate.meter.utility_type,
@@ -2143,12 +2152,12 @@ function DisconnectionTab({
           <div className="flex items-center gap-3 text-sm">
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-amber-400" />
-              Day {DISCONNECTION_CONFIG.reminder_notice_days} — Reminder notice
+              Day {reminderDays} — Reminder notice
             </span>
             <span className="text-gray-300">→</span>
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-red-500" />
-              Day {DISCONNECTION_CONFIG.formal_notice_days} — Formal disconnection notice
+              Day {formalDays} — Formal disconnection notice
             </span>
             <span className="text-gray-300">→</span>
             <span className="flex items-center gap-1.5">
@@ -2167,17 +2176,17 @@ function DisconnectionTab({
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center">
           <p className="text-2xl font-bold text-red-700">{formalDue.length}</p>
           <p className="text-xs text-red-600 font-medium mt-1">Formal Notice Due</p>
-          <p className="text-[11px] text-red-500">{DISCONNECTION_CONFIG.formal_notice_days}+ days overdue</p>
+          <p className="text-[11px] text-red-500">{formalDays}+ days overdue</p>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
           <p className="text-2xl font-bold text-amber-700">{reminderDue.length}</p>
           <p className="text-xs text-amber-600 font-medium mt-1">Reminder Due</p>
-          <p className="text-[11px] text-amber-500">{DISCONNECTION_CONFIG.reminder_notice_days}–{DISCONNECTION_CONFIG.formal_notice_days - 1} days overdue</p>
+          <p className="text-[11px] text-amber-500">{reminderDays}–{formalDays - 1} days overdue</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-center">
           <p className="text-2xl font-bold text-gray-700">{overdueClear.length}</p>
           <p className="text-xs text-gray-600 font-medium mt-1">Overdue (grace period)</p>
-          <p className="text-[11px] text-gray-500">1–{DISCONNECTION_CONFIG.reminder_notice_days - 1} days overdue</p>
+          <p className="text-[11px] text-gray-500">1–{reminderDays - 1} days overdue</p>
         </div>
       </div>
 
@@ -2234,7 +2243,7 @@ function DisconnectionTab({
                       {c.outstanding_amount > 0 ? `KES ${c.outstanding_amount.toLocaleString()}` : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`font-semibold ${c.days_overdue >= DISCONNECTION_CONFIG.formal_notice_days ? 'text-red-600' : c.days_overdue >= DISCONNECTION_CONFIG.reminder_notice_days ? 'text-amber-600' : 'text-gray-600'}`}>
+                      <span className={`font-semibold ${c.days_overdue >= formalDays ? 'text-red-600' : c.days_overdue >= reminderDays ? 'text-amber-600' : 'text-gray-600'}`}>
                         {c.days_overdue} days
                       </span>
                     </td>
@@ -2579,6 +2588,7 @@ export function UtilitiesPageClient() {
   const [periods, setPeriods]     = useState<WaterBalancePeriodData[]>([])
   const [overdueCharges, setOverdueCharges]   = useState<ChargeData[]>([])
   const [sentNotices, setSentNotices]         = useState<DisconnectionNoticeData[]>([])
+  const [facilitySettings, setFacilitySettings] = useState<FacilitySettings | null>(null)
   const [loadingMeters, setLoadingMeters]     = useState(true)
   const [loadingReadings, setLoadingReadings] = useState(true)
   const [loadingWater, setLoadingWater]       = useState(true)
@@ -2626,9 +2636,14 @@ export function UtilitiesPageClient() {
 
   const fetchDisconn = useCallback(async () => {
     try {
-      const [charges, notices] = await Promise.all([getOverdueUtilityCharges(), getDisconnectionNotices()])
+      const [charges, notices, settings] = await Promise.all([
+        getOverdueUtilityCharges(),
+        getDisconnectionNotices(),
+        getSettings(),
+      ])
       setOverdueCharges(charges)
       setSentNotices(notices)
+      setFacilitySettings(settings)
     } catch { /* ignore */ }
     finally { setLoadingDisconn(false) }
   }, [])
@@ -2739,6 +2754,7 @@ export function UtilitiesPageClient() {
             meters={meters}
             overdueCharges={overdueCharges}
             sentNotices={sentNotices}
+            settings={facilitySettings}
             loading={loadingDisconn || loadingMeters}
             onRefresh={fetchDisconn}
           />
