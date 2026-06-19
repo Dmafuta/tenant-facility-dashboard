@@ -325,7 +325,7 @@ function RecordIssuanceModal({
 
 // ── IssuanceRunTab ─────────────────────────────────────────────────────────
 
-function IssuanceRunTab({ types }: { types: ConsumableTypeData[] }) {
+function IssuanceRunTab({ types, onIssuanceChange }: { types: ConsumableTypeData[]; onIssuanceChange: () => void }) {
   const [period,     setPeriod]     = useState(currentPeriod())
   const [search,     setSearch]     = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -370,6 +370,7 @@ function IssuanceRunTab({ types }: { types: ConsumableTypeData[] }) {
     try {
       const updated = await issueOne(id)
       setIssuances(prev => prev.map(r => r.id === id ? updated : r))
+      if (period === currentPeriod()) onIssuanceChange()
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'Failed to issue')
       setTimeout(() => setFeedback(''), 4000)
@@ -388,6 +389,7 @@ function IssuanceRunTab({ types }: { types: ConsumableTypeData[] }) {
       setFeedback(`Bulk issue complete: ${result.issued} issued, ${result.withheld} withheld.`)
       setTimeout(() => setFeedback(''), 5000)
       await load()
+      if (period === currentPeriod()) onIssuanceChange()
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'Bulk issue failed')
       setTimeout(() => setFeedback(''), 4000)
@@ -406,6 +408,7 @@ function IssuanceRunTab({ types }: { types: ConsumableTypeData[] }) {
       setFeedback(`Generated ${result.generated} pending record${result.generated !== 1 ? 's' : ''}.`)
       setTimeout(() => setFeedback(''), 5000)
       await load()
+      if (period === currentPeriod()) onIssuanceChange()
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'Generate failed')
       setTimeout(() => setFeedback(''), 4000)
@@ -433,7 +436,7 @@ function IssuanceRunTab({ types }: { types: ConsumableTypeData[] }) {
           types={types}
           period={period}
           onClose={() => setShowRecord(false)}
-          onSaved={i => { setIssuances(prev => [i, ...prev]); setShowRecord(false) }}
+          onSaved={i => { setIssuances(prev => [i, ...prev]); setShowRecord(false); if (period === currentPeriod()) onIssuanceChange() }}
         />
       )}
 
@@ -984,6 +987,7 @@ export function ConsumablesPageClient() {
   const [typesLoading, setTypesLoading] = useState(true)
   const [stocks,       setStocks]       = useState<ConsumableStockData[]>([])
   const [stocksLoading, setStocksLoading] = useState(true)
+  const [issuances,    setIssuances]    = useState<ConsumableIssuanceData[]>([])
 
   const loadTypes = useCallback(async () => {
     setTypesLoading(true)
@@ -997,11 +1001,18 @@ export function ConsumablesPageClient() {
     finally { setStocksLoading(false) }
   }, [])
 
+  const loadIssuances = useCallback(async () => {
+    try { setIssuances(await getIssuances(currentPeriod())) } catch { /* ignore */ }
+  }, [])
+
   useEffect(() => { loadTypes() }, [loadTypes])
   useEffect(() => { loadStocks() }, [loadStocks])
+  useEffect(() => { loadIssuances() }, [loadIssuances])
 
-  const activeTypes   = types.filter(t => t.active).length
-  const lowStockCount = stocks.filter(s => s.current_stock < s.reorder_level).length
+  const activeTypes    = types.filter(t => t.active).length
+  const lowStockCount  = stocks.filter(s => s.current_stock < s.reorder_level).length
+  const pendingCount   = issuances.filter(i => i.status === 'pending').length
+  const withheldCount  = issuances.filter(i => i.status === 'withheld').length
 
   return (
     <main className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -1009,8 +1020,8 @@ export function ConsumablesPageClient() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Consumable Types', value: activeTypes,   icon: '📦', sub: 'active' },
-          { label: 'Pending Issuance', value: '—',           icon: '⏳', sub: 'see issuance tab' },
-          { label: 'Withheld',         value: '—',           icon: '🚫', sub: 'see issuance tab' },
+          { label: 'Pending Issuance', value: pendingCount,  icon: '⏳', sub: 'this month', color: pendingCount > 0 ? 'text-warning' : 'text-text' },
+          { label: 'Withheld',         value: withheldCount, icon: '🚫', sub: 'this month', color: withheldCount > 0 ? 'text-danger'  : 'text-text' },
           { label: 'Low Stock Items',  value: lowStockCount, icon: '⚠️', sub: 'below reorder', color: lowStockCount > 0 ? 'text-warning' : 'text-text' },
         ].map(k => (
           <Card key={k.label} className="p-5 flex items-center gap-4">
@@ -1040,7 +1051,7 @@ export function ConsumablesPageClient() {
         </TabsList>
 
         <TabsContent value="issuance" className="pt-5">
-          <IssuanceRunTab types={types} />
+          <IssuanceRunTab types={types} onIssuanceChange={loadIssuances} />
         </TabsContent>
         <TabsContent value="types" className="pt-5">
           <ConsumableTypesTab types={types} loading={typesLoading} onRefresh={loadTypes} />
