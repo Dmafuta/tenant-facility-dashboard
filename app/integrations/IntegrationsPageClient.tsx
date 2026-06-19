@@ -6,7 +6,7 @@ import {
   saveMpesaIntegration, saveTelegramIntegration,
   testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
   listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
-  setDefaultMpesaAccount, testMpesaAccount,
+  setDefaultMpesaAccount, testMpesaAccount, registerC2bUrls,
   type IntegrationSettings, type MpesaAccount,
 } from '@/lib/api/settings'
 
@@ -417,7 +417,9 @@ function MpesaAccountsList() {
   const [testPhone, setTestPhone] = useState('')
   const [testingId, setTestingId] = useState<string | null>(null)
   const [result, setResult]       = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId]     = useState<string | null>(null)
+  const [registeringId, setRegisteringId] = useState<string | null>(null)
+  const [registerResult, setRegisterResult] = useState<{ id: string; msg: string } | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -449,6 +451,17 @@ function MpesaAccountsList() {
     } catch (e: any) {
       setResult('✗ ' + (e?.message ?? 'Error'))
     } finally { setTestingId(null) }
+  }
+
+  const handleRegisterC2b = async (id: string) => {
+    setRegisteringId(id)
+    setRegisterResult(null)
+    try {
+      const msg = await registerC2bUrls(id)
+      setRegisterResult({ id, msg })
+    } catch (e: any) {
+      setRegisterResult({ id, msg: '✗ ' + (e?.message ?? 'Registration failed') })
+    } finally { setRegisteringId(null) }
   }
 
   const handleDone = (saved: MpesaAccount) => {
@@ -514,13 +527,20 @@ function MpesaAccountsList() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                   {!account.isDefault && (
                     <button onClick={() => handleSetDefault(account.id)}
                       className="rounded px-2 py-1 text-xs text-teal-700 border border-teal-200 hover:bg-teal-50">
                       Set Default
                     </button>
                   )}
+                  <button
+                    onClick={() => handleRegisterC2b(account.id)}
+                    disabled={registeringId === account.id}
+                    title="Register C2B confirmation & validation URLs with Safaricom Daraja"
+                    className="rounded px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50">
+                    {registeringId === account.id ? 'Registering…' : '💚 Register C2B'}
+                  </button>
                   <button onClick={() => setEditing(account)}
                     className="rounded px-2 py-1 text-xs text-gray-600 border border-gray-200 hover:bg-gray-50">
                     Edit
@@ -532,6 +552,11 @@ function MpesaAccountsList() {
                     {deletingId === account.id ? '…' : 'Delete'}
                   </button>
                 </div>
+                {registerResult?.id === account.id && (
+                  <p className={`mt-1.5 text-xs px-2 py-1 rounded ${registerResult.msg.startsWith('✗') || registerResult.msg.toLowerCase().includes('failed') || registerResult.msg.toLowerCase().includes('not configured') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>
+                    {registerResult.msg}
+                  </p>
+                )}
               </div>
             </div>
           )}

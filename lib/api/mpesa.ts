@@ -12,6 +12,8 @@ export interface MpesaTransactionData {
   status: 'pending' | 'completed' | 'failed' | 'cancelled'
   mpesa_receipt: string | null
   result_desc: string | null
+  transaction_type: 'stk_push' | 'c2b' | null
+  bill_ref_number: string | null
   created_at: string | null
 }
 
@@ -42,4 +44,20 @@ export async function initiateStkPush(payload: InitiateStkPayload): Promise<StkP
 
 export async function getMpesaTransactions(): Promise<MpesaTransactionData[]> {
   return apiFetch<MpesaTransactionData[]>('/mpesa/transactions')
+}
+
+export interface RegisterC2bResult {
+  message: string
+}
+
+export async function registerC2bUrls(payload: {
+  account_id?: string
+  confirmation_url?: string
+  validation_url?: string
+}): Promise<string> {
+  const res = await apiFetch<string>('/mpesa/register-c2b-urls', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res
 }

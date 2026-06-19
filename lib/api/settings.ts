@@ -219,3 +219,7 @@ export function setDefaultMpesaAccount(id: string): Promise<MpesaAccount[]> {
 export function testMpesaAccount(id: string, phone: string): Promise<{ accepted: boolean; customerMessage: string }> {
   return apiFetch(`/settings/integrations/mpesa/accounts/${id}/test`, { method: 'POST', body: JSON.stringify({ phone }) })
 }
+
+export function registerC2bUrls(accountId: string): Promise<string> {
+  return apiFetch('/mpesa/register-c2b-urls', { method: 'POST', body: JSON.stringify({ account_id: accountId }) })
+}

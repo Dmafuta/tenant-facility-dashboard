@@ -545,9 +545,15 @@ function PaymentsTabContent({
                     <p className="text-xs text-gray-500">{p.person_name || '—'}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
-                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-green-100 text-green-700">
-                      💚 STK Push
-                    </span>
+                    {p.transaction_type === 'c2b' ? (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-emerald-100 text-emerald-700">
+                        💚 C2B Paybill
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium bg-green-100 text-green-700">
+                        📲 STK Push
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-900">{fmt(Number(p.amount))}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">{p.phone || '—'}</td>
