@@ -2874,6 +2874,7 @@ export function UtilitiesPageClient() {
 
   const consumerMeters   = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
   const inventoryMeters  = meters.filter(m => !m.unit_id)
+  const deployedMeters   = meters.filter(m => m.unit_id || (m.meter_role && m.meter_role !== 'consumer'))
   const latestBalance  = periods[periods.length - 1]
   const lossFlag       = latestBalance?.flagged
 
@@ -2935,7 +2936,7 @@ export function UtilitiesPageClient() {
 
         <TabsContent value="meters" className="pt-5">
           <MetersTab
-            meters={meters}
+            meters={deployedMeters}
             loading={loadingMeters}
             onRead={m => { setReadTarget(m); setShowRead(true) }}
             onView={m => { setViewTarget(m); setShowView(true) }}
