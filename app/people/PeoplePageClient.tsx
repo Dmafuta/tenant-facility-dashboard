@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -20,7 +20,8 @@ import {
 import { getLeases } from '@/lib/api/leases'
 import type { LeaseData } from '@/lib/api/leases'
 import { getHouseholdMembers, createHouseholdMember, updateHouseholdMember, deleteHouseholdMember, type HouseholdMemberData } from '@/lib/api/household'
-import { getVehicles, createVehicle, updateVehicle, deleteVehicle, type VehicleData } from '@/lib/api/vehicles'
+import { getVehicles, createVehicle, updateVehicle, deleteVehicle, updateVehicleSticker, type VehicleData } from '@/lib/api/vehicles'
+import { PlateScanner } from '@/components/vehicles/PlateScanner'
 import { getPersonalStaff, createPersonalStaff, updatePersonalStaff, deletePersonalStaff, type PersonalStaffData } from '@/lib/api/staff'
 import { getEmergencyContacts, createEmergencyContact, updateEmergencyContact, deleteEmergencyContact, type EmergencyContactData } from '@/lib/api/emergencyContacts'
 import {
@@ -394,6 +395,7 @@ function VehicleModal({ personId, item, onClose, onSaved }: {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [showPlateScanner, setShowPlateScanner] = useState(false)
 
   async function handleSave() {
     if (!form.make.trim()) { setError('Make is required.'); return }
@@ -422,68 +424,100 @@ function VehicleModal({ personId, item, onClose, onSaved }: {
     setForm(p => ({ ...p, [k]: e.target.value }))
 
   return (
-    <ModalShell
-      title={item ? 'Edit Vehicle' : 'Register Vehicle'}
-      icon="🚗"
-      accent="bg-amber-500"
-      onClose={onClose}
-      footer={<ModalFooter onClose={onClose} saving={saving} onSave={handleSave} saveLabel={item ? 'Save Changes' : 'Register Vehicle'} />}
-    >
-      <div className="space-y-5">
-        <FormSection title="Vehicle Details">
-          <FormRow>
-            <FormField label="Make" required><input className={INPUT_CLS} value={form.make} onChange={f('make')} placeholder="Toyota" /></FormField>
-            <FormField label="Model" required><input className={INPUT_CLS} value={form.model} onChange={f('model')} placeholder="Prado" /></FormField>
-          </FormRow>
-          <FormRow>
-            <FormField label="Year"><input type="number" className={INPUT_CLS} value={form.year} onChange={f('year')} placeholder="2022" min="1990" max="2030" /></FormField>
-            <FormField label="Color"><input className={INPUT_CLS} value={form.color} onChange={f('color')} placeholder="Black" /></FormField>
-          </FormRow>
-          <FormRow>
-            <FormField label="Type">
-              <select className={SELECT_CLS} value={form.vehicle_type} onChange={f('vehicle_type')}>
-                {['car','suv','pickup','motorcycle','van','truck','bicycle','other'].map(t =>
-                  <option key={t} value={t}>{vehicleTypeIcon(t as never)} {t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Status">
-              <select className={SELECT_CLS} value={form.status} onChange={f('status')}>
-                <option value="active">Active</option>
-                <option value="suspended">Suspended</option>
-                <option value="blacklisted">Blacklisted</option>
-                <option value="deregistered">Deregistered</option>
-              </select>
-            </FormField>
-          </FormRow>
-        </FormSection>
+    <>
+      <ModalShell
+        title={item ? 'Edit Vehicle' : 'Register Vehicle'}
+        icon="🚗"
+        accent="bg-amber-500"
+        onClose={onClose}
+        footer={<ModalFooter onClose={onClose} saving={saving} onSave={handleSave} saveLabel={item ? 'Save Changes' : 'Register Vehicle'} />}
+      >
+        <div className="space-y-5">
+          <FormSection title="Vehicle Details">
+            <FormRow>
+              <FormField label="Make" required><input className={INPUT_CLS} value={form.make} onChange={f('make')} placeholder="Toyota" /></FormField>
+              <FormField label="Model" required><input className={INPUT_CLS} value={form.model} onChange={f('model')} placeholder="Prado" /></FormField>
+            </FormRow>
+            <FormRow>
+              <FormField label="Year"><input type="number" className={INPUT_CLS} value={form.year} onChange={f('year')} placeholder="2022" min="1990" max="2030" /></FormField>
+              <FormField label="Color"><input className={INPUT_CLS} value={form.color} onChange={f('color')} placeholder="Black" /></FormField>
+            </FormRow>
+            <FormRow>
+              <FormField label="Type">
+                <select className={SELECT_CLS} value={form.vehicle_type} onChange={f('vehicle_type')}>
+                  {['car','suv','pickup','motorcycle','van','truck','bicycle','other'].map(t =>
+                    <option key={t} value={t}>{vehicleTypeIcon(t as never)} {t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Status">
+                <select className={SELECT_CLS} value={form.status} onChange={f('status')}>
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="blacklisted">Blacklisted</option>
+                  <option value="deregistered">Deregistered</option>
+                </select>
+              </FormField>
+            </FormRow>
+          </FormSection>
 
-        <FormSection title="Registration">
-          <FormRow>
-            <FormField label="Plate Number" required><input className={INPUT_CLS + ' font-mono uppercase'} value={form.plate_number} onChange={f('plate_number')} placeholder="KDG 123A" /></FormField>
-            <FormField label="Sticker No."><input className={INPUT_CLS} value={form.sticker_number} onChange={f('sticker_number')} placeholder="STK-001" /></FormField>
-          </FormRow>
-          <FormRow>
-            <FormField label="Registered Date"><input type="date" className={INPUT_CLS} value={form.registered_date} onChange={f('registered_date')} /></FormField>
-            <FormField label="Insurance Expiry"><input type="date" className={INPUT_CLS} value={form.insurance_expiry} onChange={f('insurance_expiry')} /></FormField>
-          </FormRow>
-        </FormSection>
+          <FormSection title="Registration">
+            <FormRow>
+              <FormField label="Plate Number" required>
+                <div className="relative">
+                  <input
+                    className={INPUT_CLS + ' font-mono uppercase pr-10'}
+                    value={form.plate_number}
+                    onChange={f('plate_number')}
+                    placeholder="KDG 123A"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPlateScanner(true)}
+                    title="Scan plate with camera"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-primary-600 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9V6a1 1 0 011-1h3M3 15v3a1 1 0 001 1h3m11-4v3a1 1 0 01-1 1h-3m4-11h-3a1 1 0 00-1 1v3"/>
+                      <rect x="8" y="8" width="8" height="8" rx="1"/>
+                    </svg>
+                  </button>
+                </div>
+              </FormField>
+              <FormField label="Sticker No."><input className={INPUT_CLS} value={form.sticker_number} onChange={f('sticker_number')} placeholder="STK-001" /></FormField>
+            </FormRow>
+            <FormRow>
+              <FormField label="Registered Date"><input type="date" className={INPUT_CLS} value={form.registered_date} onChange={f('registered_date')} /></FormField>
+              <FormField label="Insurance Expiry"><input type="date" className={INPUT_CLS} value={form.insurance_expiry} onChange={f('insurance_expiry')} /></FormField>
+            </FormRow>
+          </FormSection>
 
-        <FormField label="Notes">
-          <textarea className={INPUT_CLS + ' resize-none'} rows={2} value={form.notes} onChange={f('notes')} placeholder="Optional notes…" />
-        </FormField>
+          <FormField label="Notes">
+            <textarea className={INPUT_CLS + ' resize-none'} rows={2} value={form.notes} onChange={f('notes')} placeholder="Optional notes…" />
+          </FormField>
 
-        {error && <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>}
-      </div>
-    </ModalShell>
+          {error && <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>}
+        </div>
+      </ModalShell>
+
+      {showPlateScanner && (
+        <PlateScanner
+          onResult={text => { setForm(p => ({ ...p, plate_number: text })); setShowPlateScanner(false) }}
+          onClose={() => setShowPlateScanner(false)}
+        />
+      )}
+    </>
   )
 }
 
 function VehiclesPanel({ personId }: { personId: string }) {
-  const [vehicles, setVehicles] = useState<VehicleData[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing]   = useState<VehicleData | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [vehicles, setVehicles]           = useState<VehicleData[]>([])
+  const [loading, setLoading]             = useState(true)
+  const [showForm, setShowForm]           = useState(false)
+  const [editing, setEditing]             = useState<VehicleData | null>(null)
+  const [deletingId, setDeletingId]       = useState<string | null>(null)
+  const [editingStickerId, setEditingStickerId] = useState<string | null>(null)
+  const [stickerValue, setStickerValue]   = useState('')
+  const [savingSticker, setSavingSticker] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     getVehicles(personId).then(setVehicles).catch(() => {}).finally(() => setLoading(false))
@@ -493,7 +527,7 @@ function VehiclesPanel({ personId }: { personId: string }) {
     if (!window.confirm(`Remove vehicle ${v.plate_number}?`)) return
     setDeletingId(v.id)
     try { await deleteVehicle(personId, v.id); setVehicles(prev => prev.filter(x => x.id !== v.id)) }
-    catch { /* ignore */ }
+    catch {}
     finally { setDeletingId(null) }
   }
 
@@ -501,10 +535,25 @@ function VehiclesPanel({ personId }: { personId: string }) {
     setVehicles(prev => prev.some(x => x.id === v.id) ? prev.map(x => x.id === v.id ? v : x) : [v, ...prev])
   }
 
+  async function saveSticker(v: VehicleData) {
+    if (savingSticker.has(v.id)) return
+    const trimmed = stickerValue.trim() || null
+    if (trimmed === (v.sticker_number ?? null)) { setEditingStickerId(null); return }
+    setSavingSticker(s => new Set(s).add(v.id))
+    try {
+      const updated = await updateVehicleSticker(v.id, trimmed)
+      setVehicles(prev => prev.map(x => x.id === v.id ? updated : x))
+    } catch {}
+    finally {
+      setSavingSticker(s => { const n = new Set(s); n.delete(v.id); return n })
+      setEditingStickerId(null)
+    }
+  }
+
   if (loading) return <PanelSpinner />
 
   return (
-    <div className="space-y-2 p-4">
+    <div className="p-4 space-y-3">
       {(showForm || editing) && (
         <VehicleModal
           personId={personId}
@@ -513,47 +562,104 @@ function VehiclesPanel({ personId }: { personId: string }) {
           onSaved={v => { onSaved(v); setShowForm(false); setEditing(null) }}
         />
       )}
-      {vehicles.length === 0 && <PanelEmpty text="No vehicles registered for this household." />}
-      {vehicles.map(v => (
-        <div key={v.id} className="p-3 rounded-lg border border-surface-border dark:border-dark-border">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">{vehicleTypeIcon(v.vehicle_type as never)}</span>
-              <div>
-                <p className="text-sm font-semibold text-text">{v.year ?? ''} {v.make} {v.model}</p>
-                {v.color && <p className="text-xs text-text-muted">{v.color}</p>}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
-                v.status === 'active' ? 'bg-success/10 text-success' :
-                v.status === 'suspended' ? 'bg-warning/10 text-warning' :
-                v.status === 'blacklisted' ? 'bg-danger/10 text-danger' :
-                'bg-surface-border text-text-muted'
-              )}>{v.status}</span>
-              <CanDo action="write" resource={{ type: 'person' }} fallback={null}>
-                <button onClick={() => setEditing(v)} className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline">Edit</button>
-                <button onClick={() => handleDelete(v)} disabled={deletingId === v.id} className="text-[11px] text-danger hover:underline disabled:opacity-50">
-                  {deletingId === v.id ? '…' : 'Remove'}
-                </button>
-              </CanDo>
-            </div>
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-x-4 text-xs text-text-muted">
-            <span>Plate: <span className="font-mono font-medium text-text">{v.plate_number}</span></span>
-            {v.sticker_number && <span>Sticker: <span className="font-medium text-text">{v.sticker_number}</span></span>}
-            {v.registered_date && <span>Registered: {v.registered_date}</span>}
-            {v.insurance_expiry && (
-              <span className={cn(new Date(v.insurance_expiry) < new Date() ? 'text-danger font-medium' : '')}>
-                Insur. expires: {v.insurance_expiry}
-              </span>
-            )}
-          </div>
-          {v.notes && <p className="mt-1 text-xs text-text-muted italic">{v.notes}</p>}
-        </div>
-      ))}
+
+      {vehicles.length === 0
+        ? <PanelEmpty text="No vehicles registered for this household." />
+        : (
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-surface-border dark:border-dark-border">
+                <th className="pb-2 text-left text-xs font-medium text-text-muted">Vehicle</th>
+                <th className="pb-2 text-left text-xs font-medium text-text-muted">Sticker</th>
+                <th className="pb-2 text-right text-xs font-medium text-text-muted">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-surface-border dark:divide-dark-border">
+              {vehicles.map(v => {
+                const insExpiry     = v.insurance_expiry ? Math.ceil((new Date(v.insurance_expiry).getTime() - Date.now()) / 86400000) : null
+                const isEditSticker = editingStickerId === v.id
+                const isSaving      = savingSticker.has(v.id)
+
+                return (
+                  <tr key={v.id} className="group align-top">
+                    {/* Vehicle col */}
+                    <td className="py-2.5 pr-3">
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg leading-tight flex-shrink-0">{vehicleTypeIcon(v.vehicle_type as never)}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-mono font-bold text-text text-sm leading-tight">{v.plate_number}</p>
+                            {v.verified && <span className="text-[11px] text-green-600 dark:text-green-400 font-semibold">✓</span>}
+                          </div>
+                          <p className="text-xs text-text-muted">{[v.color, v.make, v.model, v.year].filter(Boolean).join(' ')}</p>
+                          {insExpiry !== null && insExpiry <= 30 && insExpiry > 0 && (
+                            <p className="text-[11px] text-amber-600 font-medium">Ins. expires in {insExpiry}d</p>
+                          )}
+                          {insExpiry !== null && insExpiry <= 0 && (
+                            <p className="text-[11px] text-danger font-medium">Insurance expired</p>
+                          )}
+                          {v.notes && <p className="text-[11px] text-text-muted italic mt-0.5 truncate max-w-[14rem]">{v.notes}</p>}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Sticker col */}
+                    <td className="py-2.5 pr-3">
+                      {isEditSticker ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            value={stickerValue}
+                            onChange={e => setStickerValue(e.target.value.toUpperCase())}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter')  saveSticker(v)
+                              if (e.key === 'Escape') setEditingStickerId(null)
+                            }}
+                            onBlur={() => saveSticker(v)}
+                            placeholder="e.g. GWG-042"
+                            className="w-24 px-2 py-1 text-xs font-mono border border-primary-400 rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none"
+                          />
+                          {isSaving && <span className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditingStickerId(v.id); setStickerValue(v.sticker_number ?? '') }}
+                          title="Click to assign sticker"
+                          className="text-xs font-mono hover:text-primary-600 transition-colors"
+                        >
+                          {v.sticker_number
+                            ? <span className="text-blue-600 dark:text-blue-400 font-medium">{v.sticker_number}</span>
+                            : <span className="text-gray-300 dark:text-gray-600 italic">+ sticker</span>}
+                        </button>
+                      )}
+                    </td>
+
+                    {/* Status + actions col */}
+                    <td className="py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
+                          v.status === 'active'      ? 'bg-success/10 text-success' :
+                          v.status === 'suspended'   ? 'bg-warning/10 text-warning' :
+                          v.status === 'blacklisted' ? 'bg-danger/10 text-danger' :
+                          'bg-surface-border text-text-muted'
+                        )}>{v.status}</span>
+                        <CanDo action="write" resource={{ type: 'person' }} fallback={null}>
+                          <button onClick={() => setEditing(v)} className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline">Edit</button>
+                          <button onClick={() => handleDelete(v)} disabled={deletingId === v.id} className="text-[11px] text-danger hover:underline disabled:opacity-50">
+                            {deletingId === v.id ? '…' : 'Remove'}
+                          </button>
+                        </CanDo>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+
       <CanDo action="write" resource={{ type: 'person' }}>
-        <Button size="sm" variant="outline" className="w-full mt-1" onClick={() => setShowForm(true)}>+ Register Vehicle</Button>
+        <Button size="sm" variant="outline" className="w-full" onClick={() => setShowForm(true)}>+ Register Vehicle</Button>
       </CanDo>
     </div>
   )
