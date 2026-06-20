@@ -1449,17 +1449,9 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
               {/* Utilities */}
               <TabsContent value="utilities">
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">
-                      {unitMeters.length} meter{unitMeters.length !== 1 ? 's' : ''} allocated
-                    </p>
-                    <CanDo action="write" resource={{ type: 'unit' }}>
-                      <button
-                        onClick={() => { setEditMeter(null); setShowMeterModal(true) }}
-                        className="text-xs font-medium text-primary-600 hover:underline"
-                      >+ Add Meter</button>
-                    </CanDo>
-                  </div>
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">
+                    {unitMeters.length} meter{unitMeters.length !== 1 ? 's' : ''} allocated
+                  </p>
                   {metersLoading ? (
                     <div className="py-8 flex justify-center">
                       <span className="w-5 h-5 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
@@ -1467,7 +1459,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
                   ) : unitMeters.length === 0 ? (
                     <div className="py-8 text-center text-sm text-text-muted">
                       <p className="text-2xl mb-2">🔌</p>
-                      No meters allocated to this unit.
+                      No meters assigned. Register and assign meters from the Utilities page.
                     </div>
                   ) : (
                     unitMeters.map(m => {
