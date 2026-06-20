@@ -12,6 +12,7 @@ import {
   getConsumableStock, restockConsumable, updateStockSettings,
   type ConsumableTypeData, type ConsumableIssuanceData, type ConsumableStockData,
 } from '@/lib/api/consumables'
+import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -250,33 +251,41 @@ function RecordIssuanceModal({
   onClose: () => void
   onSaved: (i: ConsumableIssuanceData) => void
 }) {
+  const [units, setUnits]       = useState<UnitData[]>([])
+  const [unitSearch, setUnitSearch] = useState('')
+  const [selectedUnit, setSelectedUnit] = useState<UnitData | null>(null)
   const [form, setForm] = useState({
     consumable_type_id: types[0]?.id ?? '',
-    unit_label: '',
-    unit_id: '',
     person_name: '',
     notes: '',
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
 
+  useEffect(() => { getUnitsFromApi().then(setUnits).catch(() => {}) }, [])
+
+  const filteredUnits = useMemo(() => {
+    const q = unitSearch.toLowerCase()
+    return units.filter(u => !q || u.unit_label.toLowerCase().includes(q) || (u.block ?? '').toLowerCase().includes(q))
+  }, [units, unitSearch])
+
   async function handleSave() {
     if (!form.consumable_type_id) { setError('Select a consumable type.'); return }
-    if (!form.unit_label.trim())  { setError('Unit label is required.'); return }
+    if (!selectedUnit)            { setError('Select a unit from the list.'); return }
     setSaving(true); setError('')
     try {
       const saved = await createIssuance({
         consumable_type_id: form.consumable_type_id,
-        unit_id:     form.unit_id || form.unit_label,
-        unit_label:  form.unit_label.trim(),
-        person_name: form.person_name || null,
+        unit_id:        selectedUnit.id,
+        unit_label:     selectedUnit.unit_label,
+        person_name:    form.person_name || null,
         billing_period: period,
-        notes: form.notes || null,
+        notes:          form.notes || null,
       })
       onSaved(saved)
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to record issuance')
+      setError(e instanceof Error ? e.message : 'Failed to record issuance.')
     } finally {
       setSaving(false)
     }
@@ -300,7 +309,34 @@ function RecordIssuanceModal({
           </div>
           <div>
             <label className="text-xs font-medium text-text-muted mb-1 block">Unit <span className="text-danger">*</span></label>
-            <input value={form.unit_label} onChange={e => setForm(f => ({ ...f, unit_label: e.target.value }))} className={INPUT_CLS} placeholder="e.g. A-101 or Block A Unit 101" />
+            {selectedUnit ? (
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-primary-400 bg-primary-50 dark:bg-primary-900/20">
+                <span className="text-sm font-medium text-primary-700 dark:text-primary-300">{selectedUnit.unit_label}</span>
+                <button onClick={() => { setSelectedUnit(null); setUnitSearch('') }} className="text-xs text-text-muted hover:text-danger ml-2">✕ Change</button>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <input
+                  value={unitSearch}
+                  onChange={e => setUnitSearch(e.target.value)}
+                  className={INPUT_CLS}
+                  placeholder="Search unit label or block…"
+                />
+                {unitSearch && (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-surface-border dark:border-dark-border divide-y divide-surface-border dark:divide-dark-border">
+                    {filteredUnits.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-text-muted">No units found</p>
+                    ) : filteredUnits.slice(0, 10).map(u => (
+                      <button key={u.id} type="button" onClick={() => { setSelectedUnit(u); setUnitSearch('') }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors flex items-center justify-between">
+                        <span className="font-medium text-text">{u.unit_label}</span>
+                        <span className="text-xs text-text-muted">{u.current_occupant ?? u.status}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <label className="text-xs font-medium text-text-muted mb-1 block">Resident Name</label>
