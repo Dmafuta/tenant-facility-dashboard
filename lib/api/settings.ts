@@ -181,6 +181,34 @@ export function testMpesaIntegration(phone: string): Promise<{ accepted: boolean
   return apiFetch('/settings/integrations/test/mpesa', { method: 'POST', body: JSON.stringify({ phone }) })
 }
 
+// ── Documents ──────────────────────────────────────────────────────────────────
+
+export interface DocumentInfo {
+  configured: boolean
+  filename: string
+  size: number
+}
+
+export function getRulesDocumentInfo(): Promise<DocumentInfo> {
+  return apiFetch('/settings/integrations/documents/rules')
+}
+
+export async function uploadRulesDocument(file: File): Promise<DocumentInfo> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? '/api/backend'}/settings/integrations/documents/rules`, {
+    method: 'POST',
+    body: form,
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.message ?? 'Upload failed')
+  return json.data as DocumentInfo
+}
+
+export function deleteRulesDocument(): Promise<void> {
+  return apiFetch('/settings/integrations/documents/rules', { method: 'DELETE' })
+}
+
 // ── MPesa Accounts ─────────────────────────────────────────────────────────────
 
 export interface MpesaAccount {

@@ -12,7 +12,8 @@ import { cn } from '@/lib/cn'
 import {
   getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
-  type FacilitySettings, type SystemUser, type AppRole, type RolePermission,
+  getRulesDocumentInfo, uploadRulesDocument, deleteRulesDocument,
+  type FacilitySettings, type SystemUser, type AppRole, type RolePermission, type DocumentInfo,
 } from '@/lib/api/settings'
 
 // ── General Settings ──────────────────────────────────────────────────────────
@@ -880,6 +881,120 @@ function FacilitySetupSettings() {
   )
 }
 
+// ── Documents Settings ─────────────────────────────────────────────────────────
+function DocumentsSettings() {
+  const [info,     setInfo]     = useState<DocumentInfo | null>(null)
+  const [loading,  setLoading]  = useState(true)
+  const [uploading,setUploading]= useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error,    setError]    = useState<string | null>(null)
+  const [success,  setSuccess]  = useState<string | null>(null)
+
+  useEffect(() => {
+    getRulesDocumentInfo().then(setInfo).catch(() => setInfo({ configured: false, filename: '', size: 0 })).finally(() => setLoading(false))
+  }, [])
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') { setError('Only PDF files are accepted.'); return }
+    setUploading(true); setError(null); setSuccess(null)
+    try {
+      const updated = await uploadRulesDocument(file)
+      setInfo(updated)
+      setSuccess('Rules & Regulations uploaded successfully.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed.')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true); setError(null); setSuccess(null)
+    try {
+      await deleteRulesDocument()
+      setInfo({ configured: false, filename: '', size: 0 })
+      setSuccess('Document removed.')
+    } catch {
+      setError('Failed to remove document.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function formatSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+  }
+
+  return (
+    <div className="p-6 max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-text">Property Documents</h2>
+        <p className="text-sm text-text-muted mt-1">
+          Upload documents that are automatically attached to emails sent to new residents.
+        </p>
+      </div>
+
+      {/* Rules & Regulations card */}
+      <Card className="p-6 space-y-4">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center flex-shrink-0 text-2xl">
+            📄
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-text">Rules &amp; Regulations</p>
+            <p className="text-sm text-text-muted mt-0.5">
+              Attached to the welcome email sent to every new resident upon registration.
+            </p>
+            {loading ? (
+              <p className="text-sm text-text-muted mt-2">Loading…</p>
+            ) : info?.configured ? (
+              <div className="mt-3 flex items-center gap-3 p-3 bg-success/5 border border-success/20 rounded-lg">
+                <span className="text-success text-lg">✓</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text truncate">{info.filename}</p>
+                  <p className="text-xs text-text-muted">{formatSize(info.size)}</p>
+                </div>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-xs text-danger hover:underline disabled:opacity-50 flex-shrink-0"
+                >
+                  {deleting ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 p-3 bg-warning/5 border border-warning/20 rounded-lg">
+                <span className="text-warning text-lg">⚠</span>
+                <p className="text-sm text-text-muted">No document uploaded — welcome emails will be sent without an attachment.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-2 border-t border-surface-border dark:border-dark-border">
+          <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${uploading ? 'opacity-50 cursor-not-allowed bg-surface-muted text-text-muted' : 'bg-primary text-white hover:bg-primary/90'}`}>
+            {uploading ? (
+              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Uploading…</>
+            ) : (
+              <>{info?.configured ? '↑ Replace PDF' : '↑ Upload PDF'}</>
+            )}
+            <input type="file" accept="application/pdf" className="sr-only" onChange={handleUpload} disabled={uploading} />
+          </label>
+          <p className="text-xs text-text-muted">PDF only, max 10 MB</p>
+        </div>
+
+        {error   && <p className="text-sm text-danger">{error}</p>}
+        {success && <p className="text-sm text-success">{success}</p>}
+      </Card>
+    </div>
+  )
+}
+
 // -- Page -----------------------------------------------------------------------
 export function SettingsPageClient() {
   return (
@@ -896,6 +1011,7 @@ export function SettingsPageClient() {
               <TabsTrigger value="roles">Roles</TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="general"       className="flex-1 overflow-y-auto mt-0"><GeneralSettings /></TabsContent>
@@ -905,6 +1021,7 @@ export function SettingsPageClient() {
           <TabsContent value="roles"         className="flex-1 overflow-y-auto mt-0"><RolesSettings /></TabsContent>
           <TabsContent value="users"         className="flex-1 overflow-y-auto mt-0"><UsersSettings /></TabsContent>
           <TabsContent value="integrations"  className="flex-1 overflow-y-auto mt-0"><IntegrationsPageClient /></TabsContent>
+          <TabsContent value="documents"     className="flex-1 overflow-y-auto mt-0"><DocumentsSettings /></TabsContent>
         </Tabs>
       </main>
     </DashboardLayout>
