@@ -977,7 +977,7 @@ function DocumentsSettings() {
         </div>
 
         <div className="flex items-center gap-3 pt-2 border-t border-surface-border dark:border-dark-border">
-          <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${uploading ? 'opacity-50 cursor-not-allowed bg-surface-muted text-text-muted' : 'bg-primary text-white hover:bg-primary/90'}`}>
+          <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${uploading ? 'opacity-50 cursor-not-allowed bg-surface-muted text-text-muted' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
             {uploading ? (
               <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Uploading…</>
             ) : (
