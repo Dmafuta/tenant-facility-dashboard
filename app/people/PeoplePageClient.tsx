@@ -29,6 +29,7 @@ import {
   updatePersonStatus as apiUpdatePersonStatus,
   updatePersonType as apiUpdatePersonType,
   removeUnitFromPerson,
+  sendEmailVerification,
   apiPersonToPerson,
   type PersonData,
 } from '@/lib/api/people'
@@ -1509,6 +1510,44 @@ function EditPersonModal({ person, onClose, onSaved }: {
 
 }
 
+// ── EmailVerifyButton ─────────────────────────────────────────────────────
+
+function EmailVerifyButton({ personId, personEmail, onVerified }: {
+  personId: string; personEmail: string; onVerified: (updated: PersonData) => void
+}) {
+  const [sending, setSending] = useState(false)
+  const [sent, setSent]       = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  async function handleSend() {
+    setSending(true); setError(null)
+    try {
+      await sendEmailVerification(personId)
+      setSent(true)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to send verification email.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (sent) return <span className="text-[10px] text-primary font-medium">Verification sent to {personEmail}</span>
+
+  return (
+    <span className="flex items-center gap-1">
+      <span className="text-[10px] text-warning font-medium">Unverified</span>
+      <button
+        onClick={handleSend}
+        disabled={sending}
+        className="text-[10px] text-primary underline disabled:opacity-50"
+      >
+        {sending ? 'Sending…' : 'Send verification'}
+      </button>
+      {error && <span className="text-[10px] text-danger">{error}</span>}
+    </span>
+  )
+}
+
 // ── PersonDetail ─────────────────────────────────────────────────────────
 
 function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
@@ -1631,7 +1670,14 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
           </div>
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-text">{person.first_name} {person.last_name}</h2>
-            <p className="text-sm text-text-muted">{person.email || '—'}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-text-muted">{person.email || '—'}</p>
+              {person.email && (
+                person.email_verified_at
+                  ? <span className="text-[10px] text-success font-medium">✓ Email Verified</span>
+                  : <EmailVerifyButton personId={person.id} personEmail={person.email} onVerified={(updated) => onUpdate(apiPersonToPerson(updated))} />
+              )}
+            </div>
             <div className="flex items-center gap-1 mt-0.5 flex-wrap">
               <MaskedField
                 value={person.phone}

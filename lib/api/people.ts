@@ -15,6 +15,7 @@ export interface PersonData {
   status: string
   kyc_status: string
   phone_verified_at: string | null
+  email_verified_at: string | null
   joined_date: string | null
   is_outsourced: boolean
   agency_name: string | null
@@ -60,6 +61,10 @@ export async function updatePersonType(personId: string, personType: string): Pr
   return apiFetch<PersonData>(`/people/${personId}/type`, { method: 'PATCH', body: JSON.stringify({ personType }) })
 }
 
+export async function sendEmailVerification(personId: string): Promise<void> {
+  return apiFetch(`/people/${personId}/send-email-verification`, { method: 'POST' })
+}
+
 /** Map a backend PersonData to the frontend Person shape */
 export function apiPersonToPerson(p: PersonData): Person {
   const typeMap: Record<string, PersonType> = {
@@ -91,6 +96,7 @@ export function apiPersonToPerson(p: PersonData): Person {
     status: (statusMap[p.status] ?? 'pending_verification') as PersonStatus,
     kyc_status: (p.kyc_status as KycStatus) ?? 'not_started',
     phone_verified_at: p.phone_verified_at ?? undefined,
+    email_verified_at: p.email_verified_at ?? undefined,
     joined_date: p.joined_date ?? new Date().toISOString().slice(0, 10),
     is_outsourced: p.is_outsourced,
     agency_name: p.agency_name ?? undefined,
