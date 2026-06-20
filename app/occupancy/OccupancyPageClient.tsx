@@ -284,7 +284,7 @@ export function OccupancyPageClient() {
                       selected.asking_rent    != null && { label: 'Asking Rent', value: `KES ${selected.asking_rent.toLocaleString()}` },
                       selected.parking_bays   != null && { label: 'Parking',    value: `${selected.parking_bays} bay${selected.parking_bays !== 1 ? 's' : ''}` },
                       selected.furnished      != null && { label: 'Furnished',   value: selected.furnished },
-                    ].filter(Boolean).map((f: { label: string; value: string }) => (
+                    ].filter((f): f is { label: string; value: string } => Boolean(f)).map((f) => (
                       <div key={f.label} className="bg-surface-hover dark:bg-dark-hover rounded-lg p-2.5">
                         <p className="text-[10px] text-text-muted">{f.label}</p>
                         <p className="text-sm font-medium text-text capitalize">{f.value}</p>
