@@ -2651,14 +2651,14 @@ function AssignMeterModal({
                   {u.block && <span className="text-text-muted ml-2 text-xs">Block {u.block}</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={cn(
-                    'text-xs px-2 py-0.5 rounded',
-                    u.status === 'occupied' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300' :
-                    u.status === 'vacant'   ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
-                    'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
-                  )}>
-                    {u.status}
-                  </span>
+                  {(() => {
+                    const effectiveStatus = u.current_occupant ? 'occupied' : u.status
+                    const cls =
+                      effectiveStatus === 'occupied'    ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300' :
+                      effectiveStatus === 'vacant'      ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' :
+                      'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                    return <span className={cn('text-xs px-2 py-0.5 rounded', cls)}>{effectiveStatus}</span>
+                  })()}
                   {u.current_occupant && <span className="text-xs text-text-muted truncate max-w-[120px]">{u.current_occupant}</span>}
                   {selectedUnit?.id === u.id && <span className="text-primary-600 font-bold">✓</span>}
                 </div>
