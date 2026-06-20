@@ -514,7 +514,7 @@ function UsersSettings() {
           <table className="w-full text-sm">
             <thead className="bg-surface-hover dark:bg-dark-hover">
               <tr>
-                {['Name','Email','Role','Status',''].map(h => (
+                {['Name','Email','Role','Status','Invite',''].map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted">{h}</th>
                 ))}
               </tr>
@@ -526,17 +526,20 @@ function UsersSettings() {
                   <td className="px-4 py-3 text-text-muted">{u.email}</td>
                   <td className="px-4 py-3"><Badge variant="blue">{u.role}</Badge></td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <Badge variant={u.status === 'active' ? 'primary' : 'default'}>{u.status}</Badge>
-                      {!u.email_verified && <Badge variant="warning">Invite pending</Badge>}
-                    </div>
+                    <Badge variant={u.status === 'active' ? 'primary' : 'default'}>{u.status}</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    {u.email_verified
+                      ? <Badge variant="success">Completed</Badge>
+                      : <Badge variant="warning">Pending</Badge>
+                    }
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3 items-center">
                       <button onClick={() => { setEditUser(u); setEditRole(u.role_id ?? ''); setEditStatus(u.status); setError('') }}
                         className="text-xs text-primary-600 hover:underline">Edit</button>
                       {!u.email_verified && (
-                        <button onClick={() => handleResend(u)} className="text-xs text-amber-600 hover:underline">Resend invite</button>
+                        <button onClick={() => handleResend(u)} className="text-xs text-amber-600 hover:underline">Resend</button>
                       )}
                       {u.status === 'active' && (
                         <button onClick={() => handleDeactivate(u)} className="text-xs text-danger hover:underline">Deactivate</button>
