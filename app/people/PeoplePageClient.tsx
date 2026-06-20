@@ -30,6 +30,7 @@ import {
   updatePersonType as apiUpdatePersonType,
   removeUnitFromPerson,
   sendEmailVerification,
+  getPersonById,
   apiPersonToPerson,
   type PersonData,
 } from '@/lib/api/people'
@@ -1515,9 +1516,10 @@ function EditPersonModal({ person, onClose, onSaved }: {
 function EmailVerifyButton({ personId, personEmail, onVerified }: {
   personId: string; personEmail: string; onVerified: (updated: PersonData) => void
 }) {
-  const [sending, setSending] = useState(false)
-  const [sent, setSent]       = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [sending,   setSending]   = useState(false)
+  const [checking,  setChecking]  = useState(false)
+  const [sent,      setSent]      = useState(false)
+  const [error,     setError]     = useState<string | null>(null)
 
   async function handleSend() {
     setSending(true); setError(null)
@@ -1531,7 +1533,35 @@ function EmailVerifyButton({ personId, personEmail, onVerified }: {
     }
   }
 
-  if (sent) return <span className="text-[10px] text-primary font-medium">Verification sent to {personEmail}</span>
+  async function handleCheck() {
+    setChecking(true); setError(null)
+    try {
+      const updated = await getPersonById(personId)
+      if (updated.email_verified_at) {
+        onVerified(updated)
+      } else {
+        setError('Not verified yet — ask them to click the link in their email.')
+      }
+    } catch {
+      setError('Could not check status.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  if (sent) return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-[10px] text-primary font-medium">Sent to {personEmail}</span>
+      <button
+        onClick={handleCheck}
+        disabled={checking}
+        className="text-[10px] text-text-muted underline disabled:opacity-50"
+      >
+        {checking ? 'Checking…' : 'Check status'}
+      </button>
+      {error && <span className="text-[10px] text-warning">{error}</span>}
+    </span>
+  )
 
   return (
     <span className="flex items-center gap-1">
