@@ -2055,7 +2055,8 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
       ? list.filter(p =>
           `${p.first_name} ${p.last_name}`.toLowerCase().includes(q) ||
           (p.email ?? '').toLowerCase().includes(q) ||
-          (p.phone ?? '').includes(q)
+          (p.phone ?? '').includes(q) ||
+          (p.national_id ?? '').toLowerCase().includes(q)
         )
       : list
     return [...result].sort((a, b) =>
@@ -2069,7 +2070,7 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
       {/* Left panel */}
       <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
         <div className="p-3 border-b border-surface-border dark:border-dark-border space-y-2">
-          <SearchInput placeholder="Search people..." value={search} onChange={setSearch} />
+          <SearchInput placeholder="Search by name, email, phone or ID number..." value={search} onChange={setSearch} />
           <div className="relative">
             <CanDo action="write" resource={{ type: 'person' }}>
               <button
