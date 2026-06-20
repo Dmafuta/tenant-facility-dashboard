@@ -46,39 +46,35 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left panel */}
-      <div className="hidden lg:flex lg:w-[60%] bg-primary-600 flex-col justify-between p-12 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
-          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="1"/>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          </svg>
+      <div className="hidden lg:flex lg:w-[60%] flex-col justify-between p-12 relative overflow-hidden">
+        {/* Background image */}
+        <div className="absolute inset-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/facility-management-concept.jpg" alt="" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/65" />
         </div>
 
         <div className="relative flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center text-white font-bold text-xl">G</div>
           <div>
-            <p className="text-white font-bold text-lg leading-tight">Green Valley Estate</p>
-            <p className="text-primary-200 text-xs">Facility Management Portal</p>
+            <p className="text-white font-bold text-lg leading-tight">Great Wall Gardens</p>
+            <p className="text-white/60 text-xs">Facility Management Portal</p>
           </div>
         </div>
 
-        <div className="relative space-y-6">
-          <div className="space-y-3">
+        <div className="relative">
+          <div className="grid grid-cols-2 gap-3">
             {[
-              { icon: '🏠', title: 'Property Management',   desc: 'Manage units, leases, and residents from one place' },
-              { icon: '💰', title: 'Automated Billing',      desc: 'Charges, utilities, and M-Pesa payments built in'   },
-              { icon: '🔐', title: 'Access Control',         desc: 'Gate management and visitor logs in real time'      },
-              { icon: '📊', title: 'Reports & Analytics',    desc: 'Occupancy, revenue, and maintenance insights'       },
+              { icon: '🏠', title: 'Property Management',   desc: 'Units, leases, and residents in one place' },
+              { icon: '💰', title: 'Automated Billing',      desc: 'Charges, utilities & M-Pesa built in'      },
+              { icon: '🔐', title: 'Access Control',         desc: 'Gate management and visitor logs'           },
+              { icon: '📊', title: 'Reports & Analytics',    desc: 'Occupancy, revenue, and maintenance'        },
             ].map(f => (
-              <div key={f.title} className="flex items-start gap-3 bg-white/10 backdrop-blur rounded-xl p-3.5">
-                <span className="text-xl">{f.icon}</span>
+              <div key={f.title} className="flex items-start gap-2.5 bg-white/10 backdrop-blur rounded-xl p-3">
+                <span className="text-lg mt-0.5">{f.icon}</span>
                 <div>
-                  <p className="text-white font-medium text-sm">{f.title}</p>
-                  <p className="text-primary-200 text-xs">{f.desc}</p>
+                  <p className="text-white font-medium text-xs">{f.title}</p>
+                  <p className="text-white/60 text-[11px] leading-snug mt-0.5">{f.desc}</p>
                 </div>
               </div>
             ))}
@@ -86,8 +82,8 @@ export default function LoginPage() {
         </div>
 
         <div className="relative">
-          <p className="text-primary-200 text-xs">
-            &copy; {new Date().getFullYear()} Green Valley Estate. All rights reserved.
+          <p className="text-white/40 text-xs">
+            &copy; {new Date().getFullYear()} Great Wall Gardens. All rights reserved.
           </p>
         </div>
       </div>
@@ -98,7 +94,7 @@ export default function LoginPage() {
 
           <div className="lg:hidden flex items-center justify-center gap-2.5 mb-8">
             <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg shadow">G</div>
-            <span className="text-base font-semibold text-text">Green Valley Estate</span>
+            <span className="text-base font-semibold text-text">Great Wall Gardens</span>
           </div>
 
           <div className="mb-8">
@@ -199,11 +195,6 @@ export default function LoginPage() {
                 )}
               </button>
 
-              {mode === 'password' && (
-                <p className="text-center text-xs text-text-muted pt-1">
-                  Secured with 256-bit encryption. Authorised personnel only.
-                </p>
-              )}
             </form>
           )}
 
