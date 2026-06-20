@@ -42,6 +42,7 @@ async function loadData(token?: string): Promise<{ people: Person[] | undefined;
       status: (statusMap[p.status] ?? 'pending_verification') as PersonStatus,
       kyc_status: (p.kyc_status as KycStatus) ?? 'not_started',
       phone_verified_at: p.phone_verified_at ?? undefined,
+      email_verified_at: p.email_verified_at ?? undefined,
       joined_date: p.joined_date ?? new Date().toISOString().slice(0, 10),
       is_outsourced: p.is_outsourced,
       agency_name: p.agency_name ?? undefined,
