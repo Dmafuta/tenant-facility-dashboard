@@ -8,14 +8,17 @@ async function proxy(
 ) {
   const backendUrl = `${BACKEND}/api/${params.path.join('/')}${request.nextUrl.search}`
 
+  const contentType = request.headers.get('content-type') ?? ''
+  const isMultipart = contentType.includes('multipart/form-data')
+
   const body =
     request.method !== 'GET' && request.method !== 'HEAD'
-      ? await request.text()
+      ? isMultipart ? await request.blob() : await request.text()
       : undefined
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
+  const headers: Record<string, string> = {}
+  if (!isMultipart) headers['Content-Type'] = 'application/json'
+  else headers['Content-Type'] = contentType  // preserve multipart boundary
   const incoming = request.headers.get('cookie')
   if (incoming) headers['Cookie'] = incoming
 
