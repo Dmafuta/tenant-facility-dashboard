@@ -51,6 +51,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: 'Financials',  href: '/financials',  icon: '💰', roles: [FM, FIN] },
       { label: 'Maintenance', href: '/maintenance', icon: '🔧', roles: [FM, MAINT] },
+      { label: 'Issues',      href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
       { label: 'HR & Staff',  href: '/hr',          icon: '💼', roles: [FM] },
     ],
   },
