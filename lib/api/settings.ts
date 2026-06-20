@@ -24,6 +24,7 @@ export interface FacilitySettings {
   notify_document_expiry: boolean | null
   notify_water_loss: boolean | null
   notify_meter_reading_due: boolean | null
+  send_welcome_email: boolean | null
 }
 
 export interface SystemUser {

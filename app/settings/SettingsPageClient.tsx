@@ -204,6 +204,9 @@ function NotificationSettings() {
   if (loading) return <div className="p-6 text-sm text-text-muted">Loading…</div>
 
   const sections = [
+    { category: 'Onboarding', items: [
+      { label: 'Welcome email on registration', desc: 'Send a welcome email to new tenants and owners when they are registered. Disable during development or bulk imports.', channels: ['email'], key: 'send_welcome_email' as const },
+    ]},
     { category: 'Financial', items: [
       { label: 'Rent overdue reminder',    desc: 'Alert when rent is unpaid after grace period', channels: ['email','sms'], key: 'notify_rent_overdue'         as const },
       { label: 'Payment received',         desc: 'Notify when a payment is logged',              channels: ['email'],       key: 'notify_payment_received'      as const },
