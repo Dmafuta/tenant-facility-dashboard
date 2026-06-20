@@ -10,7 +10,7 @@ import { ENTRY_POINTS } from '@/lib/mock-data'
 import type { EntryPoint, EntryPointType, EntryPointDirection } from '@/lib/types'
 import { cn } from '@/lib/cn'
 import {
-  getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser,
+  getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
   type FacilitySettings, type SystemUser, type AppRole, type RolePermission,
 } from '@/lib/api/settings'
@@ -492,6 +492,13 @@ function UsersSettings() {
     } catch (e) { alert(e instanceof Error ? e.message : 'Failed to deactivate user.') }
   }
 
+  async function handleResend(user: SystemUser) {
+    try {
+      await resendInvite(user.id)
+      alert(`Invitation resent to ${user.email}.`)
+    } catch (e) { alert(e instanceof Error ? e.message : 'Failed to resend invitation.') }
+  }
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -519,12 +526,18 @@ function UsersSettings() {
                   <td className="px-4 py-3 text-text-muted">{u.email}</td>
                   <td className="px-4 py-3"><Badge variant="blue">{u.role}</Badge></td>
                   <td className="px-4 py-3">
-                    <Badge variant={u.status === 'active' ? 'primary' : 'default'}>{u.status}</Badge>
+                    <div className="flex flex-col gap-1">
+                      <Badge variant={u.status === 'active' ? 'primary' : 'default'}>{u.status}</Badge>
+                      {!u.email_verified && <Badge variant="warning">Invite pending</Badge>}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 items-center">
                       <button onClick={() => { setEditUser(u); setEditRole(u.role_id ?? ''); setEditStatus(u.status); setError('') }}
                         className="text-xs text-primary-600 hover:underline">Edit</button>
+                      {!u.email_verified && (
+                        <button onClick={() => handleResend(u)} className="text-xs text-amber-600 hover:underline">Resend invite</button>
+                      )}
                       {u.status === 'active' && (
                         <button onClick={() => handleDeactivate(u)} className="text-xs text-danger hover:underline">Deactivate</button>
                       )}

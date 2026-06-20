@@ -34,6 +34,7 @@ export interface SystemUser {
   role_id: string | null
   status: string
   person_id: string | null
+  email_verified: boolean
 }
 
 export interface RolePermission {
@@ -74,6 +75,10 @@ export function updateSystemUser(id: string, payload: { role_id?: string; status
 
 export function deactivateSystemUser(id: string): Promise<void> {
   return apiFetch(`/settings/users/${id}`, { method: 'DELETE' })
+}
+
+export function resendInvite(id: string): Promise<void> {
+  return apiFetch(`/settings/users/${id}/resend-invite`, { method: 'POST' })
 }
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
