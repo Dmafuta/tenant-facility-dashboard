@@ -138,11 +138,20 @@ export interface TelegramConfig {
   configured: boolean
 }
 
+export interface PremblConfig {
+  apiKey: string      // "***" if set
+  appId: string
+  baseUrl: string
+  environment: string
+  configured: boolean
+}
+
 export interface IntegrationSettings {
   email: EmailConfig
   africastalking: AfricasTalkingConfig
   mpesa: MpesaConfig
   telegram: TelegramConfig
+  prembly: PremblConfig
 }
 
 export function getIntegrations(): Promise<IntegrationSettings> {
@@ -163,6 +172,10 @@ export function saveMpesaIntegration(payload: Record<string, string>): Promise<I
 
 export function saveTelegramIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
   return apiFetch('/settings/integrations/telegram', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export function savePremblyIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
+  return apiFetch('/settings/integrations/prembly', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
 export function testEmailIntegration(email: string): Promise<string> {

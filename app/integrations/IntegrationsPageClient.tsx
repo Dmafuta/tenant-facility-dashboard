@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   getIntegrations, saveEmailIntegration, saveAfricasTalkingIntegration,
-  saveMpesaIntegration, saveTelegramIntegration,
+  saveMpesaIntegration, saveTelegramIntegration, savePremblyIntegration,
   testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
   listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
   setDefaultMpesaAccount, testMpesaAccount, registerC2bUrls,
@@ -870,6 +870,59 @@ function TelegramCard({ initial, onSave }: { initial: IntegrationSettings['teleg
   )
 }
 
+// ── Prembly Identity Verification ────────────────────────────────────────────
+
+function PremblCard({ initial, onSave }: { initial: IntegrationSettings['prembly']; onSave: (s: IntegrationSettings) => void }) {
+  const [form, setForm] = useState({ apiKey: '', appId: initial.appId ?? '', environment: initial.environment ?? 'sandbox' })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = { appId: form.appId, environment: form.environment }
+      if (form.apiKey) payload.apiKey = form.apiKey
+      const updated = await savePremblyIntegration(payload)
+      onSave(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Card icon="🪪" title={`Identity Verification (Prembly) — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">KYC verification — national ID lookup, passport scan, and document OCR via Prembly IdentityPass.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700 mb-4">
+        Sign up at <strong>app.prembly.com</strong> → create an app → copy the <strong>App ID</strong> and <strong>API Key</strong> from the dashboard. Use <em>Sandbox</em> for testing.
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <Field label="API Key" value={form.apiKey} onChange={f('apiKey')} sensitive alreadySet={initial.apiKey === '***'} placeholder="pk_live_..." />
+        <Field label="App ID" value={form.appId} onChange={f('appId')} placeholder="your-app-id" />
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Environment</label>
+          <select
+            value={form.environment}
+            onChange={e => setForm(p => ({ ...p, environment: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400"
+          >
+            <option value="sandbox">Sandbox (testing)</option>
+            <option value="production">Production</option>
+          </select>
+        </div>
+        <div className="flex justify-end pt-2">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function IntegrationsPageClient() {
@@ -898,6 +951,7 @@ export function IntegrationsPageClient() {
     settings.africastalking.configured,
     settings.mpesa.configured,
     settings.telegram.configured,
+    settings.prembly.configured,
   ].filter(Boolean).length
 
   return (
@@ -910,7 +964,7 @@ export function IntegrationsPageClient() {
           </svg>
         </div>
         <div>
-          <p className="text-sm font-semibold text-gray-900">{configured} of 4 integrations configured</p>
+          <p className="text-sm font-semibold text-gray-900">{configured} of 5 integrations configured</p>
           <p className="text-xs text-gray-500 mt-0.5">Credentials are stored securely in the database and never exposed in plaintext.</p>
         </div>
         <div className="ml-auto flex gap-3">
@@ -919,6 +973,7 @@ export function IntegrationsPageClient() {
             { icon: '💬', label: 'SMS',      ok: settings.africastalking.configured },
             { icon: '💚', label: 'M-Pesa',   ok: settings.mpesa.configured },
             { icon: '✈️',  label: 'Telegram', ok: settings.telegram.configured },
+            { icon: '🪪',  label: 'KYC',      ok: settings.prembly.configured },
           ].map(({ icon, label, ok }) => (
             <div key={label} className="flex flex-col items-center gap-0.5">
               <span className="text-base">{icon}</span>
@@ -934,6 +989,7 @@ export function IntegrationsPageClient() {
       <AfricasTalkingCard initial={settings.africastalking} onSave={handleSave} />
       <MpesaCard          initial={settings.mpesa}          onSave={handleSave} />
       <TelegramCard       initial={settings.telegram}       onSave={handleSave} />
+      <PremblCard         initial={settings.prembly}        onSave={handleSave} />
     </div>
   )
 }
