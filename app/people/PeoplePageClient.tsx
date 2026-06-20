@@ -30,6 +30,7 @@ import {
   updatePersonType as apiUpdatePersonType,
   removeUnitFromPerson,
   sendEmailVerification,
+  resendWelcomeEmail,
   getPersonById,
   apiPersonToPerson,
   type PersonData,
@@ -1017,6 +1018,40 @@ function PersonalStaffPanel({ personId }: { personId: string }) {
   )
 }
 
+// ── Resend Welcome Email button ───────────────────────────────────────────
+
+function ResendWelcomeEmailButton({ personId }: { personId: string }) {
+  const [sending, setSending] = useState(false)
+  const [sent,    setSent]    = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+
+  async function handleSend() {
+    setSending(true); setError(null)
+    try {
+      await resendWelcomeEmail(personId)
+      setSent(true)
+      setTimeout(() => setSent(false), 4000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to send welcome email.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div>
+      <button
+        onClick={handleSend}
+        disabled={sending || sent}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm font-medium text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover disabled:opacity-50 transition-colors"
+      >
+        {sent ? '✓ Welcome email sent' : sending ? 'Sending…' : '✉ Resend Welcome Email'}
+      </button>
+      {error && <p className="text-xs text-danger mt-1">{error}</p>}
+    </div>
+  )
+}
+
 // ── CRB Panel ──────────────────────────────────────────────────────────────
 
 function CrbPanel({ personId }: { personId: string }) {
@@ -1905,6 +1940,9 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
                     Sell / Transfer Unit
                   </button>
                 )}
+                {(isTenant || isOwner) && person.email && (
+                  <ResendWelcomeEmailButton personId={person.id} />
+                )}
               </CanDo>
             </div>
           </div>
@@ -2023,6 +2061,9 @@ function PersonRow({ person, selected, onClick }: { person: Person; selected: bo
           person.status === 'suspended' ? 'text-danger' :
           person.status === 'former' ? 'text-text-muted' : 'text-warning'
         )}>{person.status.replace('_', ' ')}</span>
+        {person.kyc_status && person.kyc_status !== 'not_started' && (
+          <KycBadge status={person.kyc_status} />
+        )}
       </div>
     </div>
   )
@@ -2049,6 +2090,21 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
   const owners  = useMemo(() => people.filter(p => p.type === 'resident_owner' || p.type === 'non_resident_owner'), [people])
   const tenants = useMemo(() => people.filter(p => p.type === 'tenant' || p.type === 'short_stay_guest'), [people])
 
+  function exportCsv() {
+    const headers = ['First Name','Last Name','Email','Phone','National ID','Type','Status','KYC Status','Joined Date']
+    const rows = people.map(p => [
+      p.first_name, p.last_name, p.email ?? '', p.phone ?? '',
+      p.national_id ?? '', p.type, p.status, p.kyc_status ?? '',
+      p.joined_date ?? '',
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = 'people.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const filterPeople = (list: Person[]) => {
     const q = search.toLowerCase()
     const result = q
@@ -2070,7 +2126,18 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
       {/* Left panel */}
       <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
         <div className="p-3 border-b border-surface-border dark:border-dark-border space-y-2">
-          <SearchInput placeholder="Search by name, email, phone or ID number..." value={search} onChange={setSearch} />
+          <div className="flex gap-2">
+            <SearchInput placeholder="Search by name, email, phone or ID number..." value={search} onChange={setSearch} />
+            <button
+              onClick={exportCsv}
+              title="Export to CSV"
+              className="flex-shrink-0 px-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </button>
+          </div>
           <div className="relative">
             <CanDo action="write" resource={{ type: 'person' }}>
               <button

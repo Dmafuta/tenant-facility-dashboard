@@ -61,6 +61,10 @@ export async function updatePersonType(personId: string, personType: string): Pr
   return apiFetch<PersonData>(`/people/${personId}/type`, { method: 'PATCH', body: JSON.stringify({ personType }) })
 }
 
+export async function resendWelcomeEmail(personId: string): Promise<void> {
+  await apiFetch<void>(`/people/${personId}/resend-welcome-email`, { method: 'POST' })
+}
+
 export async function sendEmailVerification(personId: string): Promise<void> {
   return apiFetch(`/people/${personId}/send-email-verification`, { method: 'POST' })
 }
