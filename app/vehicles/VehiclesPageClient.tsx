@@ -297,7 +297,7 @@ function VerificationDrive({ vehicles, onClose, onUpdated }: {
         )}
       </div>
 
-      {showScanner && <PlateScanner onResult={handleOcrResult} onClose={() => setShowScanner(false)} />}
+      {showScanner && <PlateScanner onResult={handleOcrResult} onClose={() => setShowScanner(false)} vehicles={vehicles} />}
     </div>
   )
 }
