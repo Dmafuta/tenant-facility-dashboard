@@ -43,7 +43,7 @@ function unitSpecs(u: UnitData): string {
   if (u.bathrooms)      parts.push(`${u.bathrooms} BA`)
   if (u.floor_area_sqm) parts.push(`${u.floor_area_sqm} m²`)
   if (u.parking_bays)   parts.push(`${u.parking_bays} parking`)
-  return parts.join(' · ') || UNIT_TYPE_LABELS[u.unit_type] ?? u.unit_type
+  return parts.join(' · ') || (UNIT_TYPE_LABELS[u.unit_type] ?? u.unit_type)
 }
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
