@@ -480,7 +480,7 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
                   </div>
                 </div>
               ) : (
-                <CanDo action="write" resource={{ type: 'utility' }}>
+                <CanDo action="write" resource={{ type: 'unit' }}>
                   <button
                     onClick={() => setShowMigForm(true)}
                     className="w-full text-sm text-primary border border-dashed border-primary/40 rounded-lg py-2 hover:bg-primary/5 transition-colors"
@@ -2417,7 +2417,7 @@ function DisconnectionTab({
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center">
           <h4 className="text-sm font-semibold text-gray-900 flex-1">Postpaid Meters — Overdue Bills</h4>
           {formalDue.some(c => !noticeSent(c.meter.id, 'formal')) && (
-            <CanDo action="write" resource={{ type: 'utility' }}>
+            <CanDo action="write" resource={{ type: 'unit' }}>
               <button
                 onClick={sendAllFormal}
                 disabled={sending !== null}
@@ -2471,7 +2471,7 @@ function DisconnectionTab({
                     </td>
                     <td className="px-4 py-3">{stageBadge(c.stage)}</td>
                     <td className="px-4 py-3">
-                      <CanDo action="write" resource={{ type: 'utility' }}>
+                      <CanDo action="write" resource={{ type: 'unit' }}>
                         {c.stage === 'formal_due' && (
                           <button
                             disabled={formalSent || isSending}
