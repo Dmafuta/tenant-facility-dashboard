@@ -2,6 +2,9 @@
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  experimental: {
+    serverComponentsExternalPackages: ['tesseract.js'],
+  },
   async headers() {
     return [{
       source: "/(.*)",

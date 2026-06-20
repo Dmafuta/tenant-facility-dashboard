@@ -1,12 +1,12 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { getAllVehicles, verifyVehicle, unverifyVehicle } from '@/lib/api/vehicles'
+import { getAllVehicles, verifyVehicle, unverifyVehicle, updateVehicleSticker } from '@/lib/api/vehicles'
 import type { VehicleData } from '@/lib/api/vehicles'
 
 function vehicleStatusBadge(status: string) {
@@ -25,6 +25,104 @@ function typeIcon(type: string) {
 
 const daysUntilExpiry = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400000)
 
+// ── Plate Scanner (OCR) ────────────────────────────────────────────────────────
+
+function PlateScanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
+  const videoRef   = useRef<HTMLVideoElement>(null)
+  const canvasRef  = useRef<HTMLCanvasElement>(null)
+  const streamRef  = useRef<MediaStream | null>(null)
+  const [ready,    setReady]   = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [error,    setError]   = useState<string | null>(null)
+
+  useEffect(() => {
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
+      .then(stream => {
+        streamRef.current = stream
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play() }
+        setReady(true)
+      })
+      .catch(() => setError('Camera access denied. Please allow camera permissions and try again.'))
+    return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
+  }, [])
+
+  async function capture() {
+    if (!videoRef.current || !canvasRef.current || scanning || !ready) return
+    setScanning(true)
+    setError(null)
+    const video  = videoRef.current
+    const canvas = canvasRef.current
+    canvas.width  = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')!.drawImage(video, 0, 0)
+    const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1]
+    try {
+      const res  = await fetch('/api/ocr/plate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64 }),
+      })
+      const data = await res.json()
+      if (data.text) { onResult(data.text) }
+      else { setError('Could not read plate — try again.'); setScanning(false) }
+    } catch {
+      setError('OCR request failed — try again.')
+      setScanning(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black flex flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-black/60 flex-shrink-0">
+        <button onClick={onClose} className="p-1.5 rounded-lg text-white/70 hover:text-white">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+        <p className="text-sm font-medium text-white">Point camera at number plate</p>
+      </div>
+
+      {/* Viewfinder */}
+      <div className="flex-1 relative overflow-hidden">
+        {error ? (
+          <div className="flex items-center justify-center h-full px-8 text-center text-sm text-white/70">{error}</div>
+        ) : (
+          <>
+            <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+            {/* Guide overlay — dark surround with a clear plate-shaped window */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div
+                className="w-4/5 h-16 rounded-lg border-2 border-white"
+                style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)' }}
+              />
+            </div>
+            <p className="absolute bottom-4 left-0 right-0 text-center text-xs text-white/60">
+              Align plate inside the guide then tap Capture
+            </p>
+          </>
+        )}
+      </div>
+
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Capture button */}
+      <div className="flex justify-center items-center py-6 bg-black flex-shrink-0">
+        <button
+          onClick={capture}
+          disabled={!ready || scanning}
+          className="w-16 h-16 rounded-full border-4 border-white bg-white/20 flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform"
+        >
+          {scanning
+            ? <span className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            : <span className="w-10 h-10 rounded-full bg-white" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Verification Drive ─────────────────────────────────────────────────────────
 
 function VerificationDrive({ vehicles, onClose, onUpdated }: {
@@ -32,42 +130,87 @@ function VerificationDrive({ vehicles, onClose, onUpdated }: {
   onClose: () => void
   onUpdated: (v: VehicleData) => void
 }) {
-  const [search, setSearch]       = useState('')
-  const [filter, setFilter]       = useState<'all' | 'unverified' | 'verified'>('unverified')
-  const [pending, setPending]     = useState<Set<string>>(new Set())
+  const [scanInput, setScanInput]         = useState('')
+  const [filter, setFilter]               = useState<'all' | 'unverified' | 'verified'>('unverified')
+  const [pending, setPending]             = useState<Set<string>>(new Set())
+  const [editingStickerId, setEditingStickerId] = useState<string | null>(null)
+  const [stickerValue, setStickerValue]   = useState('')
+  const [savingSticker, setSavingSticker] = useState<Set<string>>(new Set())
+  const [showScanner, setShowScanner]     = useState(false)
 
-  const verified   = vehicles.filter(v => v.verified).length
-  const total      = vehicles.length
-  const pct        = total > 0 ? Math.round((verified / total) * 100) : 0
+  const scanInputRef = useRef<HTMLInputElement>(null)
+  const rowRefs      = useRef<Record<string, HTMLTableRowElement | null>>({})
+
+  const verified = vehicles.filter(v => v.verified).length
+  const total    = vehicles.length
+  const pct      = total > 0 ? Math.round((verified / total) * 100) : 0
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = scanInput.trim().toLowerCase()
     return vehicles.filter(v => {
       const matchSearch = !q
         || v.plate_number.toLowerCase().includes(q)
         || (v.sticker_number ?? '').toLowerCase().includes(q)
-        || (v.person_name ?? '').toLowerCase().includes(q)
-        || (v.unit_label ?? '').toLowerCase().includes(q)
+        || (v.person_name  ?? '').toLowerCase().includes(q)
+        || (v.unit_label   ?? '').toLowerCase().includes(q)
       const matchFilter =
         filter === 'all' ||
         (filter === 'verified'   &&  v.verified) ||
         (filter === 'unverified' && !v.verified)
       return matchSearch && matchFilter
     })
-  }, [vehicles, search, filter])
+  }, [vehicles, scanInput, filter])
 
-  async function toggle(v: VehicleData) {
+  // Scroll first match into view when typing
+  useEffect(() => {
+    if (!scanInput.trim() || filtered.length === 0) return
+    rowRefs.current[filtered[0].id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [scanInput, filtered])
+
+  const toggle = useCallback(async (v: VehicleData) => {
     if (pending.has(v.id)) return
     setPending(p => new Set(p).add(v.id))
     try {
       const updated = v.verified ? await unverifyVehicle(v.id) : await verifyVehicle(v.id)
       onUpdated(updated)
-    } catch { /* silently ignore */ }
+    } catch {}
     finally { setPending(p => { const n = new Set(p); n.delete(v.id); return n }) }
+  }, [pending, onUpdated])
+
+  function handleScanKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && filtered.length > 0) toggle(filtered[0])
+  }
+
+  function startEditSticker(v: VehicleData) {
+    setEditingStickerId(v.id)
+    setStickerValue(v.sticker_number ?? '')
+  }
+
+  async function saveSticker(v: VehicleData) {
+    if (savingSticker.has(v.id)) return
+    const trimmed = stickerValue.trim() || null
+    // No change — just close
+    if (trimmed === (v.sticker_number ?? null)) { setEditingStickerId(null); return }
+    setSavingSticker(s => new Set(s).add(v.id))
+    try {
+      const updated = await updateVehicleSticker(v.id, trimmed)
+      onUpdated(updated)
+    } catch {}
+    finally {
+      setSavingSticker(s => { const n = new Set(s); n.delete(v.id); return n })
+      setEditingStickerId(null)
+    }
+  }
+
+  function handleOcrResult(text: string) {
+    setScanInput(text)
+    setShowScanner(false)
+    setTimeout(() => scanInputRef.current?.focus(), 100)
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-50 dark:bg-dark-bg flex flex-col">
+
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border shadow-sm flex-shrink-0">
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-hover text-gray-500">
@@ -79,22 +222,38 @@ function VerificationDrive({ vehicles, onClose, onUpdated }: {
           <p className="text-sm font-bold text-gray-900 dark:text-white">Verification Drive</p>
           <p className="text-xs text-gray-500">{verified} of {total} verified</p>
         </div>
-        <div className="text-right">
-          <p className="text-lg font-bold text-primary-600">{pct}%</p>
-        </div>
+        <p className="text-lg font-bold text-primary-600">{pct}%</p>
       </div>
 
       {/* Progress bar */}
       <div className="h-1.5 bg-gray-200 dark:bg-dark-border flex-shrink-0">
-        <div
-          className="h-full bg-green-500 transition-all duration-500"
-          style={{ width: `${pct}%` }}
-        />
+        <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${pct}%` }} />
       </div>
 
-      {/* Search + filter */}
+      {/* Quick-scan bar + filters */}
       <div className="px-4 py-3 bg-white dark:bg-dark-surface border-b border-gray-100 dark:border-dark-border flex-shrink-0 space-y-2">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search plate, sticker, name, unit…" className="w-full" />
+        <div className="relative">
+          <input
+            ref={scanInputRef}
+            autoFocus
+            value={scanInput}
+            onChange={e => setScanInput(e.target.value.toUpperCase())}
+            onKeyDown={handleScanKeyDown}
+            placeholder="Type or scan plate / sticker / name…  ↵ verifies first match"
+            className="w-full pl-4 pr-10 py-2.5 text-sm font-mono rounded-xl border border-gray-300 dark:border-dark-border bg-white dark:bg-dark-surface text-text placeholder:text-gray-400 placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+          <button
+            onClick={() => setShowScanner(true)}
+            title="Scan plate with camera (OCR)"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-dark-hover transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9V6a1 1 0 011-1h3M3 15v3a1 1 0 001 1h3m11-4v3a1 1 0 01-1 1h-3m4-11h-3a1 1 0 00-1 1v3"/>
+              <rect x="8" y="8" width="8" height="8" rx="1" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+
         <div className="flex gap-2">
           {(['unverified', 'all', 'verified'] as const).map(f => (
             <button
@@ -108,72 +267,134 @@ function VerificationDrive({ vehicles, onClose, onUpdated }: {
               )}
             >
               {f === 'unverified' ? `Pending (${vehicles.filter(v => !v.verified).length})`
-               : f === 'verified' ? `Verified (${verified})`
+               : f === 'verified'   ? `Done (${verified})`
                : `All (${total})`}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Vehicle cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {filtered.length === 0 && (
+      {/* Vehicle table */}
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length === 0 ? (
           <div className="py-16 text-center text-sm text-gray-400">
-            {filter === 'unverified' && verified === total
+            {filter === 'unverified' && verified === total && total > 0
               ? '🎉 All vehicles verified!'
-              : 'No vehicles match your search.'}
+              : 'No vehicles match.'}
           </div>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0 z-10 bg-white dark:bg-dark-surface border-b border-gray-200 dark:border-dark-border">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-text-muted">Vehicle</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-text-muted hidden sm:table-cell">Owner · Unit</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-text-muted">Sticker</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-text-muted w-16">Verify</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-dark-border">
+              {filtered.map((v, idx) => {
+                const isPending       = pending.has(v.id)
+                const isFirst         = idx === 0 && scanInput.trim() !== ''
+                const isEditSticker   = editingStickerId === v.id
+                const isSavingSticker = savingSticker.has(v.id)
+
+                return (
+                  <tr
+                    key={v.id}
+                    ref={el => { rowRefs.current[v.id] = el }}
+                    className={cn(
+                      'transition-colors',
+                      v.verified
+                        ? 'bg-green-50 dark:bg-green-900/10'
+                        : 'bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-dark-hover',
+                      isFirst && 'outline outline-2 outline-primary-400 outline-offset-[-2px]'
+                    )}
+                  >
+                    {/* Vehicle */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg flex-shrink-0 leading-none">{typeIcon(v.vehicle_type)}</span>
+                        <div className="min-w-0">
+                          <p className="font-mono font-bold text-text text-sm leading-tight">{v.plate_number}</p>
+                          <p className="text-xs text-text-muted truncate">{[v.color, v.make, v.model, v.year].filter(Boolean).join(' ')}</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Owner */}
+                    <td className="px-3 py-2.5 hidden sm:table-cell">
+                      <p className="text-xs text-text leading-tight">{v.person_name ?? '—'}</p>
+                      <p className="text-xs text-text-muted">{v.unit_label ?? '—'}</p>
+                    </td>
+
+                    {/* Sticker (inline edit) */}
+                    <td className="px-3 py-2.5">
+                      {isEditSticker ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            value={stickerValue}
+                            onChange={e => setStickerValue(e.target.value.toUpperCase())}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter')  saveSticker(v)
+                              if (e.key === 'Escape') setEditingStickerId(null)
+                            }}
+                            onBlur={() => saveSticker(v)}
+                            placeholder="e.g. GWG-042"
+                            className="w-24 px-2 py-1 text-xs font-mono border border-primary-400 rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          />
+                          {isSavingSticker && (
+                            <span className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => startEditSticker(v)}
+                          className="text-xs font-mono hover:text-primary-600 transition-colors"
+                          title="Click to assign sticker"
+                        >
+                          {v.sticker_number
+                            ? <span className="text-blue-600 dark:text-blue-400 font-medium">{v.sticker_number}</span>
+                            : <span className="text-gray-300 dark:text-gray-600 italic">+ sticker</span>}
+                        </button>
+                      )}
+                    </td>
+
+                    {/* Verify toggle */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <button
+                          onClick={() => toggle(v)}
+                          disabled={isPending}
+                          title={v.verified ? 'Mark as unverified' : 'Mark as verified'}
+                          className={cn(
+                            'w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all disabled:opacity-50',
+                            v.verified
+                              ? 'bg-green-500 text-white hover:bg-red-500'
+                              : 'bg-gray-100 dark:bg-dark-hover text-gray-400 hover:bg-green-500 hover:text-white'
+                          )}
+                        >
+                          {isPending
+                            ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            : v.verified ? '✓' : '○'}
+                        </button>
+                        {v.verified && v.verified_by && (
+                          <p className="text-[10px] text-green-600 dark:text-green-400 leading-tight max-w-[4rem] text-right truncate">
+                            {v.verified_by}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
-        {filtered.map(v => {
-          const isPending = pending.has(v.id)
-          return (
-            <div
-              key={v.id}
-              className={cn(
-                'rounded-xl border p-4 flex items-center gap-4 transition-all',
-                v.verified
-                  ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800'
-                  : 'bg-white dark:bg-dark-surface border-gray-200 dark:border-dark-border'
-              )}
-            >
-              <span className="text-2xl flex-shrink-0">{typeIcon(v.vehicle_type)}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-base font-bold font-mono text-gray-900 dark:text-white">{v.plate_number}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {v.color} {v.make} {v.model}{v.year ? ` (${v.year})` : ''}
-                </p>
-                <div className="flex flex-wrap gap-x-3 mt-0.5 text-xs text-gray-500">
-                  {v.person_name && <span>{v.person_name}</span>}
-                  {v.unit_label  && <span>· {v.unit_label}</span>}
-                  {v.sticker_number && (
-                    <span className="font-medium text-blue-600 dark:text-blue-400">Sticker: {v.sticker_number}</span>
-                  )}
-                </div>
-                {v.verified && v.verified_by && (
-                  <p className="text-[11px] text-green-600 dark:text-green-400 mt-0.5">
-                    ✓ Verified by {v.verified_by}{v.verified_at ? ` · ${new Date(v.verified_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => toggle(v)}
-                disabled={isPending}
-                className={cn(
-                  'flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold transition-all disabled:opacity-50',
-                  v.verified
-                    ? 'bg-green-500 text-white hover:bg-red-500'
-                    : 'bg-gray-100 dark:bg-dark-hover text-gray-400 hover:bg-green-500 hover:text-white'
-                )}
-                title={v.verified ? 'Mark as unverified' : 'Mark as verified'}
-              >
-                {isPending ? (
-                  <span className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : v.verified ? '✓' : '○'}
-              </button>
-            </div>
-          )
-        })}
       </div>
+
+      {showScanner && <PlateScanner onResult={handleOcrResult} onClose={() => setShowScanner(false)} />}
     </div>
   )
 }

@@ -31,6 +31,13 @@ export async function getVehicles(personId: string): Promise<VehicleData[]> {
   return apiFetch<VehicleData[]>(`/people/${personId}/vehicles`)
 }
 
+export async function updateVehicleSticker(id: string, stickerNumber: string | null): Promise<VehicleData> {
+  return apiFetch<VehicleData>(`/vehicles/${id}/sticker`, {
+    method: 'PATCH',
+    body: JSON.stringify({ sticker_number: stickerNumber }),
+  })
+}
+
 export async function verifyVehicle(id: string): Promise<VehicleData> {
   return apiFetch<VehicleData>(`/vehicles/${id}/verify`, { method: 'PATCH' })
 }
