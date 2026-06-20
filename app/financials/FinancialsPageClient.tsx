@@ -902,6 +902,17 @@ export function FinancialsPageClient() {
   useEffect(() => { fetchCharges() }, [fetchCharges])
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
+  // Poll every 5 s while any transaction is pending so the UI updates automatically
+  useEffect(() => {
+    const hasPending = transactions.some(t => t.status === 'pending')
+    if (!hasPending) return
+    const id = setInterval(() => {
+      fetchTransactions()
+      fetchCharges()
+    }, 5000)
+    return () => clearInterval(id)
+  }, [transactions, fetchTransactions, fetchCharges])
+
   // Unique periods for filter
   const periods = useMemo(() => {
     const set = new Set(charges.map(c => c.period).filter(Boolean) as string[])
