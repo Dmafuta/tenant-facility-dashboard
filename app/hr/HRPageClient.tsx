@@ -10,6 +10,8 @@ import { RegisterStaffModal } from '@/components/people/RegisterPersonModal'
 import { FACILITY_STAFF, VENDOR_CONTRACTS, PEOPLE, DEPARTMENTS } from '@/lib/mock-data'
 import type { FacilityStaffMember, VendorContract, Person, Department } from '@/lib/types'
 import { cn } from '@/lib/cn'
+import { grantPortalAccess, offboardPerson } from '@/lib/api/people'
+import { listRoles, type AppRole } from '@/lib/api/settings'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -240,42 +242,249 @@ function personStatusBadge(s: string) {
   )
 }
 
-// ── LivePersonCard — for backend-registered staff (no FacilityStaffMember record) ──
+// ── Grant Portal Access Modal ───────────────────────────────────────────────
 
-function LivePersonCard({ person }: { person: Person }) {
+function GrantAccessModal({
+  person,
+  onClose,
+}: { person: Person; onClose: () => void }) {
+  const [roles, setRoles]     = useState<AppRole[]>([])
+  const [roleName, setRole]   = useState('')
+  const [saving, setSaving]   = useState(false)
+  const [done, setDone]       = useState(false)
+  const [error, setError]     = useState('')
+
+  useMemo(() => { listRoles().then(setRoles) }, [])
+
+  async function handle() {
+    if (!roleName) { setError('Please select a role.'); return }
+    setSaving(true); setError('')
+    try {
+      await grantPortalAccess(person.id, roleName)
+      setDone(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to grant access.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-text">Grant Portal Access</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text">✕</button>
+        </div>
+        {done ? (
+          <div className="text-center space-y-3 py-2">
+            <p className="text-4xl">✅</p>
+            <p className="text-sm font-medium text-text">Invite sent to {person.email}</p>
+            <p className="text-xs text-text-muted">They will receive an email to set up their password.</p>
+            <button onClick={onClose} className="w-full py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700">
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-text-muted">
+              An invite email will be sent to <strong>{person.email}</strong>. Their portal account will be linked to this staff record.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Role *</label>
+              <select value={roleName} onChange={e => setRole(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+                <option value="">Select a role…</option>
+                {roles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+              </select>
+            </div>
+            {error && <p className="text-xs text-danger">{error}</p>}
+            <div className="flex gap-2">
+              <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-surface-border dark:border-dark-border text-sm text-text-muted hover:bg-surface-muted transition-colors">
+                Cancel
+              </button>
+              <button onClick={handle} disabled={saving}
+                className="flex-1 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                {saving && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                {saving ? 'Sending…' : 'Send Invite'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Offboard Modal ──────────────────────────────────────────────────────────
+
+function OffboardModal({
+  person,
+  onClose,
+  onDone,
+}: { person: Person; onClose: () => void; onDone: (updated: Person) => void }) {
+  const [exitDate,   setExitDate]   = useState('')
+  const [exitReason, setExitReason] = useState('')
+  const [exitNotes,  setExitNotes]  = useState('')
+  const [saving, setSaving]         = useState(false)
+  const [error, setError]           = useState('')
+
+  const EXIT_REASONS = [
+    { value: 'resigned',       label: 'Resigned' },
+    { value: 'terminated',     label: 'Terminated' },
+    { value: 'contract_end',   label: 'Contract End' },
+    { value: 'retired',        label: 'Retired' },
+    { value: 'other',          label: 'Other' },
+  ]
+
+  async function handle() {
+    if (!exitDate || !exitReason) { setError('Exit date and reason are required.'); return }
+    setSaving(true); setError('')
+    try {
+      const updated = await offboardPerson(person.id, { exitDate, exitReason, exitNotes })
+      onDone({
+        ...person,
+        status: 'former',
+        exit_date:   updated.exit_date   ?? exitDate,
+        exit_reason: updated.exit_reason ?? exitReason,
+        exit_notes:  updated.exit_notes  ?? exitNotes,
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to offboard.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-text">Offboard Staff</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text">✕</button>
+        </div>
+        <p className="text-xs text-text-muted">
+          This will mark <strong>{person.first_name} {person.last_name}</strong> as <em>former</em> and deactivate their portal account.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Exit Date *</label>
+            <input type="date" value={exitDate} onChange={e => setExitDate(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Reason *</label>
+            <select value={exitReason} onChange={e => setExitReason(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+              <option value="">Select reason…</option>
+              {EXIT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Notes</label>
+            <textarea value={exitNotes} onChange={e => setExitNotes(e.target.value)} rows={2}
+              placeholder="Any handover notes or remarks…"
+              className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+          </div>
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-surface-border dark:border-dark-border text-sm text-text-muted hover:bg-surface-muted transition-colors">
+            Cancel
+          </button>
+          <button onClick={handle} disabled={saving}
+            className="flex-1 py-2 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+            {saving && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+            {saving ? 'Processing…' : 'Confirm Offboard'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── LivePersonCard — for backend-registered staff ───────────────────────────
+
+function LivePersonCard({ person, onUpdate }: { person: Person; onUpdate: (p: Person) => void }) {
   const name     = `${person.first_name} ${person.last_name}`
   const initials = `${person.first_name[0]}${person.last_name[0]}`
   const staffType = personTypeToStaffType(person.type)
+  const [showGrant,    setShowGrant]    = useState(false)
+  const [showOffboard, setShowOffboard] = useState(false)
+
+  const isActive = person.status === 'active' || person.status === 'pending_verification'
+  const hasEmail = !!person.email
 
   return (
-    <Card className="p-4 flex flex-col gap-3">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-sm font-bold text-primary-700 dark:text-primary-300 flex-shrink-0">
-            {initials}
+    <>
+      <Card className="p-4 flex flex-col gap-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-sm font-bold text-primary-700 dark:text-primary-300 flex-shrink-0">
+              {initials}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-text">{name}</p>
+              {person.job_title
+                ? <p className="text-xs text-text-muted">{person.job_title}{person.department ? ` — ${person.department}` : ''}</p>
+                : person.agency_name
+                  ? <p className="text-xs text-text-muted">{person.agency_name}</p>
+                  : <p className="text-xs text-text-muted italic">No role assigned</p>}
+              {person.phone && <p className="text-xs text-text-muted">{person.phone}</p>}
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-text">{name}</p>
-            {person.agency_name
-              ? <p className="text-xs text-text-muted">{person.agency_name}</p>
-              : <p className="text-xs text-text-muted italic">No dept assigned</p>}
-            {person.phone && <p className="text-xs text-text-muted">{person.phone}</p>}
-          </div>
+          {staffTypeBadge(staffType)}
         </div>
-        {staffTypeBadge(staffType)}
-      </div>
 
-      <div className="text-xs text-text-muted">
-        <span>Since: {person.joined_date}</span>
-      </div>
+        {/* Employment details */}
+        <div className="text-xs text-text-muted space-y-0.5">
+          {person.start_date && <span className="block">Since: {person.start_date}</span>}
+          {person.end_date && <span className="block text-warning">Ends: {person.end_date}</span>}
+          {person.probation_end_date && <span className="block text-warning">Probation ends: {person.probation_end_date}</span>}
+          {!person.start_date && person.joined_date && <span className="block">Joined: {person.joined_date}</span>}
+        </div>
 
-      <div className="flex items-center justify-between border-t border-surface-border dark:border-dark-border pt-2">
-        {personStatusBadge(person.status)}
-        <CanDo action="write" resource={{ type: 'person' }}>
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-surface-border dark:border-dark-border pt-2">
+          {person.contract_status && contractStatusBadge(person.contract_status as 'active' | 'probation' | 'expired' | 'terminated')}
+          {personStatusBadge(person.status)}
+          {person.background_check_done
+            ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/10 text-success font-medium">✓ BGC</span>
+            : <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/10 text-warning font-medium">⚠ BGC Pending</span>}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-surface-border dark:border-dark-border pt-2">
           <a href="/people" className="text-xs text-primary-600 dark:text-primary-400 hover:underline">View in People →</a>
-        </CanDo>
-      </div>
-    </Card>
+          <CanDo action="write" resource={{ type: 'person' }}>
+            <div className="flex items-center gap-2">
+              {isActive && hasEmail && person.status !== 'former' && (
+                <button onClick={() => setShowGrant(true)}
+                  className="text-xs px-2 py-1 rounded border border-primary-300 dark:border-primary-700 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
+                  Grant Access
+                </button>
+              )}
+              {isActive && (
+                <button onClick={() => setShowOffboard(true)}
+                  className="text-xs px-2 py-1 rounded border border-danger/30 text-danger hover:bg-danger/5 transition-colors">
+                  Offboard
+                </button>
+              )}
+            </div>
+          </CanDo>
+        </div>
+        {person.exit_reason && (
+          <p className="text-xs text-text-muted italic border-t border-surface-border dark:border-dark-border pt-2">
+            Exited: {person.exit_reason.replace(/_/g, ' ')}{person.exit_date ? ` on ${person.exit_date}` : ''}
+          </p>
+        )}
+      </Card>
+
+      {showGrant && (
+        <GrantAccessModal person={person} onClose={() => setShowGrant(false)} />
+      )}
+      {showOffboard && (
+        <OffboardModal
+          person={person}
+          onClose={() => setShowOffboard(false)}
+          onDone={updated => { onUpdate(updated); setShowOffboard(false) }}
+        />
+      )}
+    </>
   )
 }
 
@@ -293,6 +502,10 @@ export function HRPageClient({ initialStaff }: { initialStaff?: Person[] } = {})
 
   function handleStaffRegistered(p: Person) {
     setLiveStaff(prev => [p, ...prev])
+  }
+
+  function handleStaffUpdated(updated: Person) {
+    setLiveStaff(prev => prev.map(p => p.id === updated.id ? updated : p))
   }
 
   // Build person map: merge backend staff + mock people (for FacilityStaffMember lookups)
@@ -345,8 +558,10 @@ export function HRPageClient({ initialStaff }: { initialStaff?: Person[] } = {})
                   + liveStaff.filter(p => p.type === 'casual_staff').length,
     outsourced:   PEOPLE.filter(p => p.is_outsourced).length
                   + liveStaff.filter(p => p.is_outsourced).length,
-    bgcPending:   FACILITY_STAFF.filter(s => !s.background_check_done).length,
-    probation:    FACILITY_STAFF.filter(s => s.contract_status === 'probation').length,
+    bgcPending:   FACILITY_STAFF.filter(s => !s.background_check_done).length
+                  + liveStaff.filter(p => !p.background_check_done).length,
+    probation:    FACILITY_STAFF.filter(s => s.contract_status === 'probation').length
+                  + liveStaff.filter(p => p.contract_status === 'probation').length,
     activeVendors: VENDOR_CONTRACTS.filter(v => v.status === 'active').length,
   }), [liveStaff])
 
@@ -441,7 +656,7 @@ export function HRPageClient({ initialStaff }: { initialStaff?: Person[] } = {})
                 />
               ))}
               {filteredLiveStaff.map(p => (
-                <LivePersonCard key={p.id} person={p} />
+                <LivePersonCard key={p.id} person={p} onUpdate={handleStaffUpdated} />
               ))}
               {filteredStaff.length === 0 && filteredLiveStaff.length === 0 && (
                 <div className="col-span-3 py-12 text-center text-text-muted text-sm">No staff match the current filters.</div>

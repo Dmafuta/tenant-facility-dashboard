@@ -518,7 +518,7 @@ function UsersSettings() {
           <table className="w-full text-sm">
             <thead className="bg-surface-hover dark:bg-dark-hover">
               <tr>
-                {['Name','Email','Role','Status','Invite',''].map(h => (
+                {['Name','Email','Role','Linked Person','Status','Invite',''].map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted">{h}</th>
                 ))}
               </tr>
@@ -529,6 +529,14 @@ function UsersSettings() {
                   <td className="px-4 py-3 text-text font-medium">{u.fullName}</td>
                   <td className="px-4 py-3 text-text-muted">{u.email}</td>
                   <td className="px-4 py-3"><Badge variant="blue">{u.role}</Badge></td>
+                  <td className="px-4 py-3">
+                    {u.person_name
+                      ? <span className="text-xs text-text-muted flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
+                          {u.person_name}
+                        </span>
+                      : <span className="text-xs text-text-muted italic">—</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <Badge variant={u.status === 'active' ? 'primary' : 'default'}>{u.status}</Badge>
                   </td>

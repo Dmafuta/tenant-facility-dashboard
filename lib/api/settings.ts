@@ -35,6 +35,7 @@ export interface SystemUser {
   role_id: string | null
   status: string
   person_id: string | null
+  person_name: string | null
   email_verified: boolean
 }
 

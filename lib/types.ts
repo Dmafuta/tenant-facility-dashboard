@@ -98,6 +98,19 @@ export interface Person {
   agency_contact?: string
   agency_clearance_ref?: string
   is_outsourced?: boolean
+  // Employment (staff only)
+  job_title?: string
+  department?: string
+  contract_type?: string
+  contract_status?: string
+  start_date?: string
+  end_date?: string
+  probation_end_date?: string
+  background_check_done?: boolean
+  // Offboarding
+  exit_date?: string
+  exit_reason?: string
+  exit_notes?: string
 }
 
 // ── Company Owner ──────────────────────────────────────────────────────────

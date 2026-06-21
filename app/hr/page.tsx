@@ -46,6 +46,17 @@ async function loadStaff(): Promise<Person[] | undefined> {
         is_outsourced: p.is_outsourced,
         agency_name: p.agency_name ?? undefined,
         notes: p.notes ?? undefined,
+        job_title: p.job_title ?? undefined,
+        department: p.department ?? undefined,
+        contract_type: p.contract_type ?? undefined,
+        contract_status: p.contract_status ?? undefined,
+        start_date: p.start_date ?? undefined,
+        end_date: p.end_date ?? undefined,
+        probation_end_date: p.probation_end_date ?? undefined,
+        background_check_done: p.background_check_done,
+        exit_date: p.exit_date ?? undefined,
+        exit_reason: p.exit_reason ?? undefined,
+        exit_notes: p.exit_notes ?? undefined,
       }))
   } catch {
     return undefined

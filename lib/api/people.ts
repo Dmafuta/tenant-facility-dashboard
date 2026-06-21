@@ -22,6 +22,19 @@ export interface PersonData {
   agency_contact: string | null
   agency_clearance_ref: string | null
   notes: string | null
+  // Employment
+  job_title: string | null
+  department: string | null
+  contract_type: string | null
+  contract_status: string | null
+  start_date: string | null
+  end_date: string | null
+  probation_end_date: string | null
+  background_check_done: boolean
+  // Offboarding
+  exit_date: string | null
+  exit_reason: string | null
+  exit_notes: string | null
   created_at: string | null
 }
 
@@ -69,6 +82,27 @@ export async function sendEmailVerification(personId: string): Promise<void> {
   return apiFetch(`/people/${personId}/send-email-verification`, { method: 'POST' })
 }
 
+export async function grantPortalAccess(personId: string, roleName: string): Promise<void> {
+  await apiFetch<void>(`/people/${personId}/grant-portal-access`, {
+    method: 'POST',
+    body: JSON.stringify({ roleName }),
+  })
+}
+
+export async function offboardPerson(
+  personId: string,
+  payload: { exitDate?: string; exitReason?: string; exitNotes?: string }
+): Promise<PersonData> {
+  return apiFetch<PersonData>(`/people/${personId}/offboard`, {
+    method: 'POST',
+    body: JSON.stringify({
+      exitDate:   payload.exitDate,
+      exitReason: payload.exitReason,
+      exitNotes:  payload.exitNotes,
+    }),
+  })
+}
+
 /** Map a backend PersonData to the frontend Person shape */
 export function apiPersonToPerson(p: PersonData): Person {
   const typeMap: Record<string, PersonType> = {
@@ -106,5 +140,16 @@ export function apiPersonToPerson(p: PersonData): Person {
     agency_name: p.agency_name ?? undefined,
     agency_contact: p.agency_contact ?? undefined,
     agency_clearance_ref: p.agency_clearance_ref ?? undefined,
+    job_title: p.job_title ?? undefined,
+    department: p.department ?? undefined,
+    contract_type: p.contract_type ?? undefined,
+    contract_status: p.contract_status ?? undefined,
+    start_date: p.start_date ?? undefined,
+    end_date: p.end_date ?? undefined,
+    probation_end_date: p.probation_end_date ?? undefined,
+    background_check_done: p.background_check_done,
+    exit_date: p.exit_date ?? undefined,
+    exit_reason: p.exit_reason ?? undefined,
+    exit_notes: p.exit_notes ?? undefined,
   }
 }
