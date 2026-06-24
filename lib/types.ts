@@ -81,6 +81,7 @@ export interface Person {
   id: string
   type: PersonType
   first_name: string
+  middle_name?: string
   last_name: string
   email: string
   phone: string                 // E.164 — masked in UI (+254 *** *** 789)
@@ -99,6 +100,7 @@ export interface Person {
   agency_clearance_ref?: string
   is_outsourced?: boolean
   // Employment (staff only)
+  staff_number?: string
   job_title?: string
   department?: string
   contract_type?: string

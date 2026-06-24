@@ -1,6 +1,7 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/Card'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Drawer } from '@/components/ui/Drawer'
@@ -972,7 +973,7 @@ function SupplierModal({
           </div>
           <div>
             <label className={LABEL}>Contact Phone</label>
-            <input className={INPUT} value={contactPhone} onChange={e => setCP(e.target.value)} placeholder="Optional" />
+            <PhoneInput value={contactPhone} onChange={setCP} />
           </div>
           <div className="col-span-2">
             <label className={LABEL}>Inflow Meter</label>

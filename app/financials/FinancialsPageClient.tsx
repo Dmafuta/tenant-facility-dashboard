@@ -7,6 +7,7 @@ import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { CanDo } from '@/components/ui/CanDo'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { LEASES } from '@/lib/mock-data'
 import type { ChargeType, ChargeStatus, BillingCycle, BillingRunItem } from '@/lib/types'
 import { cn } from '@/lib/cn'
@@ -395,13 +396,7 @@ function StkPushModal({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-gray-600">Tenant M-Pesa Phone Number</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="07XXXXXXXX"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300"
-              />
+              <PhoneInput value={phone} onChange={setPhone} />
               <p className="text-xs text-gray-400">A prompt for KES {(parseFloat(amount) || outstanding).toLocaleString()} will be sent to this number.</p>
             </div>
             {errorMsg && <p className="text-xs text-red-600 bg-red-50 rounded p-2">{errorMsg}</p>}
@@ -419,6 +414,8 @@ function StkPushModal({
   )
 }
 
+const PAGE_SIZE = 5
+
 function UnmatchedC2bSection({
   transactions, charges, onReconciled,
 }: {
@@ -433,6 +430,7 @@ function UnmatchedC2bSection({
   const [linking, setLinking]   = useState<Record<string, string>>({})   // txId → selected chargeId
   const [saving,  setSaving]    = useState<string | null>(null)           // txId being saved
   const [error,   setError]     = useState<string | null>(null)
+  const [page,    setPage]      = useState(0)
 
   if (unmatched.length === 0) return null
 
@@ -465,7 +463,7 @@ function UnmatchedC2bSection({
         These C2B payments arrived but couldn&apos;t be auto-matched to a unit. Select the correct charge and click Link.
       </p>
       <div className="divide-y divide-orange-100">
-        {unmatched.map(p => (
+        {unmatched.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(p => (
           <div key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white hover:bg-orange-50/30">
             {/* Payment info */}
             <div className="flex-1 min-w-0">
@@ -509,6 +507,17 @@ function UnmatchedC2bSection({
           </div>
         ))}
       </div>
+      {unmatched.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between px-4 py-2 bg-orange-50 border-t border-orange-100 text-xs text-orange-700">
+          <span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, unmatched.length)} of {unmatched.length}</span>
+          <div className="flex gap-1">
+            <button onClick={() => setPage(p => p - 1)} disabled={page === 0}
+              className="px-2 py-1 rounded border border-orange-200 disabled:opacity-40 hover:bg-orange-100">←</button>
+            <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE_SIZE >= unmatched.length}
+              className="px-2 py-1 rounded border border-orange-200 disabled:opacity-40 hover:bg-orange-100">→</button>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="px-4 py-2 text-xs text-red-600 bg-red-50 border-t border-red-100">{error}</div>
       )}
@@ -526,10 +535,16 @@ function PaymentsTabContent({
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [stkTarget, setStkTarget] = useState<ChargeData | null>(null)
   const [showStk, setShowStk] = useState(false)
+  const [ledgerPage, setLedgerPage] = useState(0)
 
   const filtered = useMemo(() => {
     return transactions.filter(p => statusFilter === 'all' || p.status === statusFilter)
   }, [transactions, statusFilter])
+
+  const pagedFiltered = useMemo(() =>
+    filtered.slice(ledgerPage * PAGE_SIZE, (ledgerPage + 1) * PAGE_SIZE),
+    [filtered, ledgerPage]
+  )
 
   const kpis = useMemo(() => {
     const completed     = transactions.filter(p => p.status === 'completed')
@@ -629,7 +644,7 @@ function PaymentsTabContent({
           <h4 className="text-sm font-semibold text-gray-900 flex-1">Transaction Ledger</h4>
           <select
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
+            onChange={e => { setStatusFilter(e.target.value); setLedgerPage(0) }}
             className="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
           >
             <option value="all">All Statuses</option>
@@ -653,8 +668,8 @@ function PaymentsTabContent({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p, i) => (
-                <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i === filtered.length - 1 ? 'border-b-0' : ''}`}>
+              {pagedFiltered.map((p, i) => (
+                <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i === pagedFiltered.length - 1 ? 'border-b-0' : ''}`}>
                   <td className="px-4 py-3">
                     {p.mpesa_receipt ? (
                       <span className="font-mono text-xs font-semibold text-gray-800">{p.mpesa_receipt}</span>
@@ -691,8 +706,19 @@ function PaymentsTabContent({
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-400">
-          {filtered.length} transactions · M-Pesa receipts auto-populated from Daraja callback
+        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-xs text-gray-400">
+          <span>{filtered.length} transactions · M-Pesa receipts auto-populated from Daraja callback</span>
+          {filtered.length > PAGE_SIZE && (
+            <div className="flex items-center gap-2">
+              <span>{ledgerPage * PAGE_SIZE + 1}–{Math.min((ledgerPage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setLedgerPage(p => p - 1)} disabled={ledgerPage === 0}
+                  className="px-2 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">←</button>
+                <button onClick={() => setLedgerPage(p => p + 1)} disabled={(ledgerPage + 1) * PAGE_SIZE >= filtered.length}
+                  className="px-2 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100">→</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

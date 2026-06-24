@@ -1,11 +1,10 @@
 'use client'
 import { useEffect, useState, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api/fetch'
 
 function AcceptInviteForm() {
   const searchParams = useSearchParams()
-  const router       = useRouter()
   const token        = searchParams.get('token') ?? ''
 
   const [info,     setInfo]     = useState<{ email: string; fullName: string } | null>(null)
@@ -32,7 +31,7 @@ function AcceptInviteForm() {
         method: 'POST',
         body: JSON.stringify({ token, password }),
       })
-      router.push('/dashboard')
+      window.location.href = '/dashboard'
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to activate account. Please try again.')
     } finally {

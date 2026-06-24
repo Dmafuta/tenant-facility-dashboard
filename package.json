@@ -10,8 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.6.0",
-    "@supabase/supabase-js": "^2.49.0",
     "autoprefixer": "^10.5.0",
     "clsx": "^2.1.1",
     "docxtemplater": "^3.68.7",

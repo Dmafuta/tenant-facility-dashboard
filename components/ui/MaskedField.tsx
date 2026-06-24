@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/cn'
+import { sendRevealOtp, verifyRevealOtp } from '@/lib/api/otp'
 
 // ── Masking helpers ────────────────────────────────────────────────────────
 
@@ -97,8 +99,6 @@ interface OtpRevealModalProps {
   fieldType: MaskableFieldType
   /** Whose data (name shown in modal) */
   subjectName: string
-  /** Phone to send the OTP to (the requesting admin's own verified phone) */
-  requesterPhone: string
   /** Called when OTP is successfully verified — parent shows actual value */
   onVerified: () => void
 }
@@ -114,28 +114,30 @@ export function OtpRevealModal({
   onClose,
   fieldType,
   subjectName,
-  requesterPhone,
   onVerified,
 }: OtpRevealModalProps) {
-  const [stage, setStage]     = useState<'idle' | 'sending' | 'entry' | 'verifying' | 'success'>('idle')
-  const [code, setCode]       = useState('')
-  const [error, setError]     = useState('')
-  const [countdown, setCountdown] = useState(0)
-  const [resendCd, setResendCd]   = useState(0)
+  const [stage, setStage]             = useState<'sending' | 'entry' | 'verifying' | 'success'>('sending')
+  const [code, setCode]               = useState('')
+  const [error, setError]             = useState('')
+  const [maskedPhone, setMaskedPhone] = useState('')
+  const [countdown, setCountdown]     = useState(0)
+  const [resendCd, setResendCd]       = useState(0)
+  const [mounted, setMounted]         = useState(false)
 
-  // Reset when modal opens
-  useEffect(() => {
-    if (open) {
-      setStage('idle')
-      setCode('')
-      setError('')
-      setCountdown(0)
-    }
-  }, [open])
+  useEffect(() => { setMounted(true) }, [])
 
-  // Auto-send OTP when modal opens
+  // On open: reset all state and fire the send immediately (single effect avoids stale-stage race)
   useEffect(() => {
-    if (open && stage === 'idle') handleSend()
+    if (!open) return
+    setCode('')
+    setError('')
+    setMaskedPhone('')
+    setCountdown(0)
+    setResendCd(0)
+    setStage('sending')
+    sendRevealOtp(fieldType)
+      .then(result => { setMaskedPhone(result.masked_phone); setStage('entry'); setResendCd(60) })
+      .catch(e => { setError(e instanceof Error ? e.message : 'Failed to send code. Please try again.'); setStage('entry') })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -161,40 +163,40 @@ export function OtpRevealModal({
     }
   }, [resendCd])
 
-  function handleSend() {
+  async function handleResend() {
     setStage('sending')
     setError('')
-    // In production: POST /api/otp/send { phone: requesterPhone, purpose: 'reveal_*' }
-    setTimeout(() => {
+    setCode('')
+    try {
+      const result = await sendRevealOtp(fieldType)
+      setMaskedPhone(result.masked_phone)
       setStage('entry')
       setResendCd(60)
-    }, 900)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send code. Please try again.')
+      setStage('entry')
+    }
   }
 
-  function handleVerify() {
+  async function handleVerify() {
     if (code.length !== 6) { setError('Enter the 6-digit code'); return }
     setStage('verifying')
     setError('')
-    // In production: POST /api/otp/verify { code, purpose }
-    // Demo: accept any 6-digit code
-    setTimeout(() => {
-      if (code === '000000') {
-        setError('Invalid code. Try again.')
-        setStage('entry')
-        setCode('')
-      } else {
-        setStage('success')
-        onVerified()
-      }
-    }, 800)
+    try {
+      await verifyRevealOtp(fieldType, code)
+      setStage('success')
+      onVerified()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Verification failed. Please try again.')
+      setStage('entry')
+      setCode('')
+    }
   }
 
-  if (!open) return null
+  if (!open || !mounted) return null
 
-  const maskedRequesterPhone = maskPhone(requesterPhone)
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-sm p-6">
 
@@ -215,7 +217,7 @@ export function OtpRevealModal({
         {stage === 'sending' && (
           <div className="py-6 text-center space-y-2">
             <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-sm text-text-muted">Sending OTP to {maskedRequesterPhone}…</p>
+            <p className="text-sm text-text-muted">Sending OTP to {maskedPhone}…</p>
           </div>
         )}
 
@@ -223,7 +225,7 @@ export function OtpRevealModal({
         {stage === 'entry' && (
           <div className="space-y-4">
             <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300">
-              🔒 A 6-digit code was sent to <strong>{maskedRequesterPhone}</strong>.
+              🔒 A 6-digit code was sent to <strong>{maskedPhone}</strong>.
               This reveal will be logged.
             </div>
 
@@ -255,7 +257,7 @@ export function OtpRevealModal({
 
             <div className="text-center">
               <button
-                onClick={() => { setCode(''); handleSend() }}
+                onClick={handleResend}
                 disabled={resendCd > 0}
                 className="text-xs text-text-muted hover:text-text disabled:opacity-40"
               >
@@ -291,6 +293,7 @@ export function OtpRevealModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

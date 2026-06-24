@@ -21,6 +21,7 @@ export function PlateScanner({ onResult, onClose, vehicles }: {
   const videoRef  = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const guideRef  = useRef<HTMLDivElement>(null)
 
   const [ready,      setReady]      = useState(false)
   const [scanning,   setScanning]   = useState(false)
@@ -38,8 +39,12 @@ export function PlateScanner({ onResult, onClose, vehicles }: {
       .getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
       .then(stream => {
         streamRef.current = stream
-        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play() }
-        setReady(true)
+        const video = videoRef.current
+        if (video) {
+          video.srcObject = stream
+          video.onloadedmetadata = () => setReady(true)
+          video.play()
+        }
       })
       .catch(() => setCamError('Camera access denied. Please allow camera permissions and try again.'))
     return () => { streamRef.current?.getTracks().forEach(t => t.stop()) }
@@ -61,10 +66,37 @@ export function PlateScanner({ onResult, onClose, vehicles }: {
 
     const video  = videoRef.current
     const canvas = canvasRef.current
+
+    // Draw full frame onto the hidden canvas at native resolution
     canvas.width  = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d')!.drawImage(video, 0, 0)
-    const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1]
+
+    // Crop to the guide frame region so OCR only sees the plate area
+    let base64: string
+    const guide = guideRef.current
+    if (guide && video.videoWidth > 0) {
+      const vRect = video.getBoundingClientRect()
+      const gRect = guide.getBoundingClientRect()
+
+      // video uses object-cover: the rendered video fills vRect while the
+      // native video stream may have a different aspect ratio.
+      const scaleX = video.videoWidth  / vRect.width
+      const scaleY = video.videoHeight / vRect.height
+
+      const sx = Math.round((gRect.left - vRect.left) * scaleX)
+      const sy = Math.round((gRect.top  - vRect.top)  * scaleY)
+      const sw = Math.round(gRect.width  * scaleX)
+      const sh = Math.round(gRect.height * scaleY)
+
+      const crop = document.createElement('canvas')
+      crop.width  = sw
+      crop.height = sh
+      crop.getContext('2d')!.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+      base64 = crop.toDataURL('image/jpeg', 0.92).split(',')[1]
+    } else {
+      base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1]
+    }
 
     try {
       const res  = await fetch('/api/ocr/plate', {
@@ -137,6 +169,7 @@ export function PlateScanner({ onResult, onClose, vehicles }: {
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 {/* Corner markers */}
                 <div
+                  ref={guideRef}
                   className="rounded-lg border-2 border-white relative"
                   style={{ width: frame.w, height: frame.h, boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)' }}
                 >

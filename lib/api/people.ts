@@ -23,6 +23,7 @@ export interface PersonData {
   agency_clearance_ref: string | null
   notes: string | null
   // Employment
+  staff_number: string | null
   job_title: string | null
   department: string | null
   contract_type: string | null
@@ -125,6 +126,7 @@ export function apiPersonToPerson(p: PersonData): Person {
     id: p.id,
     type: (typeMap[p.person_type] ?? 'tenant') as PersonType,
     first_name: p.first_name,
+    middle_name: p.middle_name ?? undefined,
     last_name: p.last_name,
     email: p.email ?? '',
     phone: p.phone ?? '',
@@ -140,6 +142,7 @@ export function apiPersonToPerson(p: PersonData): Person {
     agency_name: p.agency_name ?? undefined,
     agency_contact: p.agency_contact ?? undefined,
     agency_clearance_ref: p.agency_clearance_ref ?? undefined,
+    staff_number: p.staff_number ?? undefined,
     job_title: p.job_title ?? undefined,
     department: p.department ?? undefined,
     contract_type: p.contract_type ?? undefined,

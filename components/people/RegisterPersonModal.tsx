@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/Button'
 import type { KycDocumentType, Person } from '@/lib/types'
 import { createPerson, apiPersonToPerson } from '@/lib/api/people'
 import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
+import { listDepartments, type DepartmentData } from '@/lib/api/departments'
 import { cn } from '@/lib/cn'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 
 // ── Unit loader hook ───────────────────────────────────────────────────────
 function useUnits(open: boolean) {
@@ -14,6 +16,15 @@ function useUnits(open: boolean) {
     if (open) getUnitsFromApi().then(setUnits).catch(() => {})
   }, [open])
   return units
+}
+
+// ── Department loader hook ─────────────────────────────────────────────────
+function useDepartments(open: boolean) {
+  const [departments, setDepartments] = useState<DepartmentData[]>([])
+  useEffect(() => {
+    if (open) listDepartments().then(setDepartments).catch(() => {})
+  }, [open])
+  return departments
 }
 
 // ── Shared primitives ──────────────────────────────────────────────────────
@@ -397,7 +408,7 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
             <SectionDivider title="Contact Details" />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Phone Number" required>
-                <input className={INPUT} value={form.phone} onChange={set('phone')} placeholder="+254 712 345 678" />
+                <PhoneInput value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} />
               </Field>
               <Field label="Email Address" required>
                 <input className={INPUT} type="email" value={form.email} onChange={set('email')} placeholder="james@email.com" />
@@ -431,7 +442,7 @@ export function RegisterTenantModal({ open, onClose, onRegister }: {
                 <input className={INPUT} value={form.guarantor_name} onChange={set('guarantor_name')} />
               </Field>
               <Field label="Guarantor Phone" optional>
-                <input className={INPUT} value={form.guarantor_phone} onChange={set('guarantor_phone')} placeholder="+254…" />
+                <PhoneInput value={form.guarantor_phone} onChange={v => setForm(f => ({ ...f, guarantor_phone: v }))} />
               </Field>
             </div>
 
@@ -596,7 +607,7 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
                 <input className={INPUT} value={form.first_name} onChange={set('first_name')} placeholder="e.g. Grace" />
               </Field>
               <Field label="Middle Name" optional>
-                <input className={INPUT} value={form.middle_name} onChange={set('middle_name')} />
+                <input className={INPUT} value={form.middle_name} onChange={set('middle_name')} placeholder="e.g. Wanjiru" />
               </Field>
               <Field label="Last Name" required>
                 <input className={INPUT} value={form.last_name} onChange={set('last_name')} placeholder="e.g. Njeri" />
@@ -609,7 +620,7 @@ export function RegisterOwnerModal({ open, onClose, onRegister }: {
             <SectionDivider title="Contact Details" />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Phone Number" required>
-                <input className={INPUT} value={form.phone} onChange={set('phone')} placeholder="+254 712 345 678" />
+                <PhoneInput value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} />
               </Field>
               <Field label="Email Address" optional>
                 <input className={INPUT} type="email" value={form.email} onChange={set('email')} placeholder="grace@email.com" />
@@ -847,13 +858,13 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
             <SectionDivider title="Representative Details" />
             <div className="grid grid-cols-3 gap-4">
               <Field label="First Name" required>
-                <input className={INPUT} value={rep.first_name} onChange={setR('first_name')} />
+                <input className={INPUT} value={rep.first_name} onChange={setR('first_name')} placeholder="e.g. James" />
               </Field>
               <Field label="Middle Name" optional>
-                <input className={INPUT} value={rep.middle_name} onChange={setR('middle_name')} />
+                <input className={INPUT} value={rep.middle_name} onChange={setR('middle_name')} placeholder="e.g. Kamau" />
               </Field>
               <Field label="Last Name" required>
-                <input className={INPUT} value={rep.last_name} onChange={setR('last_name')} />
+                <input className={INPUT} value={rep.last_name} onChange={setR('last_name')} placeholder="e.g. Mwangi" />
               </Field>
             </div>
             <Field label="National ID / Passport" required>
@@ -861,7 +872,7 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Phone Number" required>
-                <input className={INPUT} value={rep.phone} onChange={setR('phone')} placeholder="+254 712 345 678" />
+                <PhoneInput value={rep.phone} onChange={v => setRep(r => ({ ...r, phone: v }))} />
               </Field>
               <Field label="Email Address" optional>
                 <input className={INPUT} type="email" value={rep.email} onChange={setR('email')} />
@@ -948,13 +959,10 @@ export function RegisterCorporateOwnerModal({ open, onClose, onRegister }: {
 // 4. Register Staff
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DEPT_LABELS: Record<string, string> = {
-  'DEP-01': 'Security', 'DEP-02': 'Maintenance', 'DEP-03': 'Cleaning', 'DEP-04': 'Admin & Reception',
-}
-
 export function RegisterStaffModal({ open, onClose, onRegister }: {
   open: boolean; onClose: () => void; onRegister?: (p: Person) => void
 }) {
+  const departments = useDepartments(open)
   const [step, setStep]               = useState(0)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [docs, setDocs]               = useState<Record<string, File>>({})
@@ -966,7 +974,7 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
     is_outsourced: 'false',
     agency_name: '', agency_contact: '', agency_clearance_ref: '',
     access_days: 'weekdays', access_hours_start: '07:00', access_hours_end: '18:00',
-    department_id: '', job_title: '', reporting_to: '',
+    department_id: '', job_title: '', staff_number: '', reporting_to: '',
     contract_type: 'permanent', start_date: '', end_date: '', probation_end_date: '',
   })
   const set = (k: keyof typeof form) =>
@@ -996,7 +1004,7 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
       first_name:'', middle_name:'', last_name:'', national_id:'', phone:'', email:'',
       is_outsourced:'false', agency_name:'', agency_contact:'', agency_clearance_ref:'',
       access_days:'weekdays', access_hours_start:'07:00', access_hours_end:'18:00',
-      department_id:'', job_title:'', reporting_to:'', contract_type:'permanent',
+      department_id:'', job_title:'', staff_number:'', reporting_to:'', contract_type:'permanent',
       start_date:'', end_date:'', probation_end_date:'',
     })
   }
@@ -1024,7 +1032,14 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
         agency_name:           isOutsourced ? form.agency_name           : null,
         agency_contact:        isOutsourced ? form.agency_contact        : null,
         agency_clearance_ref:  isOutsourced ? form.agency_clearance_ref  : null,
-        notes: form.job_title ? `Job title: ${form.job_title}` : null,
+        staff_number:  form.staff_number  || null,
+        job_title:     form.job_title     || null,
+        department:    form.department_id || null,
+        contract_type: form.contract_type || null,
+        start_date:    form.start_date    || null,
+        end_date:      form.end_date      || null,
+        probation_end_date: form.probation_end_date || null,
+        notes: null,
       })
       onRegister?.(apiPersonToPerson(data))
       onClose(); reset()
@@ -1056,7 +1071,7 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
                 <input className={INPUT} value={form.first_name} onChange={set('first_name')} placeholder="e.g. John" />
               </Field>
               <Field label="Middle Name" optional>
-                <input className={INPUT} value={form.middle_name} onChange={set('middle_name')} />
+                <input className={INPUT} value={form.middle_name} onChange={set('middle_name')} placeholder="e.g. Otieno" />
               </Field>
               <Field label="Last Name" required>
                 <input className={INPUT} value={form.last_name} onChange={set('last_name')} placeholder="e.g. Omondi" />
@@ -1070,11 +1085,16 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
                 <input className={INPUT} value={form.job_title} onChange={set('job_title')} placeholder="e.g. Security Guard" />
               </Field>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Staff Number" optional>
+                <input className={INPUT} value={form.staff_number} onChange={set('staff_number')} placeholder="e.g. GWG-001" />
+              </Field>
+            </div>
 
             <SectionDivider title="Contact Details" />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Phone Number" required>
-                <input className={INPUT} value={form.phone} onChange={set('phone')} placeholder="+254 712 345 678" />
+                <PhoneInput value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} />
               </Field>
               {!isOutsourced && (
                 <Field label="Email Address" optional>
@@ -1178,10 +1198,12 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
               <Field label="Department" required>
                 <select className={INPUT} value={form.department_id} onChange={set('department_id')}>
                   <option value="">Select department…</option>
-                  <option value="DEP-01">Security</option>
-                  <option value="DEP-02">Maintenance</option>
-                  <option value="DEP-03">Cleaning</option>
-                  <option value="DEP-04">Admin &amp; Reception</option>
+                  {departments.length === 0 && (
+                    <option disabled>No departments yet — add one in HR &gt; Departments</option>
+                  )}
+                  {departments.map(d => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="Contract Type">
@@ -1229,7 +1251,7 @@ export function RegisterStaffModal({ open, onClose, onRegister }: {
               <ConfirmRow label="National ID" value={form.national_id} />
               <ConfirmRow label="Phone"       value={form.phone + (!isOutsourced ? (phoneVerified ? ' ✅ Verified' : ' ⚠ Unverified') : '')} />
               {!isOutsourced && <>
-                <ConfirmRow label="Department"  value={(DEPT_LABELS[form.department_id] ?? form.department_id) || '—'} />
+                <ConfirmRow label="Department"  value={form.department_id || '—'} />
                 <ConfirmRow label="Contract"    value={form.contract_type} />
                 <ConfirmRow label="Start Date"  value={form.start_date || '—'} />
               </>}

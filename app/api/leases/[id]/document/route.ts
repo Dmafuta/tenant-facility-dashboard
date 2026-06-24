@@ -24,6 +24,16 @@ function fmtDate(d: string | null | undefined) {
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+/** Escape user-controlled strings before placing them in an HTML context. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -90,6 +100,13 @@ export async function GET(
     generated_date:     fmtDate(new Date().toISOString()),
   }
 
+  // ── HTML-safe copy of vars for all HTML interpolation ─────────────────────
+  // vars (raw) is passed to docxtemplater which handles XML encoding itself.
+  // safe is used everywhere we interpolate into HTML strings directly.
+  const safe = Object.fromEntries(
+    Object.entries(vars).map(([k, v]) => [k, escapeHtml(v)])
+  ) as Record<string, string>
+
   // ── Fill Word template if it exists, otherwise use built-in HTML ───────────
   let html: string
 
@@ -112,7 +129,7 @@ export async function GET(
       }
 
       const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true })
-      doc.render(vars)
+      doc.render(vars) // raw vars — docxtemplater XML-encodes values itself
       const filled = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' })
       const result = await mammoth.convertToHtml({ buffer: filled })
       html = result.value
@@ -120,11 +137,11 @@ export async function GET(
       const e = err as { properties?: { errors?: unknown[] } }
       console.error('[lease-doc] template error — falling back to built-in HTML:',
         JSON.stringify(e?.properties?.errors ?? err, null, 2))
-      html = buildFallbackHtml(vars)
+      html = buildFallbackHtml(safe)
     }
   } else {
     // Built-in fallback template — replace once real template is uploaded
-    html = buildFallbackHtml(vars)
+    html = buildFallbackHtml(safe)
   }
 
   // ── Wrap in print-ready page ───────────────────────────────────────────────
@@ -133,7 +150,7 @@ export async function GET(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tenancy Agreement — ${vars.unit_label} — ${vars.tenant_name}</title>
+  <title>Tenancy Agreement — ${safe.unit_label} — ${safe.tenant_name}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; color: #000; background: #f0f0f0; }

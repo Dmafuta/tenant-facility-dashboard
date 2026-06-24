@@ -9,6 +9,7 @@ import {
   setDefaultMpesaAccount, testMpesaAccount, registerC2bUrls,
   type IntegrationSettings, type MpesaAccount,
 } from '@/lib/api/settings'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 
 // ── Shared UI atoms ───────────────────────────────────────────────────────────
 
@@ -266,13 +267,7 @@ function AfricasTalkingCard({ initial, onSave }: { initial: IntegrationSettings[
       <div className="mt-5 border-t border-gray-100 pt-4 space-y-2">
         <p className="text-xs font-medium text-gray-500 mb-2">Send a test SMS</p>
         <div className="flex gap-2">
-          <input
-            type="tel"
-            value={testPhone}
-            onChange={e => setTestPhone(e.target.value)}
-            placeholder="+254712345678"
-            className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-          />
+          <PhoneInput value={testPhone} onChange={setTestPhone} className="flex-1" />
           <button
             type="button"
             onClick={handleTest}
@@ -687,9 +682,7 @@ function MpesaAccountsList() {
         <div className="border-t border-gray-100 pt-3 space-y-2">
           <p className="text-xs font-medium text-gray-500">Test STK Push per account (sends KES 1 prompt)</p>
           <div className="flex gap-2">
-            <input type="tel" value={testPhone} onChange={e => setTestPhone(e.target.value)}
-              placeholder="2547XXXXXXXX (no +)"
-              className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            <PhoneInput value={testPhone} onChange={setTestPhone} className="flex-1" />
           </div>
           <div className="flex flex-wrap gap-2">
             {accounts.filter(a => a.active).map(account => (

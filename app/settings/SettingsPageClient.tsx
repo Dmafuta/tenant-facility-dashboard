@@ -9,6 +9,7 @@ import { IntegrationsPageClient } from '@/app/integrations/IntegrationsPageClien
 import { ENTRY_POINTS } from '@/lib/mock-data'
 import type { EntryPoint, EntryPointType, EntryPointDirection } from '@/lib/types'
 import { cn } from '@/lib/cn'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import {
   getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
@@ -52,9 +53,8 @@ function GeneralSettings() {
     <div className="p-6 max-w-xl space-y-5">
       <h3 className="text-sm font-semibold text-text">Property Information</h3>
       {([
-        { label: 'Property Name',     key: 'property_name',    type: 'text' },
-        { label: 'Management Email',  key: 'management_email', type: 'email' },
-        { label: 'Contact Phone',     key: 'contact_phone',    type: 'text' },
+        { label: 'Property Name',    key: 'property_name',    type: 'text' },
+        { label: 'Management Email', key: 'management_email', type: 'email' },
       ] as const).map(f => (
         <div key={f.key}>
           <label className="block text-xs font-medium text-text-muted mb-1">{f.label}</label>
@@ -62,6 +62,10 @@ function GeneralSettings() {
             className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
       ))}
+      <div>
+        <label className="block text-xs font-medium text-text-muted mb-1">Contact Phone</label>
+        <PhoneInput value={form.contact_phone} onChange={v => setForm(p => ({ ...p, contact_phone: v }))} />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-text-muted mb-1">Currency</label>
@@ -270,8 +274,18 @@ const ALL_ACTIONS = [
   'staff.onboard','staff.offboard','kyc.verify','settings.modify',
 ]
 const ALL_RESOURCES = [
-  'unit','person','lease','charge','work_order',
-  'booking','access_event','access_credential','document','system_config',
+  // Core
+  'unit','person','lease','charge','work_order','document','system_config',
+  // Financial
+  'payment','mpesa','report',
+  // Utilities
+  'meter','disconnection',
+  // Access & Security
+  'booking','access_event','access_credential','visitor','vehicle',
+  // Operations
+  'inspection','consumable','notice','communication','issue',
+  // HR
+  'staff','leave','roster','training','payroll','onboarding','disciplinary','staff_document',
 ]
 
 // ── Roles & Permissions ───────────────────────────────────────────────────────
@@ -361,8 +375,8 @@ function RolesSettings() {
 
       {/* Role modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+          <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col my-auto">
             <div className="flex items-center justify-between p-5 border-b border-surface-border dark:border-dark-border flex-shrink-0">
               <h2 className="text-sm font-semibold text-text">{editing ? 'Edit Role' : 'New Role'}</h2>
               <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-text">✕</button>
@@ -439,6 +453,8 @@ function RolesSettings() {
 }
 
 // ── Users & Permissions ───────────────────────────────────────────────────────
+type UserSortKey = 'fullName' | 'email' | 'role' | 'status'
+
 function UsersSettings() {
   const [users, setUsers]         = useState<SystemUser[]>([])
   const [roles, setRoles]         = useState<AppRole[]>([])
@@ -448,10 +464,16 @@ function UsersSettings() {
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
 
+  // Search + sort
+  const [search, setSearch]       = useState('')
+  const [sortKey, setSortKey]     = useState<UserSortKey>('fullName')
+  const [sortAsc, setSortAsc]     = useState(true)
+
   // Invite form
-  const [invEmail, setInvEmail]   = useState('')
-  const [invName,  setInvName]    = useState('')
-  const [invRole,  setInvRole]    = useState('')
+  const [invEmail,      setInvEmail]      = useState('')
+  const [invName,       setInvName]       = useState('')
+  const [invRole,       setInvRole]       = useState('')
+  const [invPersonType, setInvPersonType] = useState('permanent_staff')
 
   // Edit form
   const [editRole,   setEditRole]   = useState('')
@@ -467,9 +489,9 @@ function UsersSettings() {
     if (!invEmail.trim() || !invRole) { setError('Email and role are required.'); return }
     setSaving(true); setError('')
     try {
-      const user = await inviteUser({ email: invEmail.trim(), full_name: invName.trim(), role_id: invRole })
+      const user = await inviteUser({ email: invEmail.trim(), full_name: invName.trim(), role_id: invRole, person_type: invPersonType })
       setUsers(prev => [...prev, user])
-      setShowInvite(false); setInvEmail(''); setInvName(''); setInvRole('')
+      setShowInvite(false); setInvEmail(''); setInvName(''); setInvRole(''); setInvPersonType('permanent_staff')
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to invite user.') }
     finally { setSaving(false) }
   }
@@ -503,12 +525,41 @@ function UsersSettings() {
     } catch (e) { alert(e instanceof Error ? e.message : 'Failed to resend invitation.') }
   }
 
+  function toggleSort(key: UserSortKey) {
+    if (sortKey === key) setSortAsc(a => !a)
+    else { setSortKey(key); setSortAsc(true) }
+  }
+
+  const filteredUsers = users
+    .filter(u => {
+      const q = search.toLowerCase()
+      return !q || u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q)
+    })
+    .sort((a, b) => {
+      const va = (a[sortKey] ?? '').toLowerCase()
+      const vb = (b[sortKey] ?? '').toLowerCase()
+      return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va)
+    })
+
+  const SortIcon = ({ col }: { col: UserSortKey }) => (
+    <span className="ml-1 text-[10px] text-text-muted">
+      {sortKey === col ? (sortAsc ? '▲' : '▼') : '⇅'}
+    </span>
+  )
+
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text">Portal Users</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-text shrink-0">Portal Users</h3>
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search users…"
+          className="flex-1 max-w-xs px-3 py-1.5 text-xs rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
+        />
         <button onClick={() => { setShowInvite(true); setError('') }}
-          className="px-3 py-1.5 text-xs font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+          className="px-3 py-1.5 text-xs font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700 shrink-0">
           + Invite User
         </button>
       </div>
@@ -518,13 +569,28 @@ function UsersSettings() {
           <table className="w-full text-sm">
             <thead className="bg-surface-hover dark:bg-dark-hover">
               <tr>
-                {['Name','Email','Role','Linked Person','Status','Invite',''].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted">{h}</th>
-                ))}
+                <th onClick={() => toggleSort('fullName')} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted cursor-pointer hover:text-text select-none">
+                  Name<SortIcon col="fullName" />
+                </th>
+                <th onClick={() => toggleSort('email')} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted cursor-pointer hover:text-text select-none">
+                  Email<SortIcon col="email" />
+                </th>
+                <th onClick={() => toggleSort('role')} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted cursor-pointer hover:text-text select-none">
+                  Role<SortIcon col="role" />
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-text-muted">Linked Person</th>
+                <th onClick={() => toggleSort('status')} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted cursor-pointer hover:text-text select-none">
+                  Status<SortIcon col="status" />
+                </th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-text-muted">Invite</th>
+                <th className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
-              {users.map(u => (
+              {filteredUsers.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-6 text-sm text-text-muted text-center">No users match your search.</td></tr>
+              )}
+              {filteredUsers.map(u => (
                 <tr key={u.id} className="hover:bg-surface-hover dark:hover:bg-dark-hover">
                   <td className="px-4 py-3 text-text font-medium">{u.fullName}</td>
                   <td className="px-4 py-3 text-text-muted">{u.email}</td>
@@ -556,6 +622,14 @@ function UsersSettings() {
                       {u.status === 'active' && (
                         <button onClick={() => handleDeactivate(u)} className="text-xs text-danger hover:underline">Deactivate</button>
                       )}
+                      {u.status !== 'active' && (
+                        <button onClick={async () => {
+                          try {
+                            const updated = await updateSystemUser(u.id, { status: 'active' })
+                            setUsers(prev => prev.map(x => x.id === updated.id ? updated : x))
+                          } catch (e) { alert(e instanceof Error ? e.message : 'Failed to reactivate.') }
+                        }} className="text-xs text-success hover:underline">Reactivate</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -567,14 +641,14 @@ function UsersSettings() {
 
       {/* Invite modal */}
       {showInvite && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+          <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 my-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-text">Invite Portal User</h2>
               <button onClick={() => setShowInvite(false)} className="text-text-muted hover:text-text">✕</button>
             </div>
             <p className="text-xs text-text-muted">
-              A staff record will be created automatically. HR can add full details later.
+              An invite link will be sent by email. A people record is created automatically and can be enriched later in HR &amp; Staff.
             </p>
             <div className="space-y-3">
               <div>
@@ -597,6 +671,15 @@ function UsersSettings() {
                   {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Person Type</label>
+                <select value={invPersonType} onChange={e => setInvPersonType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+                  <option value="permanent_staff">Permanent Staff</option>
+                  <option value="casual_staff">Casual Staff</option>
+                  <option value="outsourced">Outsourced / Agency</option>
+                </select>
+              </div>
             </div>
             {error && <p className="text-xs text-danger">{error}</p>}
             <div className="flex gap-2 pt-1">
@@ -615,8 +698,8 @@ function UsersSettings() {
 
       {/* Edit user modal */}
       {editUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+          <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 my-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-text">Edit User — {editUser.fullName}</h2>
               <button onClick={() => setEditUser(null)} className="text-text-muted hover:text-text">✕</button>

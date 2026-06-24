@@ -67,7 +67,7 @@ export function listSystemUsers(): Promise<SystemUser[]> {
   return apiFetch('/settings/users')
 }
 
-export function inviteUser(payload: { email: string; full_name: string; role_id: string }): Promise<SystemUser> {
+export function inviteUser(payload: { email: string; full_name: string; role_id: string; person_type?: string }): Promise<SystemUser> {
   return apiFetch('/settings/users', { method: 'POST', body: JSON.stringify(payload) })
 }
 

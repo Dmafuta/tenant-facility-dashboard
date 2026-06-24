@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { MaskedField, OtpRevealModal } from '@/components/ui/MaskedField'
 import type { MaskableFieldType } from '@/components/ui/MaskedField'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import {
   RegisterTenantModal,
   RegisterOwnerModal,
@@ -42,6 +43,7 @@ import type {
 import { cn } from '@/lib/cn'
 import { getCrbStatus, requestCrbConsent, runCrbCheck, type CrbStatus } from '@/lib/api/crb'
 import { getKycStatus, initiateKyc, scanKycDocument, type KycStatus as KycApiStatus } from '@/lib/api/kyc'
+import { listSystemUsers, listRoles, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite, type SystemUser, type AppRole } from '@/lib/api/settings'
 
 // ── KYC status badge ───────────────────────────────────────────────────────
 
@@ -277,7 +279,7 @@ function HouseholdMemberModal({ personId, item, onClose, onSaved }: {
 
         <FormSection title="Contact">
           <FormRow>
-            <FormField label="Phone"><input className={INPUT_CLS} value={form.phone} onChange={f('phone')} placeholder="+254 7XX XXX XXX" /></FormField>
+            <FormField label="Phone"><PhoneInput value={form.phone} onChange={v => setForm(fm => ({ ...fm, phone: v }))} /></FormField>
             <FormField label="National ID"><input className={INPUT_CLS} value={form.national_id} onChange={f('national_id')} /></FormField>
           </FormRow>
           <FormField label="Email"><input type="email" className={INPUT_CLS} value={form.email} onChange={f('email')} placeholder="jane@example.com" /></FormField>
@@ -721,8 +723,8 @@ function EmergencyContactModal({ personId, item, onClose, onSaved }: {
             <FormField label="Relationship"><input className={INPUT_CLS} value={form.relationship} onChange={f('relationship')} placeholder="Mother, Brother, Doctor…" /></FormField>
           </FormRow>
           <FormRow>
-            <FormField label="Primary Phone" required><input className={INPUT_CLS} value={form.phone_primary} onChange={f('phone_primary')} placeholder="+254 7XX XXX XXX" /></FormField>
-            <FormField label="Secondary Phone"><input className={INPUT_CLS} value={form.phone_secondary} onChange={f('phone_secondary')} placeholder="+254 7XX XXX XXX" /></FormField>
+            <FormField label="Primary Phone" required><PhoneInput value={form.phone_primary} onChange={v => setForm(fm => ({ ...fm, phone_primary: v }))} /></FormField>
+            <FormField label="Secondary Phone"><PhoneInput value={form.phone_secondary} onChange={v => setForm(fm => ({ ...fm, phone_secondary: v }))} /></FormField>
           </FormRow>
           <FormRow>
             <FormField label="Email"><input type="email" className={INPUT_CLS} value={form.email} onChange={f('email')} placeholder="john@example.com" /></FormField>
@@ -878,7 +880,7 @@ function PersonalStaffModal({ personId, item, onClose, onSaved }: {
           </FormRow>
           <FormRow>
             <FormField label="National ID"><input className={INPUT_CLS} value={form.national_id} onChange={f('national_id')} /></FormField>
-            <FormField label="Phone"><input className={INPUT_CLS} value={form.phone} onChange={f('phone')} placeholder="+254 7XX XXX XXX" /></FormField>
+            <FormField label="Phone"><PhoneInput value={form.phone} onChange={v => setForm(fm => ({ ...fm, phone: v }))} /></FormField>
           </FormRow>
         </FormSection>
 
@@ -1455,6 +1457,7 @@ function EditPersonModal({ person, onClose, onSaved }: {
 }) {
   const [form, setForm] = useState({
     first_name:  person.first_name,
+    middle_name: person.middle_name ?? '',
     last_name:   person.last_name,
     email:       person.email ?? '',
     phone:       person.phone ?? '',
@@ -1477,6 +1480,7 @@ function EditPersonModal({ person, onClose, onSaved }: {
     try {
       const payload: Record<string, unknown> = {
         first_name:  form.first_name.trim(),
+        middle_name: form.middle_name.trim() || null,
         last_name:   form.last_name.trim(),
         email:       form.email || null,
         national_id: form.national_id || null,
@@ -1505,14 +1509,17 @@ function EditPersonModal({ person, onClose, onSaved }: {
     >
       <div className="space-y-5">
         <FormSection title="Name">
-          <FormRow>
+          <div className="grid grid-cols-3 gap-3">
             <FormField label="First Name" required>
               <input value={form.first_name} onChange={field('first_name')} className={INPUT_CLS} placeholder="First name" />
+            </FormField>
+            <FormField label="Middle Name">
+              <input value={form.middle_name} onChange={field('middle_name')} className={INPUT_CLS} placeholder="Optional" />
             </FormField>
             <FormField label="Last Name" required>
               <input value={form.last_name} onChange={field('last_name')} className={INPUT_CLS} placeholder="Last name" />
             </FormField>
-          </FormRow>
+          </div>
         </FormSection>
 
         <FormSection title="Contact">
@@ -1520,15 +1527,14 @@ function EditPersonModal({ person, onClose, onSaved }: {
             <input type="email" value={form.email} onChange={field('email')} className={INPUT_CLS} placeholder="name@example.com" />
           </FormField>
           <FormField label={person.phone_verified_at ? 'Phone (Verified — locked)' : 'Phone'}>
-            <input
-              type="tel"
+            <PhoneInput
               value={form.phone}
-              onChange={field('phone')}
-              readOnly={!!person.phone_verified_at}
-              className={INPUT_CLS + (person.phone_verified_at ? ' opacity-60 cursor-not-allowed bg-surface-muted dark:bg-dark-hover' : '')}
-              placeholder="+254 700 000 000"
-              title={person.phone_verified_at ? 'Phone number is verified and cannot be changed here' : undefined}
+              onChange={v => setForm(f => ({ ...f, phone: v }))}
+              disabled={!!person.phone_verified_at}
             />
+            {person.phone_verified_at && (
+              <p className="text-[11px] text-text-muted mt-1">Phone number is verified and cannot be changed here.</p>
+            )}
           </FormField>
           <FormField label="National ID">
             <input value={form.national_id} onChange={field('national_id')} className={INPUT_CLS} />
@@ -1613,6 +1619,186 @@ function EmailVerifyButton({ personId, personEmail, onVerified }: {
   )
 }
 
+// ── ManageAccessModal ────────────────────────────────────────────────────
+
+function ManageAccessModal({ person, onClose }: { person: Person; onClose: () => void }) {
+  const [loading,    setLoading]    = useState(true)
+  const [portalUser, setPortalUser] = useState<SystemUser | null>(null)
+  const [roles,      setRoles]      = useState<AppRole[]>([])
+  const [working,    setWorking]    = useState<string | null>(null)
+  const [error,      setError]      = useState<string | null>(null)
+  const [roleId,     setRoleId]     = useState('')
+  const [showInvite, setShowInvite] = useState(false)
+
+  useEffect(() => {
+    Promise.all([listSystemUsers(), listRoles()])
+      .then(([users, r]) => {
+        setPortalUser(users.find(u => u.person_id === person.id) ?? null)
+        setRoles(r)
+      })
+      .catch(() => setError('Failed to load access data.'))
+      .finally(() => setLoading(false))
+  }, [person.id])
+
+  async function handleInvite() {
+    if (!roleId) return
+    setWorking('invite'); setError(null)
+    try {
+      const user = await inviteUser({ email: person.email, full_name: `${person.first_name} ${person.last_name}`, role_id: roleId })
+      setPortalUser(user); setShowInvite(false)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to send invite.') }
+    finally { setWorking(null) }
+  }
+
+  async function handleResend() {
+    if (!portalUser) return
+    setWorking('resend'); setError(null)
+    try { await resendInvite(portalUser.id) }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to resend invite.') }
+    finally { setWorking(null) }
+  }
+
+  async function handleToggleSuspend() {
+    if (!portalUser) return
+    const newStatus = portalUser.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED'
+    setWorking('suspend'); setError(null)
+    try {
+      const updated = await updateSystemUser(portalUser.id, { status: newStatus })
+      setPortalUser(updated)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update status.') }
+    finally { setWorking(null) }
+  }
+
+  async function handleDeactivate() {
+    if (!portalUser || !confirm(`Remove portal access for ${person.first_name}? They will no longer be able to log in.`)) return
+    setWorking('deactivate'); setError(null)
+    try { await deactivateSystemUser(portalUser.id); setPortalUser(null) }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to remove access.') }
+    finally { setWorking(null) }
+  }
+
+  function StatusBadge({ status }: { status: string }) {
+    if (status === 'ACTIVE')    return <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Active</span>
+    if (status === 'SUSPENDED') return <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Suspended</span>
+    return <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-muted text-text-muted">{status}</span>
+  }
+
+  const sectionCls = 'rounded-xl border border-surface-border dark:border-dark-border overflow-hidden'
+  const sectionHeadCls = 'flex items-center gap-2 px-4 py-2.5 bg-surface-hover dark:bg-dark-hover border-b border-surface-border dark:border-dark-border'
+  const btnCls = 'px-3 py-1.5 rounded-lg border border-surface-border dark:border-dark-border text-xs font-medium text-text hover:bg-surface-muted dark:hover:bg-dark-hover disabled:opacity-50 transition-colors'
+
+  return (
+    <div className="fixed inset-0 z-[300] overflow-y-auto bg-black/40">
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-text">Manage Access</h2>
+              <p className="text-xs text-text-muted mt-0.5">{person.first_name} {person.last_name}</p>
+            </div>
+            <button onClick={onClose} className="text-text-muted hover:text-text">✕</button>
+          </div>
+
+          {loading ? (
+            <div className="py-8 text-center text-xs text-text-muted">Loading…</div>
+          ) : (
+            <div className="space-y-4">
+              {/* ── Portal Access ── */}
+              <div className={sectionCls}>
+                <div className={sectionHeadCls}>
+                  <span>🌐</span>
+                  <h3 className="text-xs font-semibold text-text flex-1">Portal Access</h3>
+                </div>
+                <div className="p-4 space-y-3">
+                  {portalUser ? (
+                    <>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="text-xs font-medium text-text truncate">{portalUser.email}</p>
+                          <p className="text-[11px] text-text-muted">{portalUser.role}</p>
+                          {!portalUser.email_verified && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">Email not verified</p>
+                          )}
+                        </div>
+                        <StatusBadge status={portalUser.status} />
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1 border-t border-surface-border dark:border-dark-border">
+                        <button onClick={handleResend} disabled={!!working} className={btnCls}>
+                          {working === 'resend' ? 'Sending…' : 'Resend Invite'}
+                        </button>
+                        <button onClick={handleToggleSuspend} disabled={!!working}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium disabled:opacity-50 transition-colors ${
+                            portalUser.status === 'SUSPENDED'
+                              ? 'border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-900/20'
+                              : 'border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20'
+                          }`}>
+                          {working === 'suspend' ? 'Updating…' : portalUser.status === 'SUSPENDED' ? 'Reactivate' : 'Suspend'}
+                        </button>
+                        <button onClick={handleDeactivate} disabled={!!working}
+                          className="px-3 py-1.5 rounded-lg border border-danger/30 text-xs font-medium text-danger hover:bg-danger/10 disabled:opacity-50 transition-colors">
+                          {working === 'deactivate' ? 'Removing…' : 'Remove Access'}
+                        </button>
+                      </div>
+                    </>
+                  ) : showInvite ? (
+                    <div className="space-y-3">
+                      <p className="text-xs text-text-muted">An invite will be sent to <strong className="text-text">{person.email}</strong></p>
+                      <div>
+                        <label className="block text-xs font-medium text-text-muted mb-1">Role *</label>
+                        <select value={roleId} onChange={e => setRoleId(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-xs text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+                          <option value="">Select a role…</option>
+                          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowInvite(false)}
+                          className="flex-1 py-2 rounded-lg border border-surface-border dark:border-dark-border text-xs text-text-muted hover:bg-surface-muted transition-colors">
+                          Cancel
+                        </button>
+                        <button onClick={handleInvite} disabled={!roleId || !!working}
+                          className="flex-1 py-2 rounded-lg bg-primary-600 text-white text-xs font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
+                          {working === 'invite' ? 'Sending…' : 'Send Invite'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center space-y-3 py-2">
+                      <p className="text-xs text-text-muted">No portal account for this person.</p>
+                      <button onClick={() => setShowInvite(true)}
+                        className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-medium hover:bg-primary-700 transition-colors">
+                        Grant Portal Access
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Physical Access — Phase 2 ── */}
+              <div className={sectionCls}>
+                <div className={sectionHeadCls}>
+                  <span>🔑</span>
+                  <h3 className="text-xs font-semibold text-text flex-1">Physical Access</h3>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-muted dark:bg-dark-card text-text-muted border border-surface-border dark:border-dark-border">
+                    Coming soon
+                  </span>
+                </div>
+                <div className="px-4 py-5 text-center">
+                  <p className="text-xs text-text-muted">Access card and PIN management will be available here.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">{error}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── PersonDetail ─────────────────────────────────────────────────────────
 
 function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
@@ -1634,8 +1820,11 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
   const [newType, setNewType]               = useState(person.type as string)
   const [typeWorking, setTypeWorking]       = useState(false)
   const [typeError, setTypeError]           = useState('')
-  const [removingUnit, setRemovingUnit]     = useState<string | null>(null)
-  const [activeLeases, setActiveLeases]     = useState<LeaseData[]>([])
+  const [removingUnit,      setRemovingUnit]      = useState<string | null>(null)
+  const [activeLeases,      setActiveLeases]      = useState<LeaseData[]>([])
+  const [unitSortCol,       setUnitSortCol]       = useState<'number'|'use_type'|'status'>('number')
+  const [unitSortDir,       setUnitSortDir]       = useState<'asc'|'desc'>('asc')
+  const [showManageAccess,  setShowManageAccess]  = useState(false)
 
   useEffect(() => {
     const unitIds = person.unit_ids ?? []
@@ -1646,8 +1835,6 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
         setActiveLeases(all.filter(l => l.tenant_id === person.id && l.status === 'active'))
       })
   }, [person.id, person.unit_ids])
-
-  const ADMIN_PHONE = '+254700000000'
 
   function requestReveal(field: MaskableFieldType, label: string) {
     setRevealTarget({ field, label })
@@ -1710,6 +1897,9 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
           onSaved={p => { onUpdate(p); setShowEdit(false) }}
         />
       )}
+      {showManageAccess && (
+        <ManageAccessModal person={person} onClose={() => setShowManageAccess(false)} />
+      )}
 
       {/* Header */}
       <div className="p-6 border-b border-surface-border dark:border-dark-border">
@@ -1769,7 +1959,6 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
         onClose={() => setRevealTarget(null)}
         fieldType={revealTarget?.field ?? 'phone'}
         subjectName={`${person.first_name} ${person.last_name}`}
-        requesterPhone={ADMIN_PHONE}
         onVerified={onRevealVerified}
       />
 
@@ -1832,7 +2021,7 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
                   </button>
                 </CanDo>
                 <CanDo action="access.grant" resource={{ type: 'access_credential' }}>
-                  <button className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm font-medium text-text hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors w-full">
+                  <button onClick={() => setShowManageAccess(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm font-medium text-text hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors w-full">
                     Manage Access
                   </button>
                 </CanDo>
@@ -1950,75 +2139,87 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
 
         {isOwner && (
           <TabsContent value="units">
-            <div className="p-5 space-y-3">
+            <div className="p-4">
               {ownedUnits.length === 0 ? (
                 <div className="py-10 text-center">
                   <p className="text-3xl mb-2">🏠</p>
                   <p className="text-sm font-medium text-text">No units assigned</p>
                   <p className="text-xs text-text-muted mt-1">Assign units to this owner from the Property page.</p>
                 </div>
-              ) : (
-                <>
-                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-                    {ownedUnits.length} unit{ownedUnits.length !== 1 ? 's' : ''} owned
-                  </p>
-                  {ownedUnits.map(unit => {
-                    const tenant = allPeople.find(
-                      p => p.type === 'tenant' && (p.unit_ids ?? []).includes(unit.id)
-                    )
-                    const livesHere = person.type === 'resident_owner' && person.home_unit_id === unit.id
-                    const isRentedOut = !!tenant
-                    const statusLabel = livesHere
-                      ? 'Lives here'
-                      : isRentedOut ? 'Rented out'
-                      : unit.status === 'vacant' ? 'Vacant' : unit.status
-                    const statusCls = livesHere
-                      ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-                      : isRentedOut
-                        ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                        : 'bg-warning/10 text-warning'
-                    return (
-                      <div key={unit.id} className="rounded-lg border border-surface-border dark:border-dark-border p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-text">Block {unit.block} · Unit {unit.number}</p>
-                            <p className="text-xs text-text-muted capitalize mt-0.5">
-                              {unit.use_type} · {unit.bedrooms}bd {unit.bathrooms}ba
-                              {unit.size_sqm > 0 && ` · ${unit.size_sqm}m²`}
-                            </p>
-                          </div>
-                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${statusCls}`}>
-                            {statusLabel}
-                          </span>
-                        </div>
-                        {isRentedOut && tenant && (
-                          <div className="flex items-center gap-2 pt-1 border-t border-surface-border dark:border-dark-border">
-                            <div className="w-6 h-6 rounded-full bg-surface-border dark:bg-dark-border flex items-center justify-center text-[10px] font-bold text-text-muted flex-shrink-0">
-                              {tenant.first_name[0]}{tenant.last_name[0]}
-                            </div>
-                            <div>
-                              <p className="text-xs font-medium text-text">{tenant.first_name} {tenant.last_name}</p>
-                              <p className="text-[11px] text-text-muted">Tenant</p>
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-between text-xs text-text-muted pt-1 border-t border-surface-border dark:border-dark-border">
-                          <span>{unit.monthly_rate > 0 ? `KES ${unit.monthly_rate.toLocaleString()}/mo` : 'Rate not set'}</span>
-                          <CanDo action="write" resource={{ type: 'person', id: person.id }} fallback={null}>
-                            <button
-                              onClick={() => handleRemoveUnit(unit.id)}
-                              disabled={removingUnit === unit.id}
-                              className="text-danger hover:underline disabled:opacity-50"
-                            >
-                              {removingUnit === unit.id ? 'Removing…' : 'Remove'}
-                            </button>
-                          </CanDo>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </>
-              )}
+              ) : (() => {
+                function toggleUnitSort(col: typeof unitSortCol) {
+                  if (unitSortCol === col) setUnitSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                  else { setUnitSortCol(col); setUnitSortDir('asc') }
+                }
+                const SortIcon = ({ col }: { col: typeof unitSortCol }) => (
+                  <span className="text-[10px] opacity-40 group-hover:opacity-100 transition-opacity ml-0.5">
+                    {unitSortCol === col ? (unitSortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                  </span>
+                )
+                const sorted = [...ownedUnits].sort((a, b) => {
+                  const val = (u: typeof a) =>
+                    unitSortCol === 'number'   ? u.number :
+                    unitSortCol === 'use_type' ? u.use_type :
+                    u.status
+                  return unitSortDir === 'asc'
+                    ? String(val(a)).localeCompare(String(val(b)))
+                    : String(val(b)).localeCompare(String(val(a)))
+                })
+                const thCls = 'px-3 py-2 text-left font-medium text-text-muted'
+                return (
+                <div className="rounded-lg border border-surface-border dark:border-dark-border overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-surface-hover dark:bg-dark-hover border-b border-surface-border dark:border-dark-border">
+                      <tr>
+                        <th className={thCls}><button onClick={() => toggleUnitSort('number')} className="flex items-center group">Unit<SortIcon col="number" /></button></th>
+                        <th className={thCls}>Occupant</th>
+                        <th className={thCls}><button onClick={() => toggleUnitSort('use_type')} className="flex items-center group">Use Type<SortIcon col="use_type" /></button></th>
+                        <th className={thCls}><button onClick={() => toggleUnitSort('status')} className="flex items-center group">Status<SortIcon col="status" /></button></th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-border dark:divide-dark-border">
+                      {sorted.map(unit => {
+                        const livesHere = person.type === 'resident_owner' && person.home_unit_id === unit.id
+                        const tenant = allPeople.find(p => p.type === 'tenant' && (p.unit_ids ?? []).includes(unit.id))
+                        const isRentedOut = !!tenant
+                        const statusLabel = livesHere ? 'Lives here' : isRentedOut ? 'Rented out' : unit.status === 'vacant' ? 'Vacant' : unit.status
+                        const statusCls = livesHere
+                          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                          : isRentedOut
+                            ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                            : 'bg-warning/10 text-warning'
+                        return (
+                          <tr key={unit.id} className="hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors">
+                            <td className="px-3 py-2.5 font-semibold text-text">{unit.number}</td>
+                            <td className="px-3 py-2.5 text-text-muted">
+                              {tenant ? `${tenant.first_name} ${tenant.last_name}` : livesHere ? 'Owner' : '—'}
+                            </td>
+                            <td className="px-3 py-2.5 text-text-muted capitalize">{unit.use_type.replace(/_/g, ' ')}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${statusCls}`}>
+                                {statusLabel}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              <CanDo action="write" resource={{ type: 'person', id: person.id }} fallback={null}>
+                                <button
+                                  onClick={() => handleRemoveUnit(unit.id)}
+                                  disabled={removingUnit === unit.id}
+                                  className="px-2 py-1 rounded text-[11px] font-medium text-danger border border-danger/30 hover:bg-danger/10 disabled:opacity-40 transition-colors"
+                                >
+                                  {removingUnit === unit.id ? 'Removing…' : 'Remove'}
+                                </button>
+                              </CanDo>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                )
+              })()}
             </div>
           </TabsContent>
         )}
