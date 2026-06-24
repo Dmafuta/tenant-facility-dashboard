@@ -64,6 +64,20 @@ export async function verifyOtp(
   })
 }
 
+export async function sendPasswordReset(email: string): Promise<void> {
+  await apiFetch<void>('/auth/password-reset/send', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function confirmPasswordReset(token: string, password: string): Promise<UserData> {
+  return apiFetch<UserData>('/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  })
+}
+
 export async function logout(): Promise<void> {
   // Signout route clears cookies and revokes the refresh token server-side
   await fetch('/api/auth/signout', { method: 'POST' })
