@@ -311,7 +311,7 @@ function RolesSettings() {
     setEditing(role)
     setRoleName(role.name)
     setRoleDesc(role.description ?? '')
-    setSelected(new Set(role.permissions.map(p => `${p.action}:${p.resource}`)))
+    setSelected(new Set((role.permissions ?? []).map(p => `${p.action}:${p.resource}`)))
     setError('')
     setShowModal(true)
   }
@@ -362,7 +362,7 @@ function RolesSettings() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-text">{role.name}</p>
                 {role.description && <p className="text-xs text-text-muted mt-0.5">{role.description}</p>}
-                <p className="text-xs text-text-muted mt-1">{role.permissions.length} permission{role.permissions.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-text-muted mt-1">{(role.permissions ?? []).length} permission{(role.permissions ?? []).length !== 1 ? 's' : ''}</p>
               </div>
               <div className="flex gap-2 ml-4 flex-shrink-0">
                 <button onClick={() => openEdit(role)} className="text-xs text-primary-600 hover:underline">Edit</button>
