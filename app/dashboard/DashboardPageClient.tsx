@@ -91,24 +91,23 @@ const PRIORITY_COLOR: Record<string, string> = {
 export default function DashboardPageClient({ data }: { data: DashboardData | null }) {
   const today = new Date()
 
-  // ── M-Pesa live transactions ──────────────────────────────────────────────
-  const [mpesaTxns, setMpesaTxns] = useState<MpesaTransactionData[]>([])
+  // ── Client-side live data (all fetched in parallel on mount) ─────────────
+  const [mpesaTxns,     setMpesaTxns]     = useState<MpesaTransactionData[]>([])
+  const [liveMeters,    setLiveMeters]    = useState<MeterData[]>([])
+  const [overdueUtility,setOverdueUtility]= useState<UtilityChargeData[]>([])
+  const [liveStock,     setLiveStock]     = useState<ConsumableStockData[]>([])
   useEffect(() => {
-    getMpesaTransactions().then(setMpesaTxns).catch(() => {})
-  }, [])
-
-  // ── Live utilities: postpaid meters + overdue utility charges ─────────────
-  const [liveMeters, setLiveMeters] = useState<MeterData[]>([])
-  const [overdueUtility, setOverdueUtility] = useState<UtilityChargeData[]>([])
-  useEffect(() => {
-    getAllMeters({ meterType: 'postpaid' }).then(setLiveMeters).catch(() => {})
-    getOverdueUtilityCharges().then(setOverdueUtility).catch(() => {})
-  }, [])
-
-  // ── Live consumable stock ─────────────────────────────────────────────────
-  const [liveStock, setLiveStock] = useState<ConsumableStockData[]>([])
-  useEffect(() => {
-    getConsumableStock().then(setLiveStock).catch(() => {})
+    Promise.all([
+      getMpesaTransactions().catch(() => [] as MpesaTransactionData[]),
+      getAllMeters({ meterType: 'postpaid' }).catch(() => [] as MeterData[]),
+      getOverdueUtilityCharges().catch(() => [] as UtilityChargeData[]),
+      getConsumableStock().catch(() => [] as ConsumableStockData[]),
+    ]).then(([txns, meters, overdueUtil, stock]) => {
+      setMpesaTxns(txns)
+      setLiveMeters(meters)
+      setOverdueUtility(overdueUtil)
+      setLiveStock(stock)
+    })
   }, [])
 
   // ── Occupancy ─────────────────────────────────────────────────────────────
@@ -123,8 +122,9 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
   const overdueAmt     = overdueCharges.reduce((s, c) => s + c.amount - c.paid_amount, 0)
 
   // ── Open issues ───────────────────────────────────────────────────────────
-  const openIssues = data?.openIssues ?? []
-  const urgentIssues = openIssues.filter(i => i.priority === 'urgent').length
+  const openIssues     = data?.openIssues     ?? []
+  const openIssuesTotal = data?.openIssuesTotal ?? openIssues.length
+  const urgentIssues   = openIssues.filter(i => i.priority === 'urgent').length
 
   // ── Expiring leases (within 60 days) ─────────────────────────────────────
   const expiringLeases = (data?.activeLeases ?? [])
@@ -192,7 +192,7 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard label="Occupancy"        value={`${occPct}%`}        sub={`${occupied}/${total} units occupied`}   icon="🏢" color="bg-teal-50 dark:bg-teal-900/20"   trend="+2%" />
           <KPICard label="Overdue Rent"     value={overdueCharges.length} sub={overdueCharges.length > 0 ? fmt(overdueAmt) : 'All clear'} icon="⚠️" color="bg-red-50 dark:bg-red-900/10" />
-          <KPICard label="Open Issues"      value={openIssues.length}   sub={urgentIssues > 0 ? `${urgentIssues} urgent` : 'None urgent'} icon="🔧" color="bg-blue-50 dark:bg-blue-900/10" />
+          <KPICard label="Open Issues"      value={openIssuesTotal}     sub={urgentIssues > 0 ? `${urgentIssues} urgent` : 'None urgent'} icon="🔧" color="bg-blue-50 dark:bg-blue-900/10" />
           <KPICard label="M-Pesa Collected" value={collectedThisMonth}  sub="This month"                              icon="💚" color="bg-green-50 dark:bg-green-900/10" trend="+12%" />
         </div>
 

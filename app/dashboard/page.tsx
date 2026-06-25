@@ -12,6 +12,7 @@ export type DashboardData = {
   activeLeases: LeaseData[]
   waterPeriods: WaterBalancePeriodData[]
   openIssues: IssueData[]
+  openIssuesTotal: number
   pendingVerification: number
 }
 
@@ -21,7 +22,8 @@ async function loadDashboardData(): Promise<DashboardData | null> {
     const cookieStore = await cookies()
     const token = cookieStore.get('access_token')?.value
     const authHeader: Record<string, string> = token ? { Cookie: `access_token=${token}` } : {}
-    const opts = { cache: 'no-store' as const, headers: authHeader }
+    // 30-second cache — dashboard data can be slightly stale
+    const opts = { next: { revalidate: 30 }, headers: authHeader }
 
     // stats uses COUNT queries only — no full table scans for unit/people data
     const [statsRes, chargesRes, leasesRes, waterRes, issuesRes] = await Promise.all([
@@ -29,7 +31,7 @@ async function loadDashboardData(): Promise<DashboardData | null> {
       fetch(`${backend}/api/charges?status=overdue`, opts),
       fetch(`${backend}/api/leases?status=active`, opts),
       fetch(`${backend}/api/water/balance`, opts),
-      fetch(`${backend}/api/issues`, opts),
+      fetch(`${backend}/api/issues?status=open&limit=20`, opts),
     ])
 
     const stats: {
@@ -40,7 +42,7 @@ async function loadDashboardData(): Promise<DashboardData | null> {
     const overdueCharges: ChargeData[] = chargesRes.ok ? ((await chargesRes.json()).data ?? []) : []
     const activeLeases: LeaseData[]    = leasesRes.ok  ? ((await leasesRes.json()).data  ?? []) : []
     const waterPeriods: WaterBalancePeriodData[] = waterRes.ok ? ((await waterRes.json()).data ?? []) : []
-    const allIssues: IssueData[]       = issuesRes.ok  ? ((await issuesRes.json()).data  ?? []) : []
+    const openIssues: IssueData[]      = issuesRes.ok  ? ((await issuesRes.json()).data  ?? []) : []
 
     return {
       unitStats: {
@@ -52,8 +54,9 @@ async function loadDashboardData(): Promise<DashboardData | null> {
       overdueCharges,
       activeLeases,
       waterPeriods,
-      openIssues:          allIssues.filter(i => i.status !== 'resolved' && i.status !== 'closed'),
-      pendingVerification: stats.pending_verification ?? 0,
+      openIssues,
+      openIssuesTotal:     stats.open_issues           ?? openIssues.length,
+      pendingVerification: stats.pending_verification  ?? 0,
     }
   } catch {
     return null
@@ -61,7 +64,6 @@ async function loadDashboardData(): Promise<DashboardData | null> {
 }
 
 export default async function DashboardPage() {
-  await getSubjectFromSession()
-  const data = await loadDashboardData()
+  const [, data] = await Promise.all([getSubjectFromSession(), loadDashboardData()])
   return <DashboardPageClient data={data} />
 }
