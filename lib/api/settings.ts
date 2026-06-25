@@ -12,6 +12,7 @@ export interface FacilitySettings {
   deposit_months: number | null
   service_charge_enabled: boolean | null
   auto_generate_charges: boolean | null
+  service_charge_amount: number | null
   water_rate_per_unit: number | null
   management_fee_percent: number | null
   sewerage_percent: number | null

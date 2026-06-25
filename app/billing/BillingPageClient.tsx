@@ -12,6 +12,7 @@ import {
   type InvoiceData, type InvoiceCategory,
   getInvoiceCategories,
 } from '@/lib/api/invoices'
+import { apiFetch } from '@/lib/api/fetch'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,15 @@ export function BillingPageClient() {
   const [payRef, setPayRef]           = useState('')
   const [payNotes, setPayNotes]       = useState('')
   const [paying, setPaying]           = useState(false)
+
+  // SC billing run modal
+  const [showRunModal, setShowRunModal] = useState(false)
+  const [runPeriod, setRunPeriod]       = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [running, setRunning]           = useState(false)
+  const [runResult, setRunResult]       = useState<{ invoicesCreated: number; skipped: number; message: string } | null>(null)
 
   // Action states
   const [actioning, setActioning]     = useState<string | null>(null)
@@ -226,6 +236,21 @@ export function BillingPageClient() {
     setPayAmount(''); setPayDate(''); setPayMethod('mpesa'); setPayRef(''); setPayNotes('')
   }
 
+  async function handleRunSC() {
+    setRunning(true); setError(null); setRunResult(null)
+    try {
+      const result = await apiFetch<{ invoicesCreated: number; skipped: number; message: string }>(
+        '/billing-runs/service-charge', { method: 'POST', body: JSON.stringify({ period: runPeriod }) }
+      )
+      setRunResult(result)
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Billing run failed')
+    } finally {
+      setRunning(false)
+    }
+  }
+
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
   const tabs: { code: 'WS' | 'SC' | 'OT'; label: string }[] = [
@@ -314,6 +339,11 @@ export function BillingPageClient() {
         <Button variant="ghost" size="sm" onClick={load} className="ml-auto">
           Refresh
         </Button>
+        {activeTab === 'SC' && (
+          <Button variant="primary" size="sm" onClick={() => { setShowRunModal(true); setRunResult(null) }}>
+            Run SC Billing
+          </Button>
+        )}
       </div>
 
       {/* Main area: list + detail panel */}
@@ -532,7 +562,7 @@ export function BillingPageClient() {
               )}
 
               {/* Detail actions */}
-              <div className="flex gap-2 pt-1">
+              <div className="flex flex-wrap gap-2 pt-1">
                 {selected.status === 'draft' && (
                   <Button
                     size="sm" variant="primary" className="flex-1"
@@ -559,11 +589,77 @@ export function BillingPageClient() {
                     Void
                   </Button>
                 )}
+                <a
+                  href={`/billing/invoice/${selected.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
+                >
+                  Print / PDF
+                </a>
               </div>
             </Card>
           </div>
         )}
       </div>
+
+      {/* SC Billing Run modal */}
+      <Modal
+        open={showRunModal}
+        onClose={() => { setShowRunModal(false); setRunResult(null) }}
+        title="Run Service Charge Billing"
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {runResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Billing Run Complete</p>
+                <p>{runResult.message}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-primary-600">{runResult.invoicesCreated}</p>
+                  <p className="text-text-muted text-xs mt-1">Invoices Created</p>
+                </div>
+                <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-text-muted">{runResult.skipped}</p>
+                  <p className="text-text-muted text-xs mt-1">Units Skipped</p>
+                </div>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => { setShowRunModal(false); setRunResult(null) }}>
+                Done
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                This will generate a draft Service Charge invoice for every active unit for the selected period.
+                Units already billed for that period will be skipped.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period (YYYY-MM)</label>
+                <input
+                  type="month"
+                  value={runPeriod}
+                  onChange={e => setRunPeriod(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowRunModal(false)}>Cancel</Button>
+                <Button
+                  variant="primary" className="flex-1"
+                  disabled={running || !runPeriod}
+                  onClick={handleRunSC}
+                >
+                  {running ? 'Running…' : `Run for ${runPeriod}`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
 
       {/* Pay modal */}
       <Modal

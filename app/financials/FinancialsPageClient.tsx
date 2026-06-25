@@ -15,6 +15,7 @@ import { getAllCharges, recordPayment } from '@/lib/api/charges'
 import type { ChargeData } from '@/lib/api/charges'
 import { initiateStkPush, getMpesaTransactions, reconcileTransaction } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
+import { getInvoices, applyPayment as applyInvoicePayment, type InvoiceData } from '@/lib/api/invoices'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -427,24 +428,49 @@ function UnmatchedC2bSection({
     p => p.status === 'completed' && p.transaction_type === 'c2b' && !p.charge_id
   )
 
-  const [linking, setLinking]   = useState<Record<string, string>>({})   // txId → selected chargeId
-  const [saving,  setSaving]    = useState<string | null>(null)           // txId being saved
-  const [error,   setError]     = useState<string | null>(null)
-  const [page,    setPage]      = useState(0)
+  // Per-transaction mode: 'charge' (default) | 'invoice'
+  const [modes,    setModes]   = useState<Record<string, 'charge' | 'invoice'>>({})
+  const [linking,  setLinking] = useState<Record<string, string>>({})   // txId → chargeId or invoiceId
+  const [saving,   setSaving]  = useState<string | null>(null)
+  const [error,    setError]   = useState<string | null>(null)
+  const [page,     setPage]    = useState(0)
+  const [invoices, setInvoices] = useState<InvoiceData[]>([])
+
+  useEffect(() => {
+    getInvoices({ status: 'issued' }).then(setInvoices).catch(() => {})
+    getInvoices({ status: 'partial' }).then(more => setInvoices(prev => [...prev, ...more])).catch(() => {})
+  }, [])
 
   if (unmatched.length === 0) return null
 
   const unpaidCharges = charges.filter(c => c.status === 'pending' || c.status === 'overdue' || c.status === 'partial')
+  const outstandingInvoices = invoices.filter(i => ['issued','partial'].includes(i.status))
 
-  async function handleLink(txId: string) {
-    const chargeId = linking[txId]
-    if (!chargeId) return
+  async function handleLink(txId: string, amount: number, mpesaRef: string | null) {
+    const target = linking[txId]
+    if (!target) return
+    const mode = modes[txId] ?? 'charge'
     setSaving(txId); setError(null)
     try {
-      await reconcileTransaction(txId, chargeId)
+      if (mode === 'charge') {
+        await reconcileTransaction(txId, target)
+      } else {
+        await applyInvoicePayment(target, {
+          amount,
+          payment_method: 'mpesa',
+          reference_no:   mpesaRef ?? undefined,
+          notes:          `Allocated from C2B transaction ${txId}`,
+        })
+        // Also reconcile so it doesn't appear unmatched (link to first available charge if any)
+        const inv = outstandingInvoices.find(i => i.id === target)
+        if (inv) {
+          const matchedCharge = charges.find(c => c.unit_id === inv.unit_id && ['pending','overdue','partial'].includes(c.status))
+          if (matchedCharge) await reconcileTransaction(txId, matchedCharge.id).catch(() => {})
+        }
+      }
       onReconciled()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to link transaction.')
+      setError(e instanceof Error ? e.message : 'Failed to allocate payment.')
     } finally { setSaving(null) }
   }
 
@@ -460,52 +486,70 @@ function UnmatchedC2bSection({
         </span>
       </div>
       <p className="px-4 py-2 text-xs text-orange-700 border-b border-orange-100 bg-orange-50/60">
-        These C2B payments arrived but couldn&apos;t be auto-matched to a unit. Select the correct charge and click Link.
+        Link each C2B payment to a charge or invoice. Use <strong>Invoice</strong> mode for Water & Sewerage and Service Charge billing.
       </p>
       <div className="divide-y divide-orange-100">
-        {unmatched.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(p => (
-          <div key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white hover:bg-orange-50/30">
-            {/* Payment info */}
-            <div className="flex-1 min-w-0">
+        {unmatched.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(p => {
+          const mode = modes[p.id] ?? 'charge'
+          return (
+            <div key={p.id} className="px-4 py-3 bg-white hover:bg-orange-50/30 space-y-2">
+              {/* Payment info */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-xs font-semibold text-gray-800">{p.mpesa_receipt || '—'}</span>
                 <span className="text-xs text-gray-400">·</span>
                 <span className="font-semibold text-gray-900">{fmt(Number(p.amount))}</span>
                 <span className="text-xs text-gray-400">·</span>
                 <span className="text-xs text-gray-500">{p.phone}</span>
-              </div>
-              <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-400">
                 {p.bill_ref_number && (
-                  <span>Typed account: <strong className="text-orange-700">&quot;{p.bill_ref_number}&quot;</strong></span>
+                  <span className="text-xs text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">
+                    ref: &quot;{p.bill_ref_number}&quot;
+                  </span>
                 )}
-                {p.person_name && <span>· {p.person_name}</span>}
-                <span>· {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</span>
+                {p.person_name && <span className="text-xs text-gray-400">· {p.person_name}</span>}
+                <span className="text-xs text-gray-400">· {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</span>
+              </div>
+              {/* Mode toggle + picker */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Mode tabs */}
+                <div className="flex rounded-lg border border-orange-200 overflow-hidden text-xs">
+                  {(['charge','invoice'] as const).map(m => (
+                    <button key={m} onClick={() => { setModes(prev => ({...prev, [p.id]: m})); setLinking(prev => ({...prev, [p.id]: ''})) }}
+                      className={`px-3 py-1 font-medium capitalize transition-colors ${mode === m ? 'bg-orange-600 text-white' : 'bg-white text-orange-700 hover:bg-orange-50'}`}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                {/* Picker */}
+                {mode === 'charge' ? (
+                  <select value={linking[p.id] ?? ''} onChange={e => setLinking(prev => ({...prev, [p.id]: e.target.value}))}
+                    className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300 min-w-[220px] flex-1">
+                    <option value="">— select charge —</option>
+                    {unpaidCharges.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.unit_label} · {c.person_name} · {fmt(c.amount - (c.paid_amount ?? 0))} ({c.type})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select value={linking[p.id] ?? ''} onChange={e => setLinking(prev => ({...prev, [p.id]: e.target.value}))}
+                    className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300 min-w-[220px] flex-1">
+                    <option value="">— select invoice —</option>
+                    {outstandingInvoices.map(inv => (
+                      <option key={inv.id} value={inv.id}>
+                        {inv.statement_no} · {inv.unit_label} · {inv.person_name ?? '?'} · bal {fmt(inv.balance)} ({inv.category_code})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button onClick={() => handleLink(p.id, Number(p.amount), p.mpesa_receipt ?? null)}
+                  disabled={!linking[p.id] || saving === p.id}
+                  className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-40 shrink-0">
+                  {saving === p.id ? 'Saving…' : 'Allocate'}
+                </button>
               </div>
             </div>
-            {/* Charge picker */}
-            <div className="flex items-center gap-2 shrink-0">
-              <select
-                value={linking[p.id] ?? ''}
-                onChange={e => setLinking(prev => ({ ...prev, [p.id]: e.target.value }))}
-                className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300 min-w-[200px]"
-              >
-                <option value="">— select charge to link —</option>
-                {unpaidCharges.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.unit_label} · {c.person_name} · {fmt(c.amount - (c.paid_amount ?? 0))} ({c.type})
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => handleLink(p.id)}
-                disabled={!linking[p.id] || saving === p.id}
-                className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-40"
-              >
-                {saving === p.id ? 'Linking…' : 'Link'}
-              </button>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       {unmatched.length > PAGE_SIZE && (
         <div className="flex items-center justify-between px-4 py-2 bg-orange-50 border-t border-orange-100 text-xs text-orange-700">

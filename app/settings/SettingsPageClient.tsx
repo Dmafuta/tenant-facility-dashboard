@@ -10,6 +10,7 @@ import { ENTRY_POINTS } from '@/lib/mock-data'
 import type { EntryPoint, EntryPointType, EntryPointDirection } from '@/lib/types'
 import { cn } from '@/lib/cn'
 import { PhoneInput } from '@/components/ui/PhoneInput'
+import { getInvoiceCategories, updateInvoiceCategory, type InvoiceCategory } from '@/lib/api/invoices'
 import {
   getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
@@ -105,15 +106,20 @@ function BillingSettings() {
     deposit_months:         2,
     service_charge_enabled: true,
     auto_generate_charges:  true,
+    service_charge_amount:  0,
     water_rate_per_unit:    0,
     management_fee_percent: 0,
     sewerage_percent:       0,
   })
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [categories, setCategories] = useState<InvoiceCategory[]>([])
+  const [catForms, setCatForms] = useState<Record<string, Partial<InvoiceCategory>>>({})
+  const [catSaving, setCatSaving] = useState<string | null>(null)
+  const [catSaved, setCatSaved] = useState<string | null>(null)
 
   useEffect(() => {
-    getSettings().then(s => {
+    Promise.all([getSettings(), getInvoiceCategories()]).then(([s, cats]) => {
       setForm({
         rent_due_day:           s.rent_due_day           ?? 1,
         grace_period_days:      s.grace_period_days      ?? 5,
@@ -121,10 +127,15 @@ function BillingSettings() {
         deposit_months:         s.deposit_months         ?? 2,
         service_charge_enabled: s.service_charge_enabled ?? true,
         auto_generate_charges:  s.auto_generate_charges  ?? true,
+        service_charge_amount:  (s as unknown as Record<string,number>).service_charge_amount ?? 0,
         water_rate_per_unit:    s.water_rate_per_unit    ?? 0,
         management_fee_percent: s.management_fee_percent ?? 0,
         sewerage_percent:       s.sewerage_percent       ?? 0,
       })
+      setCategories(cats)
+      const forms: Record<string, Partial<InvoiceCategory>> = {}
+      cats.forEach(c => { forms[c.id] = { ...c } })
+      setCatForms(forms)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -132,6 +143,15 @@ function BillingSettings() {
     await updateSettings(form)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  async function saveCat(id: string) {
+    setCatSaving(id)
+    try {
+      await updateInvoiceCategory(id, catForms[id] ?? {})
+      setCatSaved(id)
+      setTimeout(() => setCatSaved(null), 2000)
+    } finally { setCatSaving(null) }
   }
 
   if (loading) return <div className="p-6 text-sm text-text-muted">Loading…</div>
@@ -182,6 +202,16 @@ function BillingSettings() {
               </button>
             </div>
           ))}
+          <div className="border-t border-surface-border dark:border-dark-border pt-3">
+            <p className="text-sm font-medium text-text mb-0.5">Monthly Amount per Unit</p>
+            <p className="text-xs text-text-muted mb-2">Fixed SC amount billed to each unit in a billing run</p>
+            <div className="flex items-center gap-2">
+              <input type="number" min="0" step="0.01" value={form.service_charge_amount}
+                onChange={e => setForm(p => ({ ...p, service_charge_amount: parseFloat(e.target.value) || 0 }))}
+                className="w-28 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              <span className="text-xs text-text-muted">KES / unit / month</span>
+            </div>
+          </div>
         </div>
       </div>
       <div>
@@ -210,6 +240,75 @@ function BillingSettings() {
         className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${saved ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
         {saved ? '✓ Saved' : 'Save Changes'}
       </button>
+
+      {/* Invoice Categories */}
+      {categories.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-text mb-1">Invoice Categories</h3>
+          <p className="text-xs text-text-muted mb-4">Configure bank details and taglines shown on printed invoices for each billing category.</p>
+          <div className="space-y-4">
+            {categories.map(cat => {
+              const cf = catForms[cat.id] ?? {}
+              const set = (k: keyof InvoiceCategory, v: string | boolean) =>
+                setCatForms(p => ({ ...p, [cat.id]: { ...p[cat.id], [k]: v } }))
+              return (
+                <div key={cat.id} className="border border-surface-border dark:border-dark-border rounded-lg p-4 bg-surface dark:bg-dark-surface space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-mono text-xs font-bold text-primary-600 bg-primary-50 dark:bg-primary-900/20 px-2 py-0.5 rounded">{cat.code}</span>
+                      <span className="ml-2 text-sm font-semibold text-text">{cat.name}</span>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+                      <button onClick={() => set('active', !(cf.active ?? cat.active))}
+                        className={`w-8 h-4 rounded-full relative transition-colors ${(cf.active ?? cat.active) ? 'bg-primary-500' : 'bg-surface-border dark:bg-dark-border'}`}>
+                        <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 shadow transition-all ${(cf.active ?? cat.active) ? 'right-0.5' : 'left-0.5'}`} />
+                      </button>
+                      Active
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">Tagline (shown on invoice header)</label>
+                    <input type="text" value={(cf.tagline as string) ?? ''}
+                      onChange={e => set('tagline', e.target.value)}
+                      className="w-full px-2 py-1.5 text-sm border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder={`e.g. ${cat.name} Statement`} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1">Bank Name</label>
+                      <input type="text" value={(cf.bank_name as string) ?? ''}
+                        onChange={e => set('bank_name', e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        placeholder="e.g. Equity Bank" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1">Account Number</label>
+                      <input type="text" value={(cf.bank_account as string) ?? ''}
+                        onChange={e => set('bank_account', e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        placeholder="0123456789" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1">Branch</label>
+                      <input type="text" value={(cf.bank_branch as string) ?? ''}
+                        onChange={e => set('bank_branch', e.target.value)}
+                        className="w-full px-2 py-1 text-xs border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        placeholder="Nairobi" />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => saveCat(cat.id)}
+                    disabled={catSaving === cat.id}
+                    className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${catSaved === cat.id ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'} disabled:opacity-50`}
+                  >
+                    {catSaving === cat.id ? 'Saving…' : catSaved === cat.id ? '✓ Saved' : 'Save'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
