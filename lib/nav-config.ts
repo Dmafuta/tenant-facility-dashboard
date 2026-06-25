@@ -53,6 +53,7 @@ export const NAV: NavGroup[] = [
       { label: 'Maintenance', href: '/maintenance', icon: '🔧', roles: [FM, MAINT] },
       { label: 'Issues',      href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
       { label: 'HR & Staff',  href: '/hr',          icon: '💼', roles: [FM] },
+      { label: 'Payroll',     href: '/payroll',     icon: '💵', roles: [FM] },
     ],
   },
   {

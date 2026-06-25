@@ -486,6 +486,12 @@ function EditStaffModal({ person, departments, onClose, onDone }: {
     agency_contact:        person.agency_contact       ?? '',
     agency_clearance_ref:  person.agency_clearance_ref ?? '',
     notes:                 (person as unknown as Record<string,string>).notes ?? '',
+    // Casual payroll
+    biometric_id:          (person as unknown as Record<string,string>).biometric_id        ?? '',
+    daily_rate:            (person as unknown as Record<string,string>).daily_rate           ?? '',
+    bank_account_name:     (person as unknown as Record<string,string>).bank_account_name   ?? '',
+    bank_account_number:   (person as unknown as Record<string,string>).bank_account_number ?? '',
+    bank_branch_code:      (person as unknown as Record<string,string>).bank_branch_code    ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -511,7 +517,12 @@ function EditStaffModal({ person, departments, onClose, onDone }: {
         agency_name:          form.agency_name         || null,
         agency_contact:       form.agency_contact      || null,
         agency_clearance_ref: form.agency_clearance_ref || null,
-        notes:         form.notes || null,
+        notes:                form.notes               || null,
+        biometric_id:         form.biometric_id        || null,
+        daily_rate:           form.daily_rate ? Number(form.daily_rate) : null,
+        bank_account_name:    form.bank_account_name   || null,
+        bank_account_number:  form.bank_account_number || null,
+        bank_branch_code:     form.bank_branch_code    || null,
       })
       onDone(apiPersonToPerson(updated))
     } catch (e) {
@@ -599,6 +610,25 @@ function EditStaffModal({ person, departments, onClose, onDone }: {
               </div>
             </>
           )}
+          {/* Payroll & Banking */}
+          <p className="text-xs font-semibold text-text-muted uppercase tracking-wider pt-1">Payroll &amp; Banking</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Biometric Device ID</label>
+              <input type="text" value={form.biometric_id} placeholder="e.g. 4055"
+                onChange={e => setForm(p => ({ ...p, biometric_id: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Daily Rate (KES)</label>
+              <input type="number" min={0} step={50} value={form.daily_rate} placeholder="e.g. 800"
+                onChange={e => setForm(p => ({ ...p, daily_rate: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            </div>
+            {field('Bank Account Name',   'bank_account_name')}
+            {field('Bank Account Number', 'bank_account_number')}
+            {field('Branch Code',         'bank_branch_code')}
+          </div>
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} rows={2}
