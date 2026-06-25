@@ -5,14 +5,19 @@ const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8081'
 export async function POST(request: NextRequest) {
   const refreshToken = request.cookies.get('refresh_token')?.value
 
-  // Revoke the refresh token on the backend (backend reads from Cookie header)
+  // Revoke the refresh token on the backend (2 s timeout so a slow/down backend never blocks signout)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 2000)
   try {
     await fetch(`${BACKEND}/api/auth/logout`, {
       method:  'POST',
       headers: { Cookie: `refresh_token=${refreshToken ?? ''}` },
+      signal:  controller.signal,
     })
   } catch {
-    // Ignore backend errors — still clear cookies
+    // Ignore backend errors / timeout — still clear cookies
+  } finally {
+    clearTimeout(timer)
   }
 
   // Clear cookies explicitly via Set-Cookie headers so the browser removes them
