@@ -25,6 +25,9 @@ export interface FacilitySettings {
   notify_water_loss: boolean | null
   notify_meter_reading_due: boolean | null
   send_welcome_email: boolean | null
+  plan: string | null
+  brand_name: string | null
+  brand_logo_url: string | null
 }
 
 export interface SystemUser {
@@ -49,6 +52,23 @@ export interface AppRole {
   name: string
   description: string | null
   permissions: RolePermission[]
+}
+
+// ── Brand config (public — no auth required) ──────────────────────────────────
+
+export interface BrandConfig {
+  plan: string         // "standard" | "premium"
+  name: string         // "QuantumConnect" on standard, client name on premium
+  logo_url: string     // "" if using default QuantumConnect icon
+  property_name: string
+}
+
+export async function getBrandConfig(): Promise<BrandConfig> {
+  const api = process.env.NEXT_PUBLIC_API_URL ?? '/api/backend'
+  const res = await fetch(`${api}/settings/brand`, { cache: 'no-store' })
+  if (!res.ok) return { plan: 'standard', name: 'QuantumConnect', logo_url: '', property_name: '' }
+  const json = await res.json()
+  return json.data as BrandConfig
 }
 
 // ── Facility settings ─────────────────────────────────────────────────────────

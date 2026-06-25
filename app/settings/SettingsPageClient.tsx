@@ -452,6 +452,100 @@ function RolesSettings() {
   )
 }
 
+// ── Branding ──────────────────────────────────────────────────────────────────
+function BrandingSettings() {
+  const [form,    setForm]    = useState({ brand_name: '', brand_logo_url: '' })
+  const [plan,    setPlan]    = useState('standard')
+  const [loading, setLoading] = useState(true)
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
+  const [error,   setError]   = useState('')
+  const isPremium = plan === 'premium'
+
+  useEffect(() => {
+    getSettings().then(s => {
+      setPlan(s.plan ?? 'standard')
+      setForm({ brand_name: s.brand_name ?? '', brand_logo_url: s.brand_logo_url ?? '' })
+    }).finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave() {
+    setSaving(true); setSaved(false); setError('')
+    try {
+      await updateSettings({ brand_name: form.brand_name, brand_logo_url: form.brand_logo_url })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
+    finally { setSaving(false) }
+  }
+
+  if (loading) return <p className="p-6 text-sm text-text-muted">Loading…</p>
+
+  return (
+    <div className="p-6 space-y-6 max-w-lg">
+      {/* Plan badge */}
+      <div className="flex items-center gap-3">
+        <div>
+          <p className="text-xs font-medium text-text-muted mb-1">Current Plan</p>
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+            isPremium
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+              : 'bg-surface-muted dark:bg-dark-hover text-text-muted'
+          }`}>
+            {isPremium ? '★ Premium' : 'Standard'}
+          </span>
+        </div>
+        {!isPremium && (
+          <p className="text-xs text-text-muted mt-4">
+            White-label branding is available on the <strong>Premium</strong> plan.
+            Contact <a href="mailto:sales@quantumconnect.io" className="text-primary-600 hover:underline">sales@quantumconnect.io</a> to upgrade.
+          </p>
+        )}
+      </div>
+
+      {/* Brand fields — editable on premium, locked on standard */}
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Brand Name</label>
+          <input
+            value={form.brand_name}
+            onChange={e => setForm(f => ({ ...f, brand_name: e.target.value }))}
+            disabled={!isPremium}
+            placeholder={isPremium ? 'e.g. Great Wall Gardens' : 'QuantumConnect (default)'}
+            className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <p className="text-[11px] text-text-muted mt-1">Replaces "QuantumConnect" in the bottom bar and outbound emails.</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-muted mb-1">Brand Logo URL</label>
+          <input
+            value={form.brand_logo_url}
+            onChange={e => setForm(f => ({ ...f, brand_logo_url: e.target.value }))}
+            disabled={!isPremium}
+            placeholder={isPremium ? 'https://…/your-icon.png' : 'QuantumConnect icon (default)'}
+            className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <p className="text-[11px] text-text-muted mt-1">16×16px icon shown next to the brand name. PNG with transparent background recommended.</p>
+        </div>
+      </div>
+
+      {error  && <p className="text-xs text-danger">{error}</p>}
+      {saved  && <p className="text-xs text-success">Branding saved.</p>}
+
+      {isPremium && (
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+        >
+          {saving && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+          {saving ? 'Saving…' : 'Save Branding'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── Users & Permissions ───────────────────────────────────────────────────────
 type UserSortKey = 'fullName' | 'email' | 'role' | 'status'
 
@@ -1104,6 +1198,7 @@ export function SettingsPageClient() {
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
               <TabsTrigger value="roles">Roles</TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="branding">Branding</TabsTrigger>
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="documents">Documents</TabsTrigger>
             </TabsList>
@@ -1114,6 +1209,7 @@ export function SettingsPageClient() {
           <TabsContent value="notifications" className="flex-1 overflow-y-auto mt-0"><NotificationSettings /></TabsContent>
           <TabsContent value="roles"         className="flex-1 overflow-y-auto mt-0"><RolesSettings /></TabsContent>
           <TabsContent value="users"         className="flex-1 overflow-y-auto mt-0"><UsersSettings /></TabsContent>
+          <TabsContent value="branding"      className="flex-1 overflow-y-auto mt-0"><BrandingSettings /></TabsContent>
           <TabsContent value="integrations"  className="flex-1 overflow-y-auto mt-0"><IntegrationsPageClient /></TabsContent>
           <TabsContent value="documents"     className="flex-1 overflow-y-auto mt-0"><DocumentsSettings /></TabsContent>
         </Tabs>
