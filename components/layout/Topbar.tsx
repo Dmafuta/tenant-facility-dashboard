@@ -403,7 +403,11 @@ function UserMenu() {
   async function handleSignOut() {
     setOpen(false)
     setSignOut(true)
-    await logout()
+    try {
+      await logout()
+    } catch {
+      // swallow — redirect regardless
+    }
     window.location.replace('/login')
   }
 

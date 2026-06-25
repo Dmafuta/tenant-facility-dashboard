@@ -15,9 +15,12 @@ export async function POST(request: NextRequest) {
     // Ignore backend errors — still clear cookies
   }
 
-  // Return 200 with cookies cleared. The client handles the redirect.
+  // Clear cookies explicitly via Set-Cookie headers so the browser removes them
+  // regardless of the original cookie attributes (HttpOnly, Secure, SameSite).
   const response = NextResponse.json({ ok: true })
-  response.cookies.delete('access_token')
-  response.cookies.delete('refresh_token')
+  const cookieClear = (name: string) =>
+    `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`
+  response.headers.append('Set-Cookie', cookieClear('access_token'))
+  response.headers.append('Set-Cookie', cookieClear('refresh_token'))
   return response
 }
