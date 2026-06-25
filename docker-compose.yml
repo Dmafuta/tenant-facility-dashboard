@@ -16,12 +16,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Spring Boot API ──────────────────────────────────────────────────────────
   backend:
     image: ghcr.io/dmafuta/tenant-facility-api:latest
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       DB_URL:              jdbc:postgresql://postgres:5432/facilityapp_v3
@@ -32,6 +44,8 @@ services:
       SEED_ADMIN_EMAIL:    ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      REDIS_HOST:          redis
+      REDIS_PORT:          6379
     expose:
       - "8081"
 
