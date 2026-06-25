@@ -35,7 +35,7 @@ function RunList({ runs, onSelect, onNew }: {
           <h2 className="text-base font-semibold text-text">Casual Payroll Runs</h2>
           <p className="text-xs text-text-muted mt-0.5">Bi-weekly attendance-based payroll for casual workers</p>
         </div>
-        <button onClick={onNew} className="px-3 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">
+        <button onClick={onNew} className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors">
           + New Run
         </button>
       </div>
@@ -129,7 +129,7 @@ function NewRunModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:bg-bg">Cancel</button>
-            <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+            <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50">
               {loading ? 'Creating…' : 'Create Run'}
             </button>
           </div>
@@ -219,7 +219,7 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
                 Export KCB CSV
               </button>
               <button onClick={() => changeStatus('paid')}
-                className="px-3 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90">
+                className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700">
                 Mark as Paid
               </button>
             </>
