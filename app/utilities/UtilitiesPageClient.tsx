@@ -105,6 +105,9 @@ function ReadingEntryModal({
   const [notes, setNotes]         = useState('')
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState<string | null>(null)
+  const [waterRates, setWaterRates] = useState<{ rate: number; mgmtPct: number; seweragePct: number } | null>(null)
+
+  const isWaterMeter = meter ? ['water', 'water_sewer'].includes(meter.utility_type ?? '') : false
 
   useEffect(() => {
     if (open && meter) {
@@ -118,14 +121,32 @@ function ReadingEntryModal({
     }
   }, [open, meter])
 
+  useEffect(() => {
+    if (open && isWaterMeter) {
+      getSettings().then(s => setWaterRates({
+        rate:        s.water_rate_per_unit    ?? 0,
+        mgmtPct:     s.management_fee_percent ?? 0,
+        seweragePct: s.sewerage_percent       ?? 0,
+      }))
+    }
+  }, [open, isWaterMeter])
+
   if (!meter) return null
   const prev = meter.last_reading ?? 0
   const consumed = reading ? Math.max(0, Number(reading) - prev) : 0
+  const isPrepaid = meter.meter_type === 'prepaid'
+  const isSmart   = meter.meter_type === 'smart'
+
+  // Water meter: use global rates
+  const waterOnly    = isWaterMeter && waterRates ? consumed * waterRates.rate : 0
+  const waterMgmtFee = isWaterMeter && waterRates ? waterOnly * (waterRates.mgmtPct / 100) : 0
+  const sewerage     = isWaterMeter && waterRates ? waterOnly * (waterRates.seweragePct / 100) : 0
+  const waterTotal   = waterOnly + waterMgmtFee
+
+  // Non-water meter: manual rate inputs
   const subtotal = consumed * Number(unitCost || 0)
   const fee      = mgmtFee ? subtotal * (Number(mgmtFee) / 100) : 0
   const total    = subtotal + fee
-  const isPrepaid = meter.meter_type === 'prepaid'
-  const isSmart   = meter.meter_type === 'smart'
 
   async function handleSave() {
     if (!reading) { setError('Current reading is required.'); return }
@@ -203,7 +224,7 @@ function ReadingEntryModal({
           <input type="text" className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="Jun 2026" value={billingPeriod} onChange={e => setBp(e.target.value)} />
         </div>
-        {!isPrepaid && (
+        {!isPrepaid && !isWaterMeter && (
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Unit Cost (KES)</label>
@@ -217,7 +238,35 @@ function ReadingEntryModal({
             </div>
           </div>
         )}
-        {consumed > 0 && !isPrepaid && (
+        {consumed > 0 && !isPrepaid && isWaterMeter && waterRates && (
+          <div className="p-3 rounded-lg bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 text-sm space-y-1">
+            <div className="flex justify-between text-text-muted">
+              <span>Consumed</span>
+              <span className="font-medium text-text">{consumed.toLocaleString()} m³</span>
+            </div>
+            <div className="flex justify-between text-text-muted">
+              <span>Water ({consumed} m³ × KES {waterRates.rate})</span>
+              <span className="font-medium text-text">KES {waterOnly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            {waterMgmtFee > 0 && (
+              <div className="flex justify-between text-text-muted">
+                <span>Management fee ({waterRates.mgmtPct}%)</span>
+                <span className="font-medium text-text">KES {waterMgmtFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-primary-100 dark:border-primary-900/30 pt-1 mt-1">
+              <span className="font-semibold text-text">Water charge</span>
+              <span className="font-bold text-primary-700 dark:text-primary-400">KES {waterTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            {sewerage > 0 && (
+              <div className="flex justify-between text-text-muted border-t border-primary-100 dark:border-primary-900/30 pt-1 mt-1">
+                <span>Sewerage charge ({waterRates.seweragePct}% of water)</span>
+                <span className="font-medium text-text">KES {sewerage.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {consumed > 0 && !isPrepaid && !isWaterMeter && (
           <div className="p-3 rounded-lg bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 text-sm space-y-1">
             <div className="flex justify-between text-text-muted">
               <span>Consumed</span>
