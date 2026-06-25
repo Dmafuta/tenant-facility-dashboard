@@ -105,6 +105,9 @@ function BillingSettings() {
     deposit_months:         2,
     service_charge_enabled: true,
     auto_generate_charges:  true,
+    water_rate_per_unit:    0,
+    management_fee_percent: 0,
+    sewerage_percent:       0,
   })
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -118,6 +121,9 @@ function BillingSettings() {
         deposit_months:         s.deposit_months         ?? 2,
         service_charge_enabled: s.service_charge_enabled ?? true,
         auto_generate_charges:  s.auto_generate_charges  ?? true,
+        water_rate_per_unit:    s.water_rate_per_unit    ?? 0,
+        management_fee_percent: s.management_fee_percent ?? 0,
+        sewerage_percent:       s.sewerage_percent       ?? 0,
       })
     }).finally(() => setLoading(false))
   }, [])
@@ -174,6 +180,28 @@ function BillingSettings() {
                 className={`w-10 h-5 rounded-full relative transition-colors ${form[t.key] ? 'bg-primary-500' : 'bg-surface-border dark:bg-dark-border'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 shadow transition-all ${form[t.key] ? 'right-0.5' : 'left-0.5'}`} />
               </button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <h3 className="text-sm font-semibold text-text mb-1">Water & Sewerage Rates</h3>
+        <p className="text-xs text-text-muted mb-4">Applied globally to all water meter readings. Sewerage and management fee are calculated as a percentage of the raw water charge.</p>
+        <div className="grid grid-cols-3 gap-4">
+          {([
+            { label: 'Water Rate',      sublabel: 'KES per m³',                   key: 'water_rate_per_unit'    as const, suffix: 'KES/m³' },
+            { label: 'Management Fee',  sublabel: '% of water charge',             key: 'management_fee_percent' as const, suffix: '%' },
+            { label: 'Sewerage',        sublabel: '% of water charge (excl. fee)', key: 'sewerage_percent'       as const, suffix: '%' },
+          ] as const).map(f => (
+            <div key={f.key} className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-3">
+              <label className="block text-xs font-medium text-text-muted mb-0.5">{f.label}</label>
+              <p className="text-[10px] text-text-muted mb-2">{f.sublabel}</p>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" step="0.01" value={form[f.key]}
+                  onChange={e => setForm(p => ({ ...p, [f.key]: parseFloat(e.target.value) || 0 }))}
+                  className="w-20 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                <span className="text-xs text-text-muted">{f.suffix}</span>
+              </div>
             </div>
           ))}
         </div>
