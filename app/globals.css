@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Brand variables (login page) ─────────────────────────────────────── */
+:root {
+  --brand:         oklch(0.66 0.115 175);
+  --brand-strong:  oklch(0.58 0.12 175);
+  --brand-soft:    oklch(0.96 0.035 175);
+  --brand-ring:    oklch(0.66 0.115 175 / 0.18);
+  --brand-surface: oklch(0.985 0.005 180);
+  --brand-ink:     oklch(0.22 0.04 250);
+  --brand-muted:   oklch(0.55 0.025 250);
+  --brand-border:  oklch(0.92 0.01 220);
+}
+
 /* ── CSS variables ────────────────────────────────────────────────────── */
 :root {
   --bg:           #f8fafb;
