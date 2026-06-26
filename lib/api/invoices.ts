@@ -34,6 +34,7 @@ export interface InvoiceData {
   period: string | null
   issue_date: string | null
   due_date: string | null
+  opening_balance: number
   previous_balance: number
   current_charges: number
   paid_amount: number

@@ -12,6 +12,12 @@ import { cn } from '@/lib/cn'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { getInvoiceCategories, updateInvoiceCategory, type InvoiceCategory } from '@/lib/api/invoices'
 import {
+  getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
+  parseOpeningBalanceExcel, bulkImportOpeningBalances,
+  type OpeningBalance, type ExcelPreviewRow,
+} from '@/lib/api/opening-balances'
+import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
+import {
   getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
   getRulesDocumentInfo, uploadRulesDocument, deleteRulesDocument,
@@ -1310,6 +1316,389 @@ function DocumentsSettings() {
   )
 }
 
+// ── Data Setup (Opening Balances) ─────────────────────────────────────────────
+
+const CATEGORIES = ['WS', 'SC', 'OT'] as const
+const CAT_LABELS: Record<string, string> = { WS: 'Water & Sewerage', SC: 'Service Charge', OT: 'Other' }
+
+function DataSetupSettings() {
+  const [activeCategory, setActiveCategory] = useState<string>('WS')
+  const [records, setRecords]               = useState<OpeningBalance[]>([])
+  const [units, setUnits]                   = useState<UnitData[]>([])
+  const [loading, setLoading]               = useState(true)
+  const [error, setError]                   = useState<string | null>(null)
+
+  // Add modal
+  const [showAdd, setShowAdd]         = useState(false)
+  const [addUnitId, setAddUnitId]     = useState('')
+  const [addAmount, setAddAmount]     = useState('')
+  const [addDate, setAddDate]         = useState('')
+  const [addNotes, setAddNotes]       = useState('')
+  const [addSaving, setAddSaving]     = useState(false)
+  const [addError, setAddError]       = useState<string | null>(null)
+
+  // Edit modal
+  const [editRecord, setEditRecord]   = useState<OpeningBalance | null>(null)
+  const [editAmount, setEditAmount]   = useState('')
+  const [editDate, setEditDate]       = useState('')
+  const [editNotes, setEditNotes]     = useState('')
+  const [editSaving, setEditSaving]   = useState(false)
+  const [editError, setEditError]     = useState<string | null>(null)
+
+  // Excel import
+  const [showImport, setShowImport]   = useState(false)
+  const [importFile, setImportFile]   = useState<File | null>(null)
+  const [importParsing, setImportParsing] = useState(false)
+  const [importPreview, setImportPreview] = useState<ExcelPreviewRow[] | null>(null)
+  const [importSaving, setImportSaving]   = useState(false)
+  const [importResult, setImportResult]   = useState<{saved:number,skipped:number} | null>(null)
+  const [importError, setImportError]     = useState<string | null>(null)
+
+  useEffect(() => {
+    getUnitsFromApi().then(setUnits).catch(() => {})
+  }, [])
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    getOpeningBalances(activeCategory)
+      .then(setRecords)
+      .catch(() => setError('Failed to load opening balances'))
+      .finally(() => setLoading(false))
+  }, [activeCategory])
+
+  useEffect(() => { reload() }, [reload])
+
+  const handleAdd = async () => {
+    if (!addUnitId) { setAddError('Select a unit'); return }
+    const amount = parseFloat(addAmount)
+    if (isNaN(amount) || amount < 0) { setAddError('Enter a valid amount'); return }
+    setAddSaving(true); setAddError(null)
+    try {
+      await createOpeningBalance({
+        unitId: addUnitId,
+        categoryCode: activeCategory,
+        amount,
+        asOfDate: addDate || undefined,
+        notes: addNotes || undefined,
+      })
+      setShowAdd(false); setAddUnitId(''); setAddAmount(''); setAddDate(''); setAddNotes('')
+      reload()
+    } catch (e: unknown) {
+      setAddError(e instanceof Error ? e.message : 'Failed to save')
+    } finally { setAddSaving(false) }
+  }
+
+  const openEdit = (ob: OpeningBalance) => {
+    setEditRecord(ob)
+    setEditAmount(String(ob.amount))
+    setEditDate(ob.as_of_date ?? '')
+    setEditNotes(ob.notes ?? '')
+    setEditError(null)
+  }
+
+  const handleEdit = async () => {
+    if (!editRecord) return
+    const amount = parseFloat(editAmount)
+    if (isNaN(amount) || amount < 0) { setEditError('Enter a valid amount'); return }
+    setEditSaving(true); setEditError(null)
+    try {
+      await updateOpeningBalance(editRecord.id, {
+        amount,
+        asOfDate: editDate || undefined,
+        notes: editNotes || undefined,
+      })
+      setEditRecord(null)
+      reload()
+    } catch (e: unknown) {
+      setEditError(e instanceof Error ? e.message : 'Failed to update')
+    } finally { setEditSaving(false) }
+  }
+
+  const handleVoid = async (ob: OpeningBalance) => {
+    if (!confirm(`Void opening balance for ${ob.unit_label}? This cannot be undone.`)) return
+    try {
+      await voidOpeningBalance(ob.id)
+      reload()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to void')
+    }
+  }
+
+  const handleParseExcel = async () => {
+    if (!importFile) return
+    setImportParsing(true); setImportError(null); setImportPreview(null); setImportResult(null)
+    try {
+      const preview = await parseOpeningBalanceExcel(importFile, activeCategory)
+      setImportPreview(preview)
+    } catch {
+      setImportError('Failed to parse file. Ensure it is a valid .xlsx file.')
+    } finally { setImportParsing(false) }
+  }
+
+  const handleBulkImport = async () => {
+    if (!importPreview) return
+    const validRows = importPreview.filter(r => r.valid)
+    if (validRows.length === 0) { setImportError('No valid rows to import'); return }
+    setImportSaving(true); setImportError(null)
+    try {
+      const result = await bulkImportOpeningBalances(
+        activeCategory,
+        validRows.map(r => ({
+          unitId: r.unitId!,
+          unitLabel: r.unitLabel,
+          amount: r.amount,
+          asOfDate: r.asOfDate,
+          notes: r.notes,
+        }))
+      )
+      setImportResult(result)
+      reload()
+    } catch {
+      setImportError('Import failed')
+    } finally { setImportSaving(false) }
+  }
+
+  const fmt = (n: number) => `KES ${n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const fmtDate = (s: string | null) => s ? new Date(s).toLocaleDateString('en-KE') : '—'
+
+  const inputCls = 'w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500'
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-text">Opening Balances</h3>
+          <p className="text-xs text-text-muted mt-0.5">One-time lump-sum per unit representing pre-system arrears. Applied automatically when the first invoice is issued.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setShowImport(true); setImportFile(null); setImportPreview(null); setImportResult(null); setImportError(null) }}
+            className="px-3 py-1.5 text-xs font-medium border border-surface-border dark:border-dark-border rounded-lg hover:bg-surface-hover dark:hover:bg-dark-hover text-text">
+            Import Excel
+          </button>
+          <button onClick={() => { setShowAdd(true); setAddError(null) }}
+            className="px-3 py-1.5 text-xs font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+            + Add Opening Balance
+          </button>
+        </div>
+      </div>
+
+      {/* Category sub-tabs */}
+      <div className="flex gap-1 border-b border-surface-border dark:border-dark-border">
+        {CATEGORIES.map(cat => (
+          <button key={cat} onClick={() => setActiveCategory(cat)}
+            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeCategory === cat ? 'border-primary-600 text-primary-600' : 'border-transparent text-text-muted hover:text-text'}`}>
+            {CAT_LABELS[cat]}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
+
+      {loading ? (
+        <p className="text-sm text-text-muted">Loading…</p>
+      ) : records.length === 0 ? (
+        <div className="text-center py-12 text-text-muted text-sm">No opening balances for {CAT_LABELS[activeCategory]}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-surface-border dark:border-dark-border">
+                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">Unit</th>
+                <th className="text-right py-2 px-3 text-xs font-medium text-text-muted">Amount</th>
+                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">As Of</th>
+                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">Notes</th>
+                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted">Status</th>
+                <th className="py-2 px-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map(ob => (
+                <tr key={ob.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                  <td className="py-2 px-3 font-medium">{ob.unit_label ?? '—'}</td>
+                  <td className="py-2 px-3 text-right font-mono">{fmt(ob.amount)}</td>
+                  <td className="py-2 px-3 text-text-muted">{fmtDate(ob.as_of_date)}</td>
+                  <td className="py-2 px-3 text-text-muted truncate max-w-[200px]">{ob.notes || '—'}</td>
+                  <td className="py-2 px-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      ob.status === 'active'  ? 'bg-success/10 text-success' :
+                      ob.status === 'applied' ? 'bg-primary-100 text-primary-700' :
+                      'bg-surface-border text-text-muted'}`}>
+                      {ob.status}
+                    </span>
+                  </td>
+                  <td className="py-2 px-3">
+                    <div className="flex gap-2 justify-end">
+                      {ob.status === 'active' && (
+                        <>
+                          <button onClick={() => openEdit(ob)} className="text-xs text-primary-600 hover:underline">Edit</button>
+                          <button onClick={() => handleVoid(ob)} className="text-xs text-danger hover:underline">Void</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add modal */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-surface dark:bg-dark-surface rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="font-semibold text-text">Add Opening Balance — {CAT_LABELS[activeCategory]}</h3>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Unit *</label>
+              <select value={addUnitId} onChange={e => setAddUnitId(e.target.value)} className={inputCls}>
+                <option value="">Select unit…</option>
+                {units.map(u => <option key={u.id} value={u.id}>{u.unit_label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES) *</label>
+              <input type="number" min="0" step="0.01" value={addAmount} onChange={e => setAddAmount(e.target.value)} placeholder="0.00" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">As Of Date</label>
+              <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Notes</label>
+              <textarea rows={2} value={addNotes} onChange={e => setAddNotes(e.target.value)} className={inputCls} />
+            </div>
+            {addError && <p className="text-xs text-danger">{addError}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg text-text hover:bg-surface-hover dark:hover:bg-dark-hover">Cancel</button>
+              <button onClick={handleAdd} disabled={addSaving} className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50">
+                {addSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editRecord && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-surface dark:bg-dark-surface rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="font-semibold text-text">Edit Opening Balance — {editRecord.unit_label}</h3>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES) *</label>
+              <input type="number" min="0" step="0.01" value={editAmount} onChange={e => setEditAmount(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">As Of Date</label>
+              <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Notes</label>
+              <textarea rows={2} value={editNotes} onChange={e => setEditNotes(e.target.value)} className={inputCls} />
+            </div>
+            {editError && <p className="text-xs text-danger">{editError}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setEditRecord(null)} className="px-4 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg text-text hover:bg-surface-hover dark:hover:bg-dark-hover">Cancel</button>
+              <button onClick={handleEdit} disabled={editSaving} className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50">
+                {editSaving ? 'Saving…' : 'Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel import modal */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-surface dark:bg-dark-surface rounded-xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-semibold text-text">Import Opening Balances — {CAT_LABELS[activeCategory]}</h3>
+            <p className="text-xs text-text-muted">
+              Upload an .xlsx file with columns: <strong>A</strong> Unit Label, <strong>B</strong> Amount, <strong>C</strong> As Of Date (YYYY-MM-DD), <strong>D</strong> Notes (optional)
+            </p>
+
+            {!importResult && (
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-text-muted mb-1">Excel File (.xlsx)</label>
+                  <input type="file" accept=".xlsx" onChange={e => { setImportFile(e.target.files?.[0] ?? null); setImportPreview(null) }}
+                    className="block w-full text-sm text-text-muted file:mr-3 file:py-1.5 file:px-3 file:border file:border-surface-border file:rounded-lg file:text-xs file:font-medium file:bg-surface file:text-text hover:file:bg-surface-hover" />
+                </div>
+                <button onClick={handleParseExcel} disabled={!importFile || importParsing}
+                  className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50">
+                  {importParsing ? 'Parsing…' : 'Preview'}
+                </button>
+              </div>
+            )}
+
+            {importError && <p className="text-xs text-danger">{importError}</p>}
+
+            {importPreview && !importResult && (
+              <>
+                <div className="text-xs text-text-muted">
+                  {importPreview.filter(r => r.valid).length} valid / {importPreview.filter(r => !r.valid).length} invalid rows
+                </div>
+                <div className="overflow-x-auto max-h-60 border border-surface-border dark:border-dark-border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-surface-hover dark:bg-dark-hover sticky top-0">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-medium text-text-muted">Row</th>
+                        <th className="text-left py-2 px-3 font-medium text-text-muted">Unit</th>
+                        <th className="text-right py-2 px-3 font-medium text-text-muted">Amount</th>
+                        <th className="text-left py-2 px-3 font-medium text-text-muted">As Of</th>
+                        <th className="text-left py-2 px-3 font-medium text-text-muted">Notes</th>
+                        <th className="text-left py-2 px-3 font-medium text-text-muted">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.map((row, i) => (
+                        <tr key={i} className={`border-t border-surface-border dark:border-dark-border ${!row.valid ? 'bg-danger/5' : ''}`}>
+                          <td className="py-1.5 px-3 text-text-muted">{row.rowNum}</td>
+                          <td className="py-1.5 px-3 font-medium">{row.unitLabel}</td>
+                          <td className="py-1.5 px-3 text-right font-mono">{row.amount?.toLocaleString('en-KE', { minimumFractionDigits: 2 })}</td>
+                          <td className="py-1.5 px-3 text-text-muted">{row.asOfDate ?? '—'}</td>
+                          <td className="py-1.5 px-3 text-text-muted truncate max-w-[120px]">{row.notes || '—'}</td>
+                          <td className="py-1.5 px-3">
+                            {row.valid
+                              ? <span className="text-success font-medium">✓ Valid</span>
+                              : <span className="text-danger">{row.error}</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button onClick={() => { setImportPreview(null); setImportFile(null) }}
+                    className="px-4 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg text-text hover:bg-surface-hover dark:hover:bg-dark-hover">
+                    Re-upload
+                  </button>
+                  <button onClick={handleBulkImport} disabled={importSaving || importPreview.filter(r => r.valid).length === 0}
+                    className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg disabled:opacity-50">
+                    {importSaving ? 'Importing…' : `Import ${importPreview.filter(r => r.valid).length} Valid Rows`}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {importResult && (
+              <div className="bg-success/10 border border-success/30 rounded-lg p-4 text-sm text-success">
+                <p className="font-medium">Import complete</p>
+                <p className="mt-1 text-text-muted text-xs">{importResult.saved} records saved · {importResult.skipped} skipped (duplicates or errors)</p>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button onClick={() => { setShowImport(false); setImportPreview(null); setImportResult(null); setImportFile(null) }}
+                className="px-4 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg text-text hover:bg-surface-hover dark:hover:bg-dark-hover">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // -- Page -----------------------------------------------------------------------
 export function SettingsPageClient() {
   return (
@@ -1328,6 +1717,7 @@ export function SettingsPageClient() {
               <TabsTrigger value="branding">Branding</TabsTrigger>
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="documents">Documents</TabsTrigger>
+              <TabsTrigger value="data-setup">Data Setup</TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="general"       className="flex-1 overflow-y-auto mt-0"><GeneralSettings /></TabsContent>
@@ -1339,6 +1729,7 @@ export function SettingsPageClient() {
           <TabsContent value="branding"      className="flex-1 overflow-y-auto mt-0"><BrandingSettings /></TabsContent>
           <TabsContent value="integrations"  className="flex-1 overflow-y-auto mt-0"><IntegrationsPageClient /></TabsContent>
           <TabsContent value="documents"     className="flex-1 overflow-y-auto mt-0"><DocumentsSettings /></TabsContent>
+          <TabsContent value="data-setup"   className="flex-1 overflow-y-auto mt-0"><DataSetupSettings /></TabsContent>
         </Tabs>
       </main>
     </DashboardLayout>

@@ -182,6 +182,12 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
           <div className="summary">
             <div className="summary-title">Statement Summary</div>
             <div>
+              {Number(inv.opening_balance) > 0 && (
+                <div className="summary-row">
+                  <span>Opening Balance</span>
+                  <span className="amount">{fmt(Number(inv.opening_balance) || 0)}</span>
+                </div>
+              )}
               <div className="summary-row">
                 <span>Previous Balance</span>
                 <span className="amount">{fmt(Number(inv.previous_balance) || 0)}</span>
