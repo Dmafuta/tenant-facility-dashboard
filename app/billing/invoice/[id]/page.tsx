@@ -171,8 +171,8 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 <div className="lbl" style={{marginBottom:'8px'}}>Billed To</div>
                 <div style={{fontSize:'15px',fontWeight:700,color:'oklch(0.30 0.04 250)'}}>{String(inv.person_name || '—')}</div>
                 <div style={{fontSize:'13px',color:'oklch(0.45 0.02 250)',lineHeight:1.55,marginTop:'3px'}}>
-                  {inv.unit_label && <div>Unit: {String(inv.unit_label)}</div>}
-                  {inv.person_address && String(inv.person_address).split('\n').map((line, i) => (
+                  {!!inv.unit_label && <div>Unit: {String(inv.unit_label)}</div>}
+                  {!!inv.person_address && String(inv.person_address as string).split('\n').map((line, i) => (
                     <div key={i}>{line}</div>
                   ))}
                 </div>
@@ -180,7 +180,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
               <div style={{background:'oklch(0.34 0.05 250)',borderRadius:'4px',padding:'12px 28px',minWidth:'260px',textAlign:'right',flexShrink:0}}>
                 <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.1em',color:'oklch(0.80 0.04 250)',textTransform:'uppercase'}}>Total Amount Due</div>
                 <div style={{fontSize:'33px',fontWeight:800,color:'#fff',letterSpacing:'-0.02em',fontVariantNumeric:'tabular-nums',lineHeight:1.1,marginTop:'4px'}}>{fmt(n(inv.balance))}</div>
-                {inv.due_date && <div style={{fontSize:'11.5px',color:'oklch(0.82 0.04 250)',marginTop:'6px'}}>Pay by {fmtDate(inv.due_date as string)} to avoid a late fee</div>}
+                {!!inv.due_date && <div style={{fontSize:'11.5px',color:'oklch(0.82 0.04 250)',marginTop:'6px'}}>Pay by {fmtDate(inv.due_date as string)} to avoid a late fee</div>}
               </div>
             </div>
 
