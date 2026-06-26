@@ -139,7 +139,6 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
           {/* Print controls */}
           <div className="print-btn no-print">
             <PrintTrigger />
-            <button className="btn-close" style={{ padding: '7px 16px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: '#eee', color: '#333' }} onClick={() => window.close()}>Close</button>
           </div>
 
           {/* Header */}
