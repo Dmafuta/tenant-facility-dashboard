@@ -110,6 +110,12 @@ export async function removePayment(paymentId: string): Promise<InvoiceData | nu
   return apiFetch<InvoiceData | null>(`/invoices/payments/${paymentId}`, { method: 'DELETE' })
 }
 
+export async function bulkIssueInvoices(period: string, categoryCode?: string): Promise<{ issued: number }> {
+  const qs = new URLSearchParams({ period })
+  if (categoryCode) qs.set('categoryCode', categoryCode)
+  return apiFetch<{ issued: number }>(`/invoices/bulk-issue?${qs}`, { method: 'POST' })
+}
+
 export async function getInvoiceCategories(): Promise<InvoiceCategory[]> {
   return apiFetch<InvoiceCategory[]>('/invoice-categories')
 }

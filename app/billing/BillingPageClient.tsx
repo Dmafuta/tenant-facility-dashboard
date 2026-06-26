@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/cn'
 import {
   getInvoices, getInvoice, issueInvoice, voidInvoice, applyPayment, removePayment,
+  bulkIssueInvoices,
   type InvoiceData, type InvoiceCategory,
   getInvoiceCategories,
 } from '@/lib/api/invoices'
@@ -83,6 +84,15 @@ export function BillingPageClient() {
   })
   const [running, setRunning]           = useState(false)
   const [runResult, setRunResult]       = useState<{ invoicesCreated: number; skipped: number; message: string } | null>(null)
+
+  // Bulk issue modal
+  const [showBulkModal, setShowBulkModal]   = useState(false)
+  const [bulkPeriod, setBulkPeriod]         = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [bulkIssuing, setBulkIssuing]       = useState(false)
+  const [bulkResult, setBulkResult]         = useState<{ issued: number } | null>(null)
 
   // Action states
   const [actioning, setActioning]     = useState<string | null>(null)
@@ -251,6 +261,19 @@ export function BillingPageClient() {
     }
   }
 
+  async function handleBulkIssue() {
+    setBulkIssuing(true); setError(null); setBulkResult(null)
+    try {
+      const result = await bulkIssueInvoices(bulkPeriod, activeTab)
+      setBulkResult(result)
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Bulk issue failed')
+    } finally {
+      setBulkIssuing(false)
+    }
+  }
+
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
   const tabs: { code: 'WS' | 'SC' | 'OT'; label: string }[] = [
@@ -339,6 +362,11 @@ export function BillingPageClient() {
         <Button variant="ghost" size="sm" onClick={load} className="ml-auto">
           Refresh
         </Button>
+        {tabStats.drafts > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => { setShowBulkModal(true); setBulkResult(null) }}>
+            Issue All Drafts ({tabStats.drafts})
+          </Button>
+        )}
         {activeTab === 'SC' && (
           <Button variant="primary" size="sm" onClick={() => { setShowRunModal(true); setRunResult(null) }}>
             Run SC Billing
@@ -654,6 +682,54 @@ export function BillingPageClient() {
                   onClick={handleRunSC}
                 >
                   {running ? 'Running…' : `Run for ${runPeriod}`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Bulk Issue modal */}
+      <Modal
+        open={showBulkModal}
+        onClose={() => { setShowBulkModal(false); setBulkResult(null) }}
+        title={`Issue All ${activeTab} Drafts`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {bulkResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{bulkResult.issued} invoice{bulkResult.issued !== 1 ? 's' : ''} issued successfully.</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => { setShowBulkModal(false); setBulkResult(null) }}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                This will issue all <strong>{tabStats.drafts}</strong> draft invoices in the <strong>{activeTab}</strong> category for the selected period.
+                Each invoice will be snapshotted with the current outstanding balance and a notification sent to the tenant.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+                <input
+                  type="month"
+                  value={bulkPeriod}
+                  onChange={e => setBulkPeriod(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowBulkModal(false)}>Cancel</Button>
+                <Button
+                  variant="primary" className="flex-1"
+                  disabled={bulkIssuing || !bulkPeriod}
+                  onClick={handleBulkIssue}
+                >
+                  {bulkIssuing ? 'Issuing…' : `Issue for ${bulkPeriod}`}
                 </Button>
               </div>
             </>
