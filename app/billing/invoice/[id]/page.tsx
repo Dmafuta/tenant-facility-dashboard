@@ -118,7 +118,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
             .no-print { display: none !important; }
           }
           .screen-pad { padding: 32px 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-          .sheet { width: 816px; min-height: 1056px; background: #fff; box-shadow: 0 8px 40px rgba(20,33,61,0.16); display: flex; flex-direction: column; }
+          .sheet { width: 816px; background: #fff; box-shadow: 0 8px 40px rgba(20,33,61,0.16); display: flex; flex-direction: column; }
           .lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: oklch(0.58 0.02 250); text-transform: uppercase; }
         `}</style>
       </head>
@@ -133,7 +133,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
           <div className="sheet">
 
             {/* ── HEADER ── */}
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'18px 48px 12px',borderBottom:'3px solid oklch(0.40 0.06 250)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'13px 48px 10px',borderBottom:'3px solid oklch(0.40 0.06 250)'}}>
               <div style={{display:'flex',gap:'16px',alignItems:'center'}}>
                 <div style={{width:'56px',height:'56px',borderRadius:'50%',background:'oklch(0.40 0.06 250)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                   <div style={{width:'28px',height:'28px',border:'2.5px solid #fff',borderRadius:'0 50% 50% 50%',transform:'rotate(45deg)'}}></div>
@@ -158,7 +158,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 ['Statement Date', fmtDate(inv.issue_date as string | null),         false],
                 ['Payment Due',    fmtDate(inv.due_date   as string | null),         true ],
               ].map(([label, value, red], i, arr) => (
-                <div key={i} style={{padding:'11px 20px',borderRight: i < arr.length - 1 ? '1px solid oklch(0.92 0.01 250)' : undefined}}>
+                <div key={i} style={{padding:'8px 20px',borderRight: i < arr.length - 1 ? '1px solid oklch(0.92 0.01 250)' : undefined}}>
                   <div className="lbl">{label as string}</div>
                   <div style={{fontSize:'14px',fontWeight:600,marginTop:'4px',fontVariantNumeric:'tabular-nums',color: red ? 'oklch(0.45 0.13 28)' : undefined}}>{value as string}</div>
                 </div>
@@ -166,7 +166,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
             </div>
 
             {/* ── BILLED TO + AMOUNT DUE ── */}
-            <div style={{display:'flex',padding:'14px 48px 10px',gap:'32px',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{display:'flex',padding:'10px 48px 6px',gap:'32px',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
                 <div className="lbl" style={{marginBottom:'8px'}}>Billed To</div>
                 <div style={{fontSize:'15px',fontWeight:700,color:'oklch(0.30 0.04 250)'}}>{String(inv.person_name || '—')}</div>
@@ -185,23 +185,23 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
             </div>
 
             {/* ── STATEMENT SUMMARY ── */}
-            <div style={{padding:'4px 48px 0'}}>
+            <div style={{padding:'2px 48px 0'}}>
               <div style={{fontSize:'12px',fontWeight:700,letterSpacing:'0.1em',color:'oklch(0.45 0.05 250)',textTransform:'uppercase',paddingBottom:'6px',borderBottom:'2px solid oklch(0.40 0.06 250)'}}>Statement Summary</div>
 
               {n(inv.opening_balance) > 0 && (
-                <div style={{display:'flex',justifyContent:'space-between',padding:'6px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13.5px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
                   <span style={{color:'oklch(0.40 0.02 250)'}}>Opening balance</span>
                   <span style={{fontWeight:600,fontVariantNumeric:'tabular-nums'}}>{fmt(n(inv.opening_balance))}</span>
                 </div>
               )}
 
-              <div style={{display:'flex',justifyContent:'space-between',padding:'6px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13.5px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
                 <span style={{color:'oklch(0.40 0.02 250)'}}>Previous balance</span>
                 <span style={{fontWeight:600,fontVariantNumeric:'tabular-nums'}}>{fmt(n(inv.previous_balance))}</span>
               </div>
 
               {payments.map((p, i) => (
-                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13.5px'}}>
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
                   <span style={{color:'oklch(0.40 0.02 250)'}}>
                     Payment received — {fmtDate(p.payment_date as string | null)}
                     {p.reference_no && p.reference_no !== '—' ? ` · Ref: ${String(p.reference_no)}` : ''}
@@ -211,7 +211,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 </div>
               ))}
 
-              <div style={{display:'flex',justifyContent:'space-between',padding:'6px 4px',borderBottom:'2px solid oklch(0.88 0.01 250)',fontSize:'13.5px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'2px solid oklch(0.88 0.01 250)',fontSize:'13px'}}>
                 <span style={{color:'oklch(0.30 0.03 250)',fontWeight:600}}>Balance brought forward</span>
                 <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmt(balanceFwd)}</span>
               </div>
@@ -219,7 +219,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
 
             {/* ── CURRENT CHARGES ── */}
             {lineItems.length > 0 && (
-              <div style={{padding:'10px 48px 0'}}>
+              <div style={{padding:'6px 48px 0'}}>
                 <div style={{fontSize:'12px',fontWeight:700,letterSpacing:'0.1em',color:'oklch(0.45 0.05 250)',textTransform:'uppercase',marginBottom:'4px'}}>
                   Current Charges — {fmtPeriod(String(inv.period || ''))}
                 </div>
@@ -243,7 +243,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                     detail = String(li.description)
                   }
                   return (
-                    <div key={i} style={{display:'grid',gridTemplateColumns: showDetails ? '1fr auto auto' : '1fr auto',alignItems:'center',fontSize:'13px',padding:'6px 4px',borderBottom:'1px solid oklch(0.94 0.006 250)'}}>
+                    <div key={i} style={{display:'grid',gridTemplateColumns: showDetails ? '1fr auto auto' : '1fr auto',alignItems:'center',fontSize:'13px',padding:'5px 4px',borderBottom:'1px solid oklch(0.94 0.006 250)'}}>
                       <span style={{color:'oklch(0.30 0.03 250)',fontWeight:600}}>
                         {CHARGE_LABELS[String(li.charge_type)] ?? String(li.charge_type)}
                       </span>
@@ -257,13 +257,13 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 })}
 
                 {/* Subtotal */}
-                <div style={{display:'grid',gridTemplateColumns:'1fr auto',fontSize:'13px',padding:'6px 4px',borderBottom:'2px solid oklch(0.88 0.01 250)'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr auto',fontSize:'13px',padding:'5px 4px',borderBottom:'2px solid oklch(0.88 0.01 250)'}}>
                   <span style={{color:'oklch(0.30 0.03 250)',fontWeight:700}}>Total current charges</span>
                   <span style={{textAlign:'right',minWidth:'110px',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmt(n(inv.current_charges))}</span>
                 </div>
 
                 {/* Grand total highlight box */}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'oklch(0.96 0.012 250)',borderRadius:'4px',padding:'10px 16px',marginTop:'8px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'oklch(0.96 0.012 250)',borderRadius:'4px',padding:'7px 14px',marginTop:'5px'}}>
                   <span style={{fontSize:'14px',fontWeight:700,color:'oklch(0.30 0.04 250)'}}>
                     Total amount due
                     <span style={{fontWeight:500,color:'oklch(0.55 0.02 250)',fontSize:'12px'}}> (balance forward + current charges)</span>
@@ -275,7 +275,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
 
             {/* ── CONSUMPTION CHART + METER READING (WS only) ── */}
             {isWS && mr && (
-              <div style={{display:'grid',gridTemplateColumns:'1.35fr 1fr',gap:'32px',padding:'14px 48px 0'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1.35fr 1fr',gap:'32px',padding:'10px 48px 0'}}>
 
                 {/* Bar chart */}
                 <div>
@@ -284,7 +284,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                   </div>
                   {recentReadings.length > 0 ? (
                     <>
-                      <div style={{display:'flex',alignItems:'flex-end',gap:'16px',height:'92px',padding:'12px 8px 0',borderBottom:'1px solid oklch(0.88 0.01 250)'}}>
+                      <div style={{display:'flex',alignItems:'flex-end',gap:'16px',height:'80px',padding:'8px 8px 0',borderBottom:'1px solid oklch(0.88 0.01 250)'}}>
                         {recentReadings.map((r, i) => {
                           const units = n(r.units_consumed)
                           const barH  = chartMax > 0 ? Math.round((units / chartMax) * 80) : 0
@@ -328,12 +328,12 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                     ['Current reading',  n(mr.current_value).toFixed(0)],
                     ['Reading type',     SOURCE_LABELS[String(mr.source || '')] ?? 'Actual'],
                   ] as [string, string][]).map(([label, value], i) => (
-                    <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'7px 2px',borderBottom:'1px solid oklch(0.94 0.006 250)',fontSize:'13px'}}>
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 2px',borderBottom:'1px solid oklch(0.94 0.006 250)',fontSize:'12.5px'}}>
                       <span style={{color:'oklch(0.48 0.02 250)'}}>{label}</span>
                       <span style={{fontWeight:600,fontVariantNumeric:'tabular-nums'}}>{value}</span>
                     </div>
                   ))}
-                  <div style={{display:'flex',justifyContent:'space-between',padding:'7px 2px',fontSize:'13px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',padding:'5px 2px',fontSize:'12.5px'}}>
                     <span style={{color:'oklch(0.30 0.03 250)',fontWeight:700}}>Consumption</span>
                     <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums',color:'oklch(0.34 0.05 250)'}}>{n(mr.units_consumed).toFixed(1)} m³</span>
                   </div>
@@ -343,8 +343,8 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
 
             {/* ── HOW TO PAY ── */}
             {(bankName || officePhone) && (
-              <div style={{padding:'14px 48px 0'}}>
-                <div style={{background:'oklch(0.97 0.008 250)',border:'1px solid oklch(0.91 0.01 250)',borderRadius:'4px',padding:'11px 22px',display:'grid',gridTemplateColumns: bankName && officePhone ? '1fr 1fr' : '1fr',gap:'20px'}}>
+              <div style={{padding:'8px 48px 0'}}>
+                <div style={{background:'oklch(0.97 0.008 250)',border:'1px solid oklch(0.91 0.01 250)',borderRadius:'4px',padding:'8px 18px',display:'grid',gridTemplateColumns: bankName && officePhone ? '1fr 1fr' : '1fr',gap:'20px'}}>
                   {bankName && (
                     <div>
                       <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.06em',color:'oklch(0.45 0.05 250)',textTransform:'uppercase',marginBottom:'6px'}}>Bank Transfer</div>
@@ -371,10 +371,9 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
               </div>
             )}
 
-            <div style={{flex:1}} />
 
             {/* ── TEAR-OFF STUB ── */}
-            <div style={{margin:'16px 48px 0',borderTop:'2px dashed oklch(0.78 0.02 250)',paddingTop:'10px'}}>
+            <div style={{margin:'8px 48px 0',borderTop:'2px dashed oklch(0.78 0.02 250)',paddingTop:'10px'}}>
               <div style={{fontSize:'10px',color:'oklch(0.60 0.02 250)',letterSpacing:'0.05em',marginBottom:'10px'}}>✂  DETACH AND RETURN THIS PORTION WITH YOUR PAYMENT</div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div style={{display:'flex',gap:'36px'}}>
@@ -399,7 +398,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
             </div>
 
             {/* ── FOOTER BAR ── */}
-            <div style={{marginTop:'16px',padding:'11px 48px',background:'oklch(0.34 0.05 250)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{marginTop:'8px',padding:'9px 48px',background:'oklch(0.34 0.05 250)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <span style={{fontSize:'11px',color:'oklch(0.82 0.04 250)'}}>
                 {officePhone ? `Customer care: ${officePhone}` : 'This is a computer-generated statement.'}
               </span>
