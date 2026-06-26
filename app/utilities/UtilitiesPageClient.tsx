@@ -99,7 +99,10 @@ function ReadingEntryModal({
 }) {
   const [reading, setReading]     = useState('')
   const [date, setDate]           = useState(new Date().toISOString().slice(0, 10))
-  const [billingPeriod, setBp]    = useState('')
+  const [billingPeriod, setBp]    = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [unitCost, setUnitCost]   = useState('')
   const [mgmtFee, setMgmtFee]     = useState('')
   const [notes, setNotes]         = useState('')
@@ -220,9 +223,9 @@ function ReadingEntryModal({
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Billing Period (e.g. Jun 2026)</label>
-          <input type="text" className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-            placeholder="Jun 2026" value={billingPeriod} onChange={e => setBp(e.target.value)} />
+          <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+          <input type="month" className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            value={billingPeriod} onChange={e => setBp(e.target.value)} />
         </div>
         {!isPrepaid && !isWaterMeter && (
           <div className="grid grid-cols-2 gap-3">
