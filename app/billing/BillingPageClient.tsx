@@ -19,6 +19,7 @@ import {
   getInvoiceCategories,
 } from '@/lib/api/invoices'
 import { apiFetch } from '@/lib/api/fetch'
+import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -61,6 +62,64 @@ const CHARGE_TYPE_LABELS: Record<string, string> = {
   other:     'Other',
 }
 
+function defaultPeriodForCycle(cycle: 'monthly' | 'quarterly' | 'semi_annual' | 'annual') {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  if (cycle === 'quarterly')   return `${year}-Q${Math.ceil(month / 3)}`
+  if (cycle === 'semi_annual') return month <= 6 ? `${year}-H1` : `${year}-H2`
+  if (cycle === 'annual')      return `${year}`
+  return `${year}-${String(month).padStart(2, '0')}`
+}
+
+function PeriodPicker({ cycle, value, onChange }: {
+  cycle: 'monthly' | 'quarterly' | 'semi_annual' | 'annual'
+  value: string
+  onChange: (v: string) => void
+}) {
+  const year  = value ? parseInt(value.split('-')[0]) || new Date().getFullYear() : new Date().getFullYear()
+  const setYear = (y: number) => onChange(defaultPeriodForCycle(cycle).replace(/^\d{4}/, String(y)))
+
+  if (cycle === 'monthly') return (
+    <input type="month" value={value} onChange={e => onChange(e.target.value)}
+      className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+  )
+
+  const segments = cycle === 'quarterly'
+    ? ['Q1','Q2','Q3','Q4']
+    : cycle === 'semi_annual'
+      ? ['H1','H2']
+      : []
+
+  const active = value.split('-')[1] ?? ''
+
+  return (
+    <div className="flex gap-2">
+      <input
+        type="number" value={year} min={2020} max={2099}
+        onChange={e => setYear(parseInt(e.target.value) || year)}
+        className="w-24 h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+      />
+      {cycle === 'annual' ? (
+        <span className="flex items-center text-xs text-text-muted">Full year</span>
+      ) : (
+        <div className="flex gap-1 flex-1">
+          {segments.map(seg => (
+            <button key={seg} type="button"
+              onClick={() => onChange(`${year}-${seg}`)}
+              className={`flex-1 h-9 text-sm rounded-lg border transition-colors ${active === seg
+                ? 'bg-primary-600 text-white border-primary-600'
+                : 'border-surface-border dark:border-dark-border text-text hover:bg-surface-hover dark:hover:bg-dark-hover'}`}
+            >
+              {seg}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function BillingPageClient() {
@@ -88,12 +147,22 @@ export function BillingPageClient() {
 
   // SC billing run modal
   const [showRunModal, setShowRunModal] = useState(false)
-  const [runPeriod, setRunPeriod]       = useState(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
+  const [scCycle, setScCycle]           = useState<'monthly' | 'quarterly' | 'semi_annual' | 'annual'>('monthly')
+  const [scDueDay, setScDueDay]         = useState(5)
+  const [runPeriod, setRunPeriod]       = useState('')
   const [running, setRunning]           = useState(false)
   const [runResult, setRunResult]       = useState<{ invoicesCreated: number; skipped: number; message: string } | null>(null)
+
+  // Load SC settings when run modal opens
+  useEffect(() => {
+    if (!showRunModal) return
+    getSettings().then(s => {
+      const cycle = (s.sc_billing_cycle ?? 'monthly') as typeof scCycle
+      setScCycle(cycle)
+      setScDueDay(s.sc_due_day ?? 5)
+      setRunPeriod(defaultPeriodForCycle(cycle))
+    }).catch(() => {})
+  }, [showRunModal])
 
   // Bulk issue modal
   const [showBulkModal, setShowBulkModal]   = useState(false)
@@ -1265,17 +1334,21 @@ export function BillingPageClient() {
           ) : (
             <>
               <p className="text-sm text-text-muted">
-                This will generate a draft Service Charge invoice for every active unit for the selected period.
+                Generates a draft SC invoice per unit for the selected period.
                 Units already billed for that period will be skipped.
               </p>
+              <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-xs text-text-muted space-y-0.5">
+                <p><span className="font-medium text-text">Cycle:</span> {
+                  scCycle === 'monthly' ? 'Monthly' :
+                  scCycle === 'quarterly' ? 'Quarterly (3 line items per invoice)' :
+                  scCycle === 'semi_annual' ? 'Semi-Annual (6 line items per invoice)' :
+                  'Annual (12 line items per invoice)'
+                }</p>
+                <p><span className="font-medium text-text">Due day:</span> {scDueDay}{scDueDay === 1 ? 'st' : scDueDay === 2 ? 'nd' : scDueDay === 3 ? 'rd' : 'th'} of the billing period</p>
+              </div>
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period (YYYY-MM)</label>
-                <input
-                  type="month"
-                  value={runPeriod}
-                  onChange={e => setRunPeriod(e.target.value)}
-                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+                <PeriodPicker cycle={scCycle} value={runPeriod} onChange={setRunPeriod} />
               </div>
               <div className="flex gap-2">
                 <Button variant="ghost" className="flex-1" onClick={() => setShowRunModal(false)}>Cancel</Button>

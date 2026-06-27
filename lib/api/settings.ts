@@ -13,6 +13,8 @@ export interface FacilitySettings {
   service_charge_enabled: boolean | null
   auto_generate_charges: boolean | null
   service_charge_amount: number | null
+  sc_billing_cycle: 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | null
+  sc_due_day: number | null
   water_rate_per_unit: number | null
   management_fee_percent: number | null
   sewerage_percent: number | null

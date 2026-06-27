@@ -113,6 +113,8 @@ function BillingSettings() {
     service_charge_enabled: true,
     auto_generate_charges:  true,
     service_charge_amount:  0,
+    sc_billing_cycle:       'monthly' as 'monthly' | 'quarterly' | 'semi_annual' | 'annual',
+    sc_due_day:             5,
     water_rate_per_unit:    0,
     management_fee_percent: 0,
     sewerage_percent:       0,
@@ -134,6 +136,8 @@ function BillingSettings() {
         service_charge_enabled: s.service_charge_enabled ?? true,
         auto_generate_charges:  s.auto_generate_charges  ?? true,
         service_charge_amount:  (s as unknown as Record<string,number>).service_charge_amount ?? 0,
+        sc_billing_cycle:       (s.sc_billing_cycle ?? 'monthly') as 'monthly' | 'quarterly' | 'semi_annual' | 'annual',
+        sc_due_day:             s.sc_due_day ?? 5,
         water_rate_per_unit:    s.water_rate_per_unit    ?? 0,
         management_fee_percent: s.management_fee_percent ?? 0,
         sewerage_percent:       s.sewerage_percent       ?? 0,
@@ -208,14 +212,40 @@ function BillingSettings() {
               </button>
             </div>
           ))}
-          <div className="border-t border-surface-border dark:border-dark-border pt-3">
-            <p className="text-sm font-medium text-text mb-0.5">Monthly Amount per Unit</p>
-            <p className="text-xs text-text-muted mb-2">Fixed SC amount billed to each unit in a billing run</p>
-            <div className="flex items-center gap-2">
-              <input type="number" min="0" step="0.01" value={form.service_charge_amount}
-                onChange={e => setForm(p => ({ ...p, service_charge_amount: parseFloat(e.target.value) || 0 }))}
-                className="w-28 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
-              <span className="text-xs text-text-muted">KES / unit / month</span>
+          <div className="border-t border-surface-border dark:border-dark-border pt-3 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-text mb-0.5">Monthly Rate per Unit</p>
+              <p className="text-xs text-text-muted mb-2">Fixed SC amount billed per month — invoices are multiplied by months in the billing period</p>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" step="0.01" value={form.service_charge_amount}
+                  onChange={e => setForm(p => ({ ...p, service_charge_amount: parseFloat(e.target.value) || 0 }))}
+                  className="w-28 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                <span className="text-xs text-text-muted">KES / unit / month</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-sm font-medium text-text mb-0.5">Billing Cycle</p>
+                <p className="text-xs text-text-muted mb-2">How often SC invoices are generated</p>
+                <select value={form.sc_billing_cycle}
+                  onChange={e => setForm(p => ({ ...p, sc_billing_cycle: e.target.value as typeof p.sc_billing_cycle }))}
+                  className="w-full px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="semi_annual">Semi-Annual</option>
+                  <option value="annual">Annual</option>
+                </select>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-text mb-0.5">Due Day</p>
+                <p className="text-xs text-text-muted mb-2">Day of month invoice is due</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="1" max="28" value={form.sc_due_day}
+                    onChange={e => setForm(p => ({ ...p, sc_due_day: parseInt(e.target.value) || 5 }))}
+                    className="w-16 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <span className="text-xs text-text-muted">of month</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
