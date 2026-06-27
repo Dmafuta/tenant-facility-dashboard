@@ -1,6 +1,6 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Topbar } from '@/components/layout/Topbar'
 import { Badge } from '@/components/ui/Badge'
@@ -47,30 +47,47 @@ const MODULES = ['auth','people','units','crb','kyc','financials','leases','main
 const ACTIONS = ['created','updated','deleted','sent','approved','rejected','login','logout','exported','assigned','removed','toggled']
 
 export function AuditPageClient() {
-  const [search, setSearch]             = useState('')
-  const [moduleFilter, setModuleFilter] = useState('all')
-  const [actionFilter, setActionFilter] = useState('all')
-  const [dateFrom, setDateFrom]         = useState('')
-  const [dateTo, setDateTo]             = useState('')
-  const [selected, setSelected]         = useState<AuditEventApi | null>(null)
-  const [events, setEvents]             = useState<AuditEventApi[]>([])
-  const [total, setTotal]               = useState(0)
-  const [page, setPage]                 = useState(0)
-  const [totalPages, setTotalPages]     = useState(0)
-  const [loading, setLoading]           = useState(true)
-  const [exporting, setExporting]       = useState(false)
+  const [search, setSearch]               = useState('')
+  const [moduleFilter, setModuleFilter]   = useState('all')
+  const [actionFilter, setActionFilter]   = useState('all')
+  const [userFilter, setUserFilter]       = useState('all')
+  const [entityTypeFilter, setEntityTypeFilter] = useState('all')
+  const [dateFrom, setDateFrom]           = useState('')
+  const [dateTo, setDateTo]               = useState('')
+  const [selected, setSelected]           = useState<AuditEventApi | null>(null)
+  const [events, setEvents]               = useState<AuditEventApi[]>([])
+  const [total, setTotal]                 = useState(0)
+  const [page, setPage]                   = useState(0)
+  const [totalPages, setTotalPages]       = useState(0)
+  const [loading, setLoading]             = useState(true)
+  const [exporting, setExporting]         = useState(false)
+  const [lastPoll, setLastPoll]           = useState<Date | null>(null)
+  const pollRef                           = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const load = useCallback(async (p = 0) => {
-    setLoading(true)
+  // Accumulate unique users/entity types across all loaded events for dropdowns
+  const usersMap = useMemo(() => {
+    const m = new Map<string, string>()
+    events.forEach(e => { if (e.user_id && e.user_name) m.set(e.user_id, e.user_name) })
+    return m
+  }, [events])
+
+  const entityTypes = useMemo(() =>
+    [...new Set(events.map(e => e.entity_type).filter(Boolean) as string[])].sort()
+  , [events])
+
+  const load = useCallback(async (p = 0, silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const res = await getAuditEvents({
-        module: moduleFilter !== 'all' ? moduleFilter : undefined,
-        action: actionFilter !== 'all' ? actionFilter : undefined,
-        q:      search || undefined,
-        from:   dateFrom || undefined,
-        to:     dateTo   || undefined,
-        page:   p,
-        size:   50,
+        module:     moduleFilter !== 'all' ? moduleFilter : undefined,
+        action:     actionFilter !== 'all' ? actionFilter : undefined,
+        userId:     userFilter !== 'all' ? userFilter : undefined,
+        entityType: entityTypeFilter !== 'all' ? entityTypeFilter : undefined,
+        q:          search || undefined,
+        from:       dateFrom || undefined,
+        to:         dateTo   || undefined,
+        page:       p,
+        size:       50,
       })
       if (p === 0) {
         setEvents(res.items)
@@ -80,29 +97,47 @@ export function AuditPageClient() {
       setTotal(res.total)
       setPage(res.page)
       setTotalPages(res.total_pages)
+      if (silent) setLastPoll(new Date())
     } catch {
       // ignore
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }, [moduleFilter, actionFilter, search, dateFrom, dateTo])
+  }, [moduleFilter, actionFilter, userFilter, entityTypeFilter, search, dateFrom, dateTo])
 
   useEffect(() => { load(0) }, [load])
 
+  // Auto-poll every 30s — silently re-fetch page 0 to catch new events
+  useEffect(() => {
+    pollRef.current = setInterval(() => load(0, true), 30_000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [load])
+
   const today = new Date().toISOString().slice(0, 10)
   const todayCount = events.filter(e => e.timestamp?.startsWith(today)).length
-  const uniqueUsers = new Set(events.map(e => e.user_name)).size
+  const uniqueUsers = usersMap.size || new Set(events.map(e => e.user_name)).size
   const uniqueModules = new Set(events.map(e => e.module)).size
+
+  function resetFilters() {
+    setSearch(''); setModuleFilter('all'); setActionFilter('all')
+    setUserFilter('all'); setEntityTypeFilter('all')
+    setDateFrom(''); setDateTo(''); setSelected(null)
+  }
+
+  const hasActiveFilters = search || moduleFilter !== 'all' || actionFilter !== 'all' ||
+    userFilter !== 'all' || entityTypeFilter !== 'all' || dateFrom || dateTo
 
   async function handleExport() {
     setExporting(true)
     try {
       const blob = await exportAuditCsv({
-        module: moduleFilter !== 'all' ? moduleFilter : undefined,
-        action: actionFilter !== 'all' ? actionFilter : undefined,
-        q:      search || undefined,
-        from:   dateFrom || undefined,
-        to:     dateTo   || undefined,
+        module:     moduleFilter !== 'all' ? moduleFilter : undefined,
+        action:     actionFilter !== 'all' ? actionFilter : undefined,
+        userId:     userFilter !== 'all' ? userFilter : undefined,
+        entityType: entityTypeFilter !== 'all' ? entityTypeFilter : undefined,
+        q:          search || undefined,
+        from:       dateFrom || undefined,
+        to:         dateTo   || undefined,
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -117,6 +152,10 @@ export function AuditPageClient() {
     } finally {
       setExporting(false)
     }
+  }
+
+  function handlePrint() {
+    window.print()
   }
 
   return (
@@ -141,7 +180,7 @@ export function AuditPageClient() {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* list */}
-          <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-96' : 'flex w-full lg:w-96')}>
+          <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-[22rem]' : 'flex w-full lg:w-[22rem]')}>
             <div className="p-3 space-y-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
               <SearchInput value={search} onChange={v => { setSearch(v); setSelected(null) }} placeholder="Search events, users, entities…" />
               <div className="flex gap-2">
@@ -152,6 +191,16 @@ export function AuditPageClient() {
                 <Select value={actionFilter} onChange={v => { setActionFilter(v); setSelected(null) }} options={[
                   { value: 'all', label: 'All actions' },
                   ...ACTIONS.map(a => ({ value: a, label: a.charAt(0).toUpperCase() + a.slice(1) }))
+                ]} />
+              </div>
+              <div className="flex gap-2">
+                <Select value={userFilter} onChange={v => { setUserFilter(v); setSelected(null) }} options={[
+                  { value: 'all', label: 'All users' },
+                  ...Array.from(usersMap.entries()).map(([id, name]) => ({ value: id, label: name }))
+                ]} />
+                <Select value={entityTypeFilter} onChange={v => { setEntityTypeFilter(v); setSelected(null) }} options={[
+                  { value: 'all', label: 'All entity types' },
+                  ...entityTypes.map(t => ({ value: t, label: t.replace(/_/g, ' ') }))
                 ]} />
               </div>
               <div className="flex gap-2 items-center">
@@ -179,15 +228,33 @@ export function AuditPageClient() {
                   >✕</button>
                 )}
               </div>
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-surface-border dark:border-dark-border text-xs font-medium text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors disabled:opacity-50"
-              >
-                {exporting
-                  ? <><span className="w-3 h-3 border border-text-muted/30 border-t-text-muted rounded-full animate-spin" /> Exporting…</>
-                  : '↓ Export CSV'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-surface-border dark:border-dark-border text-xs font-medium text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors disabled:opacity-50"
+                >
+                  {exporting
+                    ? <><span className="w-3 h-3 border border-text-muted/30 border-t-text-muted rounded-full animate-spin" /> Exporting…</>
+                    : '↓ Export CSV'}
+                </button>
+                <button
+                  onClick={handlePrint}
+                  className="px-3 py-1.5 rounded-lg border border-surface-border dark:border-dark-border text-xs font-medium text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
+                  title="Print"
+                >
+                  ⎙
+                </button>
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="px-3 py-1.5 rounded-lg border border-surface-border dark:border-dark-border text-xs font-medium text-danger hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    title="Clear all filters"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto divide-y divide-surface-border dark:divide-dark-border">
               {loading && events.length === 0 && (
@@ -202,10 +269,15 @@ export function AuditPageClient() {
                   <div className="flex items-center gap-2 mb-0.5">
                     {moduleBadge(e.module)}
                     {actionBadge(e.action)}
-                    <span className="text-xs text-text-muted ml-auto">{e.timestamp?.slice(11, 16) ?? ''}</span>
+                    <span className="text-xs text-text-muted ml-auto flex-shrink-0">{e.timestamp?.slice(11, 16) ?? ''}</span>
                   </div>
                   <p className="text-sm text-text mt-1 truncate">{e.entity_label ?? e.entity_type ?? '—'}</p>
-                  <p className="text-xs text-text-muted">{e.user_name ?? 'System'} · {e.user_role ?? '—'}</p>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <p className="text-xs text-text-muted truncate">{e.user_name ?? 'System'} · {e.user_role ?? '—'}</p>
+                    {e.ip_address && (
+                      <span className="text-[10px] font-mono text-text-muted/70 flex-shrink-0">{e.ip_address}</span>
+                    )}
+                  </div>
                 </button>
               ))}
               {!loading && page + 1 < totalPages && (
@@ -214,6 +286,17 @@ export function AuditPageClient() {
                   className="w-full py-3 text-sm text-primary-600 hover:bg-surface-hover dark:hover:bg-dark-hover">
                   Load more
                 </button>
+              )}
+              {/* Retention notice */}
+              {!loading && (
+                <div className="px-4 py-3 text-center">
+                  <p className="text-[10px] text-text-muted/60">
+                    Audit events retained for 90 days
+                    {lastPoll && (
+                      <> · Refreshed {lastPoll.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+                    )}
+                  </p>
+                </div>
               )}
             </div>
           </div>

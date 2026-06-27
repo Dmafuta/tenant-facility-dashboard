@@ -31,22 +31,24 @@ export interface AuditPage {
 }
 
 function buildAuditQs(params: {
-  module?: string; action?: string; q?: string
+  module?: string; action?: string; q?: string; userId?: string; entityType?: string
   from?: string; to?: string; page?: number; size?: number
 }): string {
   const qs = new URLSearchParams()
-  if (params.module) qs.set('module', params.module)
-  if (params.action) qs.set('action', params.action)
-  if (params.q)      qs.set('q', params.q)
-  if (params.from)   qs.set('from', params.from)
-  if (params.to)     qs.set('to', params.to)
+  if (params.module)     qs.set('module', params.module)
+  if (params.action)     qs.set('action', params.action)
+  if (params.q)          qs.set('q', params.q)
+  if (params.userId)     qs.set('userId', params.userId)
+  if (params.entityType) qs.set('entityType', params.entityType)
+  if (params.from)       qs.set('from', params.from)
+  if (params.to)         qs.set('to', params.to)
   if (params.page != null) qs.set('page', String(params.page))
   if (params.size != null) qs.set('size', String(params.size))
   return qs.toString()
 }
 
 export function getAuditEvents(params: {
-  module?: string; action?: string; q?: string
+  module?: string; action?: string; q?: string; userId?: string; entityType?: string
   from?: string; to?: string; page?: number; size?: number
 }): Promise<AuditPage> {
   const query = buildAuditQs(params)
@@ -54,7 +56,7 @@ export function getAuditEvents(params: {
 }
 
 export async function exportAuditCsv(params: {
-  module?: string; action?: string; q?: string; from?: string; to?: string
+  module?: string; action?: string; q?: string; userId?: string; entityType?: string; from?: string; to?: string
 }): Promise<Blob> {
   const API = (process.env.NEXT_PUBLIC_API_URL ?? '/api/backend')
   const query = buildAuditQs(params)
