@@ -164,6 +164,16 @@ export function BillingPageClient() {
     }).catch(() => {})
   }, [showRunModal])
 
+  // Load SC settings when bulk email modal opens on SC tab
+  useEffect(() => {
+    if (!showBulkEmailModal || activeTab !== 'SC') return
+    getSettings().then(s => {
+      const cycle = (s.sc_billing_cycle ?? 'monthly') as typeof scCycle
+      setScCycle(cycle)
+      setBulkEmailPeriod(defaultPeriodForCycle(cycle))
+    }).catch(() => {})
+  }, [showBulkEmailModal, activeTab])
+
   // Bulk issue modal
   const [showBulkModal, setShowBulkModal]   = useState(false)
   const [bulkPeriod, setBulkPeriod]         = useState(() => {
@@ -1719,17 +1729,22 @@ export function BillingPageClient() {
           ) : (
             <>
               <p className="text-sm text-text-muted">
-                Send invoice emails to all tenants with <strong>issued or partial</strong> invoices for the selected period.
-                A PDF attachment will be included. Invoices without an email address will be skipped.
+                {activeTab === 'SC'
+                  ? <>Send SC invoice emails to all <strong>owners</strong> with issued or partial invoices for the selected period. A PDF with monthly breakdown will be attached.</>
+                  : <>Send invoice emails to all tenants with <strong>issued or partial</strong> invoices for the selected period. A PDF attachment will be included.</>
+                } Invoices without an email address will be skipped.
               </p>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
-                <input
-                  type="month"
-                  value={bulkEmailPeriod}
-                  onChange={e => setBulkEmailPeriod(e.target.value)}
-                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
+                {activeTab === 'SC'
+                  ? <PeriodPicker cycle={scCycle} value={bulkEmailPeriod} onChange={setBulkEmailPeriod} />
+                  : <input
+                      type="month"
+                      value={bulkEmailPeriod}
+                      onChange={e => setBulkEmailPeriod(e.target.value)}
+                      className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                }
               </div>
               <div className="flex gap-2">
                 <Button variant="ghost" className="flex-1" onClick={() => setShowBulkEmailModal(false)}>Cancel</Button>
