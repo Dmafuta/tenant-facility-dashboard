@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -23,6 +23,7 @@ import type { WaterSupplierData, ReserveTankData, WaterZoneData, WaterBalancePer
 import { getUnitsFromApi } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
 import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice } from '@/lib/api/disconnection'
+import { getWaterLossReport, getUnreadMeters } from '@/lib/api/invoices'
 import type { DisconnectionNoticeData } from '@/lib/api/disconnection'
 import type { ChargeData } from '@/lib/api/charges'
 import { getSettings } from '@/lib/api/settings'
@@ -321,6 +322,13 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   const [migForm, setMigForm] = useState({ fromType: '', toType: '', migrationDate: '', finalReading: '', migratedBy: '', notes: '' })
   const [savingMig, setSavingMig] = useState(false)
 
+  // Reading correction
+  const [correctTarget, setCorrectTarget] = useState<MeterReadingData | null>(null)
+  const [correctCurrent, setCorrectCurrent] = useState('')
+  const [correctPrevious, setCorrectPrevious] = useState('')
+  const [correcting, setCorrecting] = useState(false)
+  const [correctError, setCorrectError] = useState<string | null>(null)
+
   const fetchHistory = useCallback((meterId: string) => {
     setLoadingH(true)
     getMeterTypeHistory(meterId)
@@ -359,6 +367,31 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
       onMeterUpdated?.()
     } finally {
       setSavingMig(false)
+    }
+  }
+
+  function openCorrect(r: MeterReadingData) {
+    setCorrectTarget(r)
+    setCorrectCurrent(String(r.current_value))
+    setCorrectPrevious(String(r.previous_value))
+    setCorrectError(null)
+  }
+
+  async function handleCorrect() {
+    if (!correctTarget) return
+    setCorrecting(true)
+    setCorrectError(null)
+    try {
+      const updated = await correctReading(correctTarget.id, {
+        current_value:  Number(correctCurrent),
+        previous_value: correctPrevious ? Number(correctPrevious) : undefined,
+      })
+      setReadings(prev => prev.map(r => r.id === updated.id ? updated : r))
+      setCorrectTarget(null)
+    } catch (e: unknown) {
+      setCorrectError(e instanceof Error ? e.message : 'Failed to correct reading.')
+    } finally {
+      setCorrecting(false)
     }
   }
 
@@ -414,12 +447,26 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
             ) : (
               <div className="space-y-2">
                 {readings.map(r => (
-                  <div key={r.id} className="p-3 rounded-lg border border-surface-border dark:border-dark-border text-sm">
+                  <div key={r.id} className={cn('p-3 rounded-lg border text-sm', r.anomaly ? 'border-warning bg-warning/5' : 'border-surface-border dark:border-dark-border')}>
                     <div className="flex justify-between mb-1">
-                      <span className="font-medium text-text">{r.billing_period ?? r.reading_date ?? '—'}</span>
-                      <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
-                        r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
-                      )}>{r.status}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-text">{r.billing_period ?? r.reading_date ?? '—'}</span>
+                        {r.anomaly && <span className="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning font-medium">⚠ Anomaly</span>}
+                        {r.source === 'estimated' && <span className="text-xs px-1.5 py-0.5 rounded bg-surface-border text-text-muted">Est.</span>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
+                          r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
+                        )}>{r.status}</span>
+                        {r.status === 'pending_bill' && correctTarget?.id !== r.id && (
+                          <button
+                            onClick={() => openCorrect(r)}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Correct
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-xs text-text-muted">
                       <div><p>Prev → Current</p><p className="text-text font-medium">{r.previous_value} → {r.current_value}</p></div>
@@ -428,6 +475,42 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
                     </div>
                     {r.management_fee != null && (
                       <p className="text-[11px] text-text-muted mt-1">+ KES {Number(r.management_fee).toLocaleString()} mgmt fee · {r.source}</p>
+                    )}
+                    {r.notes && (
+                      <p className="text-[11px] text-text-muted mt-1 italic">{r.notes}</p>
+                    )}
+                    {/* Inline correction form */}
+                    {correctTarget?.id === r.id && (
+                      <div className="mt-3 pt-3 border-t border-surface-border dark:border-dark-border space-y-2">
+                        <p className="text-xs font-medium text-text">Correct Reading</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[11px] text-text-muted block mb-1">Previous Value</label>
+                            <input
+                              type="number"
+                              value={correctPrevious}
+                              onChange={e => setCorrectPrevious(e.target.value)}
+                              className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] text-text-muted block mb-1">Current Value *</label>
+                            <input
+                              type="number"
+                              value={correctCurrent}
+                              onChange={e => setCorrectCurrent(e.target.value)}
+                              className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                          </div>
+                        </div>
+                        {correctError && <p className="text-xs text-danger">{correctError}</p>}
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="ghost" size="sm" onClick={() => setCorrectTarget(null)} disabled={correcting}>Cancel</Button>
+                          <Button size="sm" onClick={handleCorrect} disabled={correcting || !correctCurrent}>
+                            {correcting ? 'Saving…' : 'Save Correction'}
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -2110,6 +2193,29 @@ function ReadingsTab({
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
 
+  // Estimated readings
+  const [showEstModal, setShowEstModal] = useState(false)
+  const [estPeriod, setEstPeriod]       = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [generating, setGenerating]     = useState(false)
+  const [estResult, setEstResult]       = useState<{ generated: number; skipped: number } | null>(null)
+  const [estError, setEstError]         = useState<string | null>(null)
+
+  async function handleGenerateEstimated() {
+    setGenerating(true); setEstResult(null); setEstError(null)
+    try {
+      const result = await generateEstimatedReadings(estPeriod)
+      setEstResult(result)
+      onRefresh()
+    } catch (e: unknown) {
+      setEstError(e instanceof Error ? e.message : 'Failed to generate estimated readings')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   // Collect unique billing periods for the dropdown
   const periods = useMemo(() => {
     const set = new Set<string>()
@@ -2217,11 +2323,52 @@ function ReadingsTab({
               </Button>
             </CanDo>
           )}
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="ghost" onClick={() => { setShowEstModal(true); setEstResult(null); setEstError(null) }}>
+              Generate Estimated
+            </Button>
+          </CanDo>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
             ⬇ Export CSV
           </Button>
         </div>
       </div>
+
+      {/* Estimated Readings Modal */}
+      <Modal open={showEstModal} onClose={() => setShowEstModal(false)} title="Generate Estimated Readings" size="sm">
+        <div className="p-5 space-y-4">
+          {estResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{estResult.generated} estimated reading(s) generated. {estResult.skipped} meter(s) skipped (already have a reading or no history).</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => setShowEstModal(false)}>Close</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                For any active water/sewer meter without a reading for the selected period,
+                this will auto-generate an estimated reading based on the meter's rolling average consumption.
+              </p>
+              {estError && <p className="text-sm text-danger">{estError}</p>}
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+                <input
+                  type="month" value={estPeriod} onChange={e => setEstPeriod(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowEstModal(false)}>Cancel</Button>
+                <Button variant="primary" className="flex-1" disabled={generating || !estPeriod} onClick={handleGenerateEstimated}>
+                  {generating ? 'Generating…' : `Generate for ${estPeriod}`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
 
       {/* Table */}
       <Card className="overflow-hidden">
@@ -2229,18 +2376,18 @@ function ReadingsTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card">
-                {['Unit', 'Utility', 'Period', 'Consumed', 'Amount Due', 'Mgmt Fee', 'Source', 'Status'].map(h => (
+                {['Unit', 'Utility', 'Period', 'Consumed', 'Amount Due', 'Mgmt Fee', 'Source', 'Status', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
+                <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-text-muted">No readings match filters.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-text-muted">No readings match filters.</td></tr>
               ) : filtered.map((r, i) => (
-                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === filtered.length - 1 && 'border-b-0')}>
+                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === filtered.length - 1 && 'border-b-0', r.anomaly && 'bg-warning/5')}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-text">{r.unit_label ?? '—'}</p>
                     <p className="text-xs text-text-muted font-mono">{r.meter_number}</p>
@@ -2254,9 +2401,10 @@ function ReadingsTab({
                     <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
                       r.source === 'smart_iot' ? 'bg-success/10 text-success' :
                       r.source === 'vending_issue' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400' :
+                      r.source === 'estimated' ? 'bg-surface-border text-text-muted italic' :
                       'bg-surface-border text-text-muted'
                     )}>
-                      {r.source === 'smart_iot' ? '⚡ IoT' : r.source === 'vending_issue' ? '🏧 Vending' : r.source ?? 'manual'}
+                      {r.source === 'smart_iot' ? '⚡ IoT' : r.source === 'vending_issue' ? '🏧 Vending' : r.source === 'estimated' ? '~ Est.' : r.source ?? 'manual'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -2276,6 +2424,13 @@ function ReadingsTab({
                         </CanDo>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-2">
+                    {r.anomaly && (
+                      <span title="Consumption is >2× the meter's rolling average" className="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning font-medium whitespace-nowrap">
+                        ⚠ Anomaly
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -2870,6 +3025,24 @@ export function UtilitiesPageClient() {
   const [loadingBalance, setLoadingBalance]   = useState(true)
   const [loadingDisconn, setLoadingDisconn]   = useState(true)
 
+  // Water loss / unread meters reports
+  const [reportPeriod, setReportPeriod] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [waterLossData, setWaterLossData]   = useState<{
+    period: string; supplier_total_m3: number; consumer_total_m3: number
+    water_loss_m3: number; loss_pct: number; supplier_count: number; consumer_count: number
+    supplier_readings: Record<string, unknown>[]; consumer_readings: Record<string, unknown>[]
+  } | null>(null)
+  const [unreadMetersData, setUnreadMetersData] = useState<{
+    id: string; meter_number: string; unit_id: string | null; unit_label: string | null
+    utility_type: string; meter_type: string; meter_role: string | null
+    last_reading: number | null; last_reading_date: string | null
+  }[] | null>(null)
+  const [reportLoading, setReportLoading]   = useState(false)
+  const [reportError, setReportError]       = useState<string | null>(null)
+
   const fetchMeters = useCallback(async () => {
     try {
       const data = await getAllMeters()
@@ -2985,6 +3158,7 @@ export function UtilitiesPageClient() {
           </TabsTrigger>
           <TabsTrigger value="readings">Readings</TabsTrigger>
           <TabsTrigger value="disconnections">Disconnections</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="meters" className="pt-5">
@@ -3035,6 +3209,128 @@ export function UtilitiesPageClient() {
             loading={loadingDisconn || loadingMeters}
             onRefresh={fetchDisconn}
           />
+        </TabsContent>
+
+        <TabsContent value="reports" className="pt-5">
+          <div className="space-y-6">
+            {/* Period selector */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-text-muted">Period</label>
+              <input
+                type="month"
+                value={reportPeriod}
+                onChange={e => setReportPeriod(e.target.value)}
+                className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <Button
+                variant="primary" size="sm"
+                disabled={reportLoading}
+                onClick={async () => {
+                  setReportLoading(true); setReportError(null)
+                  try {
+                    const [wl, um] = await Promise.all([
+                      getWaterLossReport(reportPeriod),
+                      getUnreadMeters(reportPeriod),
+                    ])
+                    setWaterLossData(wl)
+                    setUnreadMetersData(um)
+                  } catch (e: unknown) {
+                    setReportError(e instanceof Error ? e.message : 'Failed to load reports')
+                  } finally {
+                    setReportLoading(false)
+                  }
+                }}
+              >
+                {reportLoading ? 'Loading…' : 'Load Reports'}
+              </Button>
+            </div>
+
+            {reportError && (
+              <div className="bg-danger/10 text-danger text-sm px-4 py-2 rounded-lg">{reportError}</div>
+            )}
+
+            {/* Water Loss (NRW) Report */}
+            {waterLossData && (
+              <Card className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-text">Water Loss / NRW Report — {waterLossData.period}</h3>
+                  <span className={cn(
+                    'inline-flex px-3 py-1 rounded-full text-sm font-semibold',
+                    waterLossData.loss_pct >= 15 ? 'bg-danger/10 text-danger'
+                      : waterLossData.loss_pct >= 10 ? 'bg-warning/10 text-warning'
+                      : 'bg-success/10 text-success'
+                  )}>
+                    {waterLossData.loss_pct}% loss
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[
+                    ['Supplier Total', `${waterLossData.supplier_total_m3.toFixed(1)} m³`, 'text-text'],
+                    ['Consumer Total', `${waterLossData.consumer_total_m3.toFixed(1)} m³`, 'text-text'],
+                    ['Water Loss',     `${waterLossData.water_loss_m3.toFixed(1)} m³`,     waterLossData.loss_pct >= 15 ? 'text-danger' : 'text-warning'],
+                    ['Loss %',         `${waterLossData.loss_pct}%`,                        waterLossData.loss_pct >= 15 ? 'text-danger' : waterLossData.loss_pct >= 10 ? 'text-warning' : 'text-success'],
+                  ].map(([label, value, cls]) => (
+                    <div key={label as string} className="bg-surface dark:bg-dark-surface rounded-lg p-3 border border-surface-border dark:border-dark-border">
+                      <p className="text-xs text-text-muted mb-1">{label}</p>
+                      <p className={cn('text-lg font-semibold', cls as string)}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-text-muted">
+                  {waterLossData.supplier_count} supplier reading(s) · {waterLossData.consumer_count} consumer reading(s)
+                </p>
+              </Card>
+            )}
+
+            {/* Unread Meters Report */}
+            {unreadMetersData && (
+              <Card className="overflow-hidden">
+                <div className="px-5 py-4 border-b border-surface-border dark:border-dark-border flex items-center justify-between">
+                  <h3 className="font-semibold text-text">Unread Meters — {reportPeriod}</h3>
+                  <span className={cn(
+                    'inline-flex px-2 py-0.5 rounded text-xs font-medium',
+                    unreadMetersData.length > 0 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'
+                  )}>
+                    {unreadMetersData.length} unread
+                  </span>
+                </div>
+                {unreadMetersData.length === 0 ? (
+                  <p className="p-5 text-sm text-text-muted text-center">All active meters have readings for {reportPeriod}. ✅</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                        <th className="px-4 py-3 text-left">Unit</th>
+                        <th className="px-4 py-3 text-left">Meter No.</th>
+                        <th className="px-4 py-3 text-left">Utility</th>
+                        <th className="px-4 py-3 text-left">Type</th>
+                        <th className="px-4 py-3 text-right">Last Reading</th>
+                        <th className="px-4 py-3 text-left">Last Read Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unreadMetersData.map(m => (
+                        <tr key={m.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                          <td className="px-4 py-3 font-medium">{m.unit_label ?? '—'}</td>
+                          <td className="px-4 py-3 font-mono text-xs">{m.meter_number}</td>
+                          <td className="px-4 py-3">{utilityLabel(m.utility_type)}</td>
+                          <td className="px-4 py-3">{meterTypeBadge(m.meter_type)}</td>
+                          <td className="px-4 py-3 text-right text-text-muted">{m.last_reading != null ? m.last_reading.toLocaleString() : '—'}</td>
+                          <td className="px-4 py-3 text-text-muted text-xs">{m.last_reading_date ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </Card>
+            )}
+
+            {!waterLossData && !unreadMetersData && !reportLoading && (
+              <p className="text-center text-text-muted text-sm py-8">
+                Select a period and click <strong>Load Reports</strong> to view the water loss and unread meters reports.
+              </p>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

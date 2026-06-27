@@ -77,6 +77,7 @@ export interface MeterReadingData {
   management_fee: number | null
   status: string
   notes: string | null
+  anomaly: boolean
   created_at: string | null
 }
 
@@ -137,6 +138,16 @@ export async function recordMeterTypeMigration(meterId: string, payload: Record<
   })
 }
 
+export async function correctReading(
+  readingId: string,
+  payload: { current_value: number; previous_value?: number }
+): Promise<MeterReadingData> {
+  return apiFetch<MeterReadingData>(`/meter-readings/${readingId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function patchMeter(meterId: string, payload: Record<string, unknown>): Promise<MeterData> {
   return apiFetch<MeterData>(`/meters/${meterId}`, {
     method: 'PATCH',
@@ -146,4 +157,34 @@ export async function patchMeter(meterId: string, payload: Record<string, unknow
 
 export async function deleteGlobalMeter(meterId: string): Promise<void> {
   await apiFetch<unknown>(`/meters/${meterId}`, { method: 'DELETE' })
+}
+
+export interface BulkReadingItem {
+  meter_id: string
+  current_value: number
+  previous_value?: number
+  reading_date?: string
+  billing_period?: string
+  notes?: string
+}
+
+export async function bulkCreateReadings(items: BulkReadingItem[]): Promise<{ created: number; errors: number; errorDetails: string[] }> {
+  return apiFetch<{ created: number; errors: number; errorDetails: string[] }>('/meter-readings/bulk', {
+    method: 'POST',
+    body: JSON.stringify(items.map(i => ({
+      meter_id:       i.meter_id,
+      current_value:  i.current_value,
+      previous_value: i.previous_value,
+      reading_date:   i.reading_date,
+      billing_period: i.billing_period,
+      notes:          i.notes,
+    }))),
+  })
+}
+
+export async function generateEstimatedReadings(period: string): Promise<{ generated: number; skipped: number }> {
+  return apiFetch<{ generated: number; skipped: number }>(
+    `/meter-readings/generate-estimated?period=${encodeURIComponent(period)}`,
+    { method: 'POST' }
+  )
 }

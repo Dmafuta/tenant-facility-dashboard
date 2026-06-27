@@ -9,8 +9,11 @@ import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/cn'
 import {
   getInvoices, getInvoice, issueInvoice, voidInvoice, applyPayment, removePayment,
-  bulkIssueInvoices,
-  type InvoiceData, type InvoiceCategory,
+  bulkIssueInvoices, sendInvoiceEmail, applyLateFees,
+  writeOffInvoice, bulkEmailInvoices, sendInvoiceDisconnectionNotice,
+  getAgedDebtors, getBillingSummary, getOutstandingBalances,
+  type InvoiceData, type InvoiceCategory, type AgedDebtorRow, type AgedDebtorSummary,
+  type BillingSummary, type OutstandingBalanceRow,
   getInvoiceCategories,
 } from '@/lib/api/invoices'
 import { apiFetch } from '@/lib/api/fetch'
@@ -27,11 +30,12 @@ function fmtDate(s: string | null) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'warning' | 'success' | 'danger' | 'blue' | 'purple' }> = {
-  draft:   { label: 'Draft',   variant: 'default' },
-  issued:  { label: 'Issued',  variant: 'blue' },
-  partial: { label: 'Partial', variant: 'warning' },
-  paid:    { label: 'Paid',    variant: 'success' },
-  voided:  { label: 'Voided',  variant: 'danger' },
+  draft:        { label: 'Draft',        variant: 'default' },
+  issued:       { label: 'Issued',       variant: 'blue' },
+  partial:      { label: 'Partial',      variant: 'warning' },
+  paid:         { label: 'Paid',         variant: 'success' },
+  voided:       { label: 'Voided',       variant: 'danger' },
+  written_off:  { label: 'Written Off',  variant: 'purple' },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -55,7 +59,7 @@ const CHARGE_TYPE_LABELS: Record<string, string> = {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function BillingPageClient() {
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
   const [loading, setLoading]         = useState(true)
@@ -93,6 +97,51 @@ export function BillingPageClient() {
   })
   const [bulkIssuing, setBulkIssuing]       = useState(false)
   const [bulkResult, setBulkResult]         = useState<{ issued: number } | null>(null)
+
+  // Send email
+  const [emailing, setEmailing]       = useState<string | null>(null)
+  const [emailMsg, setEmailMsg]       = useState<string | null>(null)
+
+  // Late fees modal
+  const [showLateModal, setShowLateModal] = useState(false)
+  const [latePct, setLatePct]           = useState('5')
+  const [lateFeeRunning, setLateFeeRunning] = useState(false)
+  const [lateFeeResult, setLateFeeResult] = useState<{ updated: number; message: string } | null>(null)
+
+  // Void modal
+  const [voidTarget, setVoidTarget]   = useState<InvoiceData | null>(null)
+  const [voidReason, setVoidReason]   = useState('')
+  const [voidNotes, setVoidNotes]     = useState('')
+  const [voiding, setVoiding]         = useState(false)
+
+  // Write-off modal
+  const [writeOffTarget, setWriteOffTarget] = useState<InvoiceData | null>(null)
+  const [writingOff, setWritingOff]         = useState(false)
+
+  // Bulk email modal
+  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false)
+  const [bulkEmailPeriod, setBulkEmailPeriod]       = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [bulkEmailing, setBulkEmailing]             = useState(false)
+  const [bulkEmailResult, setBulkEmailResult]       = useState<{ sent: number; skipped: number; message: string } | null>(null)
+
+  // Disconnection notice
+  const [disconnectTarget, setDisconnectTarget] = useState<InvoiceData | null>(null)
+  const [disconnectType, setDisconnectType]     = useState<'reminder' | 'formal'>('reminder')
+  const [sendingNotice, setSendingNotice]       = useState(false)
+
+  // Reports tab
+  const [reportTab, setReportTab]       = useState<'aged' | 'outstanding' | 'summary'>('aged')
+  const [reportPeriod, setReportPeriod] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [agedData, setAgedData]         = useState<{ rows: AgedDebtorRow[]; summary: AgedDebtorSummary } | null>(null)
+  const [summaryData, setSummaryData]   = useState<BillingSummary | null>(null)
+  const [outstandingData, setOutstandingData] = useState<OutstandingBalanceRow[] | null>(null)
+  const [reportLoading, setReportLoading] = useState(false)
 
   // Action states
   const [actioning, setActioning]     = useState<string | null>(null)
@@ -163,18 +212,25 @@ export function BillingPageClient() {
     }
   }
 
-  async function handleVoid(inv: InvoiceData) {
-    if (!confirm(`Void invoice ${inv.statement_no}? Any payments will become unallocated credits.`)) return
-    setActioning(inv.id)
+  function openVoid(inv: InvoiceData) {
+    setVoidTarget(inv)
+    setVoidReason('')
+    setVoidNotes('')
+  }
+
+  async function handleVoid() {
+    if (!voidTarget || !voidReason) return
+    setVoiding(true)
     setError(null)
     try {
-      const updated = await voidInvoice(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
-      if (selected?.id === inv.id) setSelected(updated)
+      const updated = await voidInvoice(voidTarget.id, { void_reason: voidReason, void_notes: voidNotes || undefined })
+      setInvoices(prev => prev.map(i => i.id === voidTarget.id ? updated : i))
+      if (selected?.id === voidTarget.id) setSelected(updated)
+      setVoidTarget(null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to void invoice')
     } finally {
-      setActioning(null)
+      setVoiding(false)
     }
   }
 
@@ -274,12 +330,113 @@ export function BillingPageClient() {
     }
   }
 
+  // ── Email invoice ────────────────────────────────────────────────────────
+
+  async function handleSendEmail(inv: InvoiceData) {
+    setEmailing(inv.id)
+    setEmailMsg(null)
+    setError(null)
+    try {
+      const res = await sendInvoiceEmail(inv.id)
+      setEmailMsg(res.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to send email')
+    } finally {
+      setEmailing(null)
+    }
+  }
+
+  // ── Late fees ─────────────────────────────────────────────────────────────
+
+  async function handleApplyLateFees() {
+    setLateFeeRunning(true); setError(null); setLateFeeResult(null)
+    try {
+      const result = await applyLateFees(parseFloat(latePct), activeTab !== 'Reports' ? activeTab : undefined)
+      setLateFeeResult(result)
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to apply late fees')
+    } finally {
+      setLateFeeRunning(false)
+    }
+  }
+
+  // ── Write-off ─────────────────────────────────────────────────────────────
+
+  async function handleWriteOff() {
+    if (!writeOffTarget) return
+    setWritingOff(true)
+    setError(null)
+    try {
+      const updated = await writeOffInvoice(writeOffTarget.id)
+      setInvoices(prev => prev.map(i => i.id === writeOffTarget.id ? updated : i))
+      if (selected?.id === writeOffTarget.id) setSelected(updated)
+      setWriteOffTarget(null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to write off invoice')
+    } finally {
+      setWritingOff(false)
+    }
+  }
+
+  // ── Bulk email ─────────────────────────────────────────────────────────────
+
+  async function handleBulkEmail() {
+    setBulkEmailing(true); setError(null); setBulkEmailResult(null)
+    try {
+      const result = await bulkEmailInvoices(bulkEmailPeriod, activeTab !== 'Reports' ? activeTab : undefined)
+      setBulkEmailResult(result)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Bulk email failed')
+    } finally {
+      setBulkEmailing(false)
+    }
+  }
+
+  // ── Disconnection notice ───────────────────────────────────────────────────
+
+  async function handleSendNotice() {
+    if (!disconnectTarget) return
+    setSendingNotice(true)
+    setError(null)
+    try {
+      const res = await sendInvoiceDisconnectionNotice(disconnectTarget.id, disconnectType)
+      setEmailMsg(res.message)
+      setDisconnectTarget(null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to send notice')
+    } finally {
+      setSendingNotice(false)
+    }
+  }
+
+  // ── Reports ───────────────────────────────────────────────────────────────
+
+  async function loadReport(tab: typeof reportTab, period?: string) {
+    setReportLoading(true)
+    try {
+      if (tab === 'aged')        setAgedData(await getAgedDebtors())
+      if (tab === 'outstanding') setOutstandingData(await getOutstandingBalances())
+      if (tab === 'summary')     setSummaryData(await getBillingSummary(period ?? reportPeriod))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load report')
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  function switchReportTab(t: typeof reportTab) {
+    setReportTab(t)
+    loadReport(t)
+  }
+
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT'; label: string }[] = [
-    { code: 'WS', label: 'Water & Sewerage' },
-    { code: 'SC', label: 'Service Charge' },
-    { code: 'OT', label: 'Other Charges' },
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'Reports'; label: string }[] = [
+    { code: 'WS',      label: 'Water & Sewerage' },
+    { code: 'SC',      label: 'Service Charge' },
+    { code: 'OT',      label: 'Other Charges' },
+    { code: 'Reports', label: 'Reports' },
   ]
 
   const activeCategory = categories.find(c => c.code === activeTab)
@@ -332,6 +489,7 @@ export function BillingPageClient() {
       </div>
 
       {/* Toolbar */}
+      {activeTab !== 'Reports' && (
       <div className="flex flex-wrap gap-2 items-center">
         <SearchInput
           value={search}
@@ -348,7 +506,8 @@ export function BillingPageClient() {
             { value: 'issued',  label: 'Issued' },
             { value: 'partial', label: 'Partial' },
             { value: 'paid',    label: 'Paid' },
-            { value: 'voided',  label: 'Voided' },
+            { value: 'voided',      label: 'Voided' },
+            { value: 'written_off', label: 'Written Off' },
           ]}
         />
         <Select
@@ -362,19 +521,230 @@ export function BillingPageClient() {
         <Button variant="ghost" size="sm" onClick={load} className="ml-auto">
           Refresh
         </Button>
+        <Button variant="ghost" size="sm" onClick={() => { setShowLateModal(true); setLateFeeResult(null) }}>
+          Late Fees
+        </Button>
         {tabStats.drafts > 0 && (
           <Button variant="ghost" size="sm" onClick={() => { setShowBulkModal(true); setBulkResult(null) }}>
             Issue All Drafts ({tabStats.drafts})
           </Button>
         )}
+        <Button variant="ghost" size="sm" onClick={() => { setShowBulkEmailModal(true); setBulkEmailResult(null) }}>
+          Bulk Email
+        </Button>
         {activeTab === 'SC' && (
           <Button variant="primary" size="sm" onClick={() => { setShowRunModal(true); setRunResult(null) }}>
             Run SC Billing
           </Button>
         )}
       </div>
+      )}
+
+      {/* Email success banner */}
+      {emailMsg && (
+        <div className="bg-success/10 text-success text-sm px-4 py-2 rounded-lg flex items-center justify-between">
+          {emailMsg}
+          <button onClick={() => setEmailMsg(null)} className="ml-4 font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* Reports tab */}
+      {activeTab === 'Reports' && (
+        <div className="space-y-4">
+          <div className="flex gap-1 border-b border-surface-border dark:border-dark-border">
+            {(['aged', 'outstanding', 'summary'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => switchReportTab(t)}
+                className={cn(
+                  'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                  reportTab === t
+                    ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                    : 'border-transparent text-text-muted hover:text-text'
+                )}
+              >
+                {t === 'aged' ? 'Aged Debtors' : t === 'outstanding' ? 'Outstanding Balances' : 'Billing Summary'}
+              </button>
+            ))}
+          </div>
+
+          {reportLoading && <div className="text-center text-text-muted text-sm py-8">Loading report…</div>}
+
+          {/* Aged Debtors */}
+          {reportTab === 'aged' && !reportLoading && (
+            <div className="space-y-4">
+              {!agedData ? (
+                <div className="text-center text-text-muted text-sm py-8">
+                  <Button variant="primary" onClick={() => loadReport('aged')}>Load Aged Debtors Report</Button>
+                </div>
+              ) : (
+                <>
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-4 gap-3">
+                    {([['0-30 days', agedData.summary.total_0_30, 'text-warning'], ['31-60 days', agedData.summary.total_31_60, 'text-orange-500'], ['61-90 days', agedData.summary.total_61_90, 'text-danger'], ['90+ days', agedData.summary.total_90_plus, 'text-danger font-bold']] as const).map(([label, val, cls]) => (
+                      <Card key={label} className="p-4">
+                        <p className="text-xs text-text-muted mb-1">{label}</p>
+                        <p className={cn('text-base font-semibold', cls)}>{fmt(val as number)}</p>
+                      </Card>
+                    ))}
+                  </div>
+                  <Card className="overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                          <th className="px-4 py-3 text-left">Statement</th>
+                          <th className="px-4 py-3 text-left">Unit</th>
+                          <th className="px-4 py-3 text-left">Person</th>
+                          <th className="px-4 py-3 text-left">Due Date</th>
+                          <th className="px-4 py-3 text-right">Days Overdue</th>
+                          <th className="px-4 py-3 text-right">Balance</th>
+                          <th className="px-4 py-3 text-center">Bucket</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agedData.rows.map(row => (
+                          <tr key={row.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                            <td className="px-4 py-3 font-mono text-xs">{row.statement_no}</td>
+                            <td className="px-4 py-3">{row.unit_label ?? '—'}</td>
+                            <td className="px-4 py-3 text-text-muted">{row.person_name ?? '—'}</td>
+                            <td className="px-4 py-3 text-text-muted">{fmtDate(row.due_date)}</td>
+                            <td className={cn('px-4 py-3 text-right font-medium', row.days_overdue > 60 ? 'text-danger' : row.days_overdue > 30 ? 'text-orange-500' : 'text-warning')}>
+                              {row.days_overdue}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-danger">{fmt(row.balance)}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', row.bucket === '90+' ? 'bg-danger/10 text-danger' : row.bucket === '61-90' ? 'bg-orange-100 text-orange-700' : row.bucket === '31-60' ? 'bg-warning/10 text-warning' : 'bg-blue-50 text-blue-700')}>
+                                {row.bucket}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {agedData.rows.length === 0 && (
+                          <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No outstanding invoices.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </Card>
+                  <div className="text-right text-sm font-semibold">
+                    Grand Total Outstanding: <span className="text-danger">{fmt(agedData.summary.grand_total)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Outstanding Balances */}
+          {reportTab === 'outstanding' && !reportLoading && (
+            <div className="space-y-4">
+              {!outstandingData ? (
+                <div className="text-center text-text-muted text-sm py-8">
+                  <Button variant="primary" onClick={() => loadReport('outstanding')}>Load Outstanding Balances</Button>
+                </div>
+              ) : (
+                <Card className="overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                        <th className="px-4 py-3 text-left">Unit</th>
+                        <th className="px-4 py-3 text-left">Person</th>
+                        <th className="px-4 py-3 text-right">Water & Sewerage</th>
+                        <th className="px-4 py-3 text-right">Service Charge</th>
+                        <th className="px-4 py-3 text-right">Other</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                        <th className="px-4 py-3 text-left">Earliest Due</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {outstandingData.map(row => (
+                        <tr key={row.unit_id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                          <td className="px-4 py-3 font-medium">{row.unit_label ?? '—'}</td>
+                          <td className="px-4 py-3 text-text-muted">{row.person_name ?? '—'}</td>
+                          <td className="px-4 py-3 text-right">{row.ws_balance > 0 ? fmt(row.ws_balance) : '—'}</td>
+                          <td className="px-4 py-3 text-right">{row.sc_balance > 0 ? fmt(row.sc_balance) : '—'}</td>
+                          <td className="px-4 py-3 text-right">{row.ot_balance > 0 ? fmt(row.ot_balance) : '—'}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-danger">{fmt(row.total_balance)}</td>
+                          <td className="px-4 py-3 text-text-muted">{fmtDate(row.earliest_due)}</td>
+                        </tr>
+                      ))}
+                      {outstandingData.length === 0 && (
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No outstanding balances.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Billing Summary */}
+          {reportTab === 'summary' && !reportLoading && (
+            <div className="space-y-4">
+              <div className="flex gap-2 items-center">
+                <label className="text-sm text-text-muted">Period</label>
+                <input
+                  type="month"
+                  value={reportPeriod}
+                  onChange={e => setReportPeriod(e.target.value)}
+                  className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <Button variant="primary" size="sm" onClick={() => loadReport('summary', reportPeriod)}>
+                  Load
+                </Button>
+              </div>
+              {summaryData && (
+                <>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[
+                      ['Total Invoiced', summaryData.grand_invoiced, 'text-text'],
+                      ['Total Paid', summaryData.grand_paid, 'text-success'],
+                      ['Outstanding', summaryData.grand_outstanding, 'text-danger'],
+                      ['Collection Rate', null, 'text-primary-600'],
+                    ].map(([label, val, cls]) => (
+                      <Card key={label as string} className="p-4">
+                        <p className="text-xs text-text-muted mb-1">{label}</p>
+                        <p className={cn('text-lg font-semibold', cls as string)}>
+                          {label === 'Collection Rate'
+                            ? `${summaryData.grand_collection_rate}%`
+                            : fmt(val as number)}
+                        </p>
+                      </Card>
+                    ))}
+                  </div>
+                  <Card className="overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                          <th className="px-4 py-3 text-left">Category</th>
+                          <th className="px-4 py-3 text-right">Invoices</th>
+                          <th className="px-4 py-3 text-right">Invoiced</th>
+                          <th className="px-4 py-3 text-right">Paid</th>
+                          <th className="px-4 py-3 text-right">Outstanding</th>
+                          <th className="px-4 py-3 text-right">Collection %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {summaryData.categories.filter(c => c.invoice_count > 0).map(cat => (
+                          <tr key={cat.category_code} className="border-b border-surface-border dark:border-dark-border">
+                            <td className="px-4 py-3 font-medium">{CATEGORY_LABELS[cat.category_code] ?? cat.category_code}</td>
+                            <td className="px-4 py-3 text-right text-text-muted">{cat.invoice_count}</td>
+                            <td className="px-4 py-3 text-right">{fmt(cat.invoiced)}</td>
+                            <td className="px-4 py-3 text-right text-success">{fmt(cat.paid)}</td>
+                            <td className="px-4 py-3 text-right text-danger">{fmt(cat.outstanding)}</td>
+                            <td className="px-4 py-3 text-right font-medium">{cat.collection_rate}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </Card>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main area: list + detail panel */}
+      {activeTab !== 'Reports' && (
       <div className={cn('flex gap-4', selected ? 'items-start' : '')}>
 
         {/* Invoice list */}
@@ -452,9 +822,18 @@ export function BillingPageClient() {
                           <Button
                             size="sm" variant="danger"
                             disabled={actioning === inv.id}
-                            onClick={() => handleVoid(inv)}
+                            onClick={() => openVoid(inv)}
                           >
                             Void
+                          </Button>
+                        )}
+                        {['issued', 'partial'].includes(inv.status) && (
+                          <Button
+                            size="sm" variant="danger"
+                            disabled={actioning === inv.id}
+                            onClick={(e) => { e.stopPropagation(); setWriteOffTarget(inv) }}
+                          >
+                            Write Off
                           </Button>
                         )}
                       </div>
@@ -501,6 +880,27 @@ export function BillingPageClient() {
                 <span className="text-text-muted">Account No</span>
                 <span className="font-medium">{selected.account_no ?? '—'}</span>
               </div>
+
+              {/* Void audit info */}
+              {selected.status === 'voided' && (
+                <div className="bg-danger/5 border border-danger/20 rounded-lg p-3 space-y-1.5 text-xs">
+                  <p className="font-semibold text-danger uppercase tracking-wide text-[10px]">Void Details</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <span className="text-text-muted">Reason</span>
+                    <span className="font-medium capitalize">{selected.void_reason?.replace(/_/g, ' ') ?? '—'}</span>
+                    <span className="text-text-muted">Voided By</span>
+                    <span className="font-medium">{selected.voided_by ?? '—'}</span>
+                    <span className="text-text-muted">Voided At</span>
+                    <span className="font-medium">{selected.voided_at ? fmtDate(selected.voided_at) : '—'}</span>
+                    {selected.void_notes && (
+                      <>
+                        <span className="text-text-muted">Notes</span>
+                        <span className="font-medium">{selected.void_notes}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Category tagline */}
               {activeCategory?.tagline && (
@@ -612,7 +1012,7 @@ export function BillingPageClient() {
                   <Button
                     size="sm" variant="danger"
                     disabled={actioning === selected.id}
-                    onClick={() => handleVoid(selected)}
+                    onClick={() => openVoid(selected)}
                   >
                     Void
                   </Button>
@@ -625,11 +1025,46 @@ export function BillingPageClient() {
                 >
                   Print / PDF
                 </a>
+                <a
+                  href={`/api/backend/invoices/${selected.id}/pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
+                >
+                  Download PDF
+                </a>
+                {selected.person_email && ['issued','partial'].includes(selected.status) && (
+                  <Button
+                    size="sm" variant="ghost"
+                    disabled={emailing === selected.id}
+                    onClick={() => handleSendEmail(selected)}
+                  >
+                    {emailing === selected.id ? 'Sending…' : 'Email'}
+                  </Button>
+                )}
+                {selected.person_email && ['issued','partial'].includes(selected.status) && (
+                  <Button
+                    size="sm" variant="ghost"
+                    onClick={() => setDisconnectTarget(selected)}
+                  >
+                    Send Notice
+                  </Button>
+                )}
+                {['issued', 'partial'].includes(selected.status) && (
+                  <Button
+                    size="sm" variant="danger"
+                    disabled={actioning === selected.id}
+                    onClick={() => setWriteOffTarget(selected)}
+                  >
+                    Write Off
+                  </Button>
+                )}
               </div>
             </Card>
           </div>
         )}
       </div>
+      )}
 
       {/* SC Billing Run modal */}
       <Modal
@@ -829,6 +1264,248 @@ export function BillingPageClient() {
               {paying ? 'Saving…' : 'Record Payment'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Void modal */}
+      <Modal
+        open={!!voidTarget}
+        onClose={() => setVoidTarget(null)}
+        title={`Void Invoice — ${voidTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {voidTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Unit</span>
+                <span>{voidTarget.unit_label}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Balance</span>
+                <span className="font-semibold">{fmt(voidTarget.balance)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Payment warning */}
+          {voidTarget && voidTarget.payments && voidTarget.payments.length > 0 && (
+            <div className="bg-warning/10 text-warning text-xs rounded-lg px-3 py-2">
+              This invoice has <strong>{voidTarget.payments.length}</strong> payment(s) totalling{' '}
+              <strong>{fmt(voidTarget.paid_amount)}</strong>. They will be released to the unallocated pool for manual reallocation.
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Void Reason *</label>
+            <select
+              value={voidReason}
+              onChange={e => setVoidReason(e.target.value)}
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">— Select a reason —</option>
+              <option value="reading_error">Reading Error</option>
+              <option value="wrong_unit">Wrong Unit</option>
+              <option value="duplicate">Duplicate Invoice</option>
+              <option value="rate_error">Rate Error</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
+            <textarea
+              value={voidNotes}
+              onChange={e => setVoidNotes(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              placeholder="Describe the reason for voiding…"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setVoidTarget(null)}>Cancel</Button>
+            <Button
+              variant="danger" className="flex-1"
+              disabled={voiding || !voidReason}
+              onClick={handleVoid}
+            >
+              {voiding ? 'Voiding…' : 'Void Invoice'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Write-off modal */}
+      <Modal
+        open={!!writeOffTarget}
+        onClose={() => setWriteOffTarget(null)}
+        title={`Write Off Invoice — ${writeOffTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          <div className="bg-danger/10 text-danger text-sm rounded-lg p-4">
+            <p className="font-semibold mb-1">Confirm Write-Off</p>
+            <p>This will set the invoice balance to zero and mark it as <strong>written off</strong>. This action cannot be undone.</p>
+          </div>
+          {writeOffTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Unit</span>
+                <span>{writeOffTarget.unit_label}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Balance</span>
+                <span className="font-semibold text-danger">{fmt(writeOffTarget.balance)}</span>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setWriteOffTarget(null)}>Cancel</Button>
+            <Button variant="danger" className="flex-1" disabled={writingOff} onClick={handleWriteOff}>
+              {writingOff ? 'Writing Off…' : 'Write Off Invoice'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Email modal */}
+      <Modal
+        open={showBulkEmailModal}
+        onClose={() => { setShowBulkEmailModal(false); setBulkEmailResult(null) }}
+        title={`Bulk Email Invoices — ${activeTab !== 'Reports' ? activeTab : 'All'}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {bulkEmailResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{bulkEmailResult.message}</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => { setShowBulkEmailModal(false); setBulkEmailResult(null) }}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                Send invoice emails to all tenants with <strong>issued or partial</strong> invoices for the selected period.
+                A PDF attachment will be included. Invoices without an email address will be skipped.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+                <input
+                  type="month"
+                  value={bulkEmailPeriod}
+                  onChange={e => setBulkEmailPeriod(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowBulkEmailModal(false)}>Cancel</Button>
+                <Button
+                  variant="primary" className="flex-1"
+                  disabled={bulkEmailing || !bulkEmailPeriod}
+                  onClick={handleBulkEmail}
+                >
+                  {bulkEmailing ? 'Sending…' : `Send for ${bulkEmailPeriod}`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Disconnection Notice modal */}
+      <Modal
+        open={!!disconnectTarget}
+        onClose={() => setDisconnectTarget(null)}
+        title={`Send Notice — ${disconnectTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-text-muted">
+            Send a disconnection notice email to <strong>{disconnectTarget?.person_name}</strong> at{' '}
+            <span className="font-mono text-xs">{disconnectTarget?.person_email}</span>.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-2">Notice Type</label>
+            <div className="flex gap-2">
+              {(['reminder', 'formal'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setDisconnectType(t)}
+                  className={cn(
+                    'flex-1 py-2 text-sm font-medium rounded-lg border transition-colors',
+                    disconnectType === t
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+                      : 'border-surface-border dark:border-dark-border text-text-muted hover:text-text'
+                  )}
+                >
+                  {t === 'reminder' ? '🔔 Payment Reminder' : '⚠️ Formal Notice'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setDisconnectTarget(null)}>Cancel</Button>
+            <Button
+              variant="primary" className="flex-1"
+              disabled={sendingNotice}
+              onClick={handleSendNotice}
+            >
+              {sendingNotice ? 'Sending…' : 'Send Notice'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Late Fees modal */}
+      <Modal
+        open={showLateModal}
+        onClose={() => { setShowLateModal(false); setLateFeeResult(null) }}
+        title="Apply Late Payment Fees"
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {lateFeeResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{lateFeeResult.message}</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => { setShowLateModal(false); setLateFeeResult(null) }}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                This will add a late payment fee charge to all overdue invoices (past their due date)
+                {activeTab !== 'Reports' ? ` in the ${activeTab} category` : ''}.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Late Fee Percentage (%)</label>
+                <input
+                  type="number" min="0.1" max="50" step="0.1"
+                  value={latePct}
+                  onChange={e => setLatePct(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowLateModal(false)}>Cancel</Button>
+                <Button
+                  variant="danger" className="flex-1"
+                  disabled={lateFeeRunning || !latePct || parseFloat(latePct) <= 0}
+                  onClick={handleApplyLateFees}
+                >
+                  {lateFeeRunning ? 'Applying…' : `Apply ${latePct}% Late Fee`}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>

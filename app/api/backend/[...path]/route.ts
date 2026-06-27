@@ -28,10 +28,18 @@ async function proxy(
     body,
   })
 
-  const responseBody = await backendRes.text()
+  const backendContentType = backendRes.headers.get('content-type') ?? 'application/json'
+  const isBinary = !backendContentType.includes('application/json') && !backendContentType.includes('text/')
+
+  const responseBody = isBinary ? await backendRes.arrayBuffer() : await backendRes.text()
+
+  const responseHeaders: Record<string, string> = { 'Content-Type': backendContentType }
+  const contentDisposition = backendRes.headers.get('content-disposition')
+  if (contentDisposition) responseHeaders['Content-Disposition'] = contentDisposition
+
   const response = new NextResponse(responseBody, {
     status: backendRes.status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: responseHeaders,
   })
 
   // Forward Set-Cookie from Spring Boot, re-scoped to localhost:3000
