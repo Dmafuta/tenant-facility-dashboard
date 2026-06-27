@@ -4,13 +4,20 @@ export interface PayrollRun {
   id: string
   period_start: string
   period_end: string
-  status: 'draft' | 'in_review' | 'approved' | 'paid'
+  status: 'draft' | 'in_review' | 'pending_approval' | 'approved' | 'rejected' | 'paid'
   overtime_multiplier: number
   total_gross: number | null
   total_net: number | null
   entry_count: number | null
   unmatched_count: number | null
   notes: string | null
+  submitted_by: string | null
+  submitted_by_name: string | null
+  submitted_at: string | null
+  reviewed_by: string | null
+  reviewed_by_name: string | null
+  reviewed_at: string | null
+  review_notes: string | null
   created_at: string | null
   updated_at: string | null
   entries?: PayrollEntry[]
@@ -76,6 +83,18 @@ export function patchEntry(runId: string, entryId: string, patch: Record<string,
 
 export function updateRunStatus(runId: string, status: string): Promise<PayrollRun> {
   return apiFetch(`${BASE}/runs/${runId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+}
+
+export function submitForApproval(runId: string): Promise<PayrollRun> {
+  return apiFetch(`${BASE}/runs/${runId}/submit`, { method: 'POST' })
+}
+
+export function approveRun(runId: string): Promise<PayrollRun> {
+  return apiFetch(`${BASE}/runs/${runId}/approve`, { method: 'POST' })
+}
+
+export function rejectRun(runId: string, notes: string): Promise<PayrollRun> {
+  return apiFetch(`${BASE}/runs/${runId}/reject`, { method: 'POST', body: JSON.stringify({ notes }) })
 }
 
 export function exportKcb(runId: string): void {

@@ -6,20 +6,29 @@ import { Card } from '@/components/ui/Card'
 import {
   listRuns, createRun, getRun, uploadAttendance,
   patchEntry, updateRunStatus, exportKcb,
+  submitForApproval, approveRun, rejectRun,
   type PayrollRun, type PayrollEntry,
 } from '@/lib/api/casualPayroll'
+import { useAbac } from '@/lib/abac/context'
 
 const fmt = (n: number | null | undefined) =>
   n == null ? '—' : `KES ${Number(n).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`
 
 const STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft', in_review: 'In Review', approved: 'Approved', paid: 'Paid',
+  draft:            'Draft',
+  in_review:        'In Review',
+  pending_approval: 'Pending Approval',
+  approved:         'Approved',
+  rejected:         'Rejected',
+  paid:             'Paid',
 }
 const STATUS_COLOR: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  in_review: 'bg-amber-100 text-amber-700',
-  approved: 'bg-blue-100 text-blue-700',
-  paid: 'bg-green-100 text-green-700',
+  draft:            'bg-gray-100 text-gray-600',
+  in_review:        'bg-amber-100 text-amber-700',
+  pending_approval: 'bg-purple-100 text-purple-700',
+  approved:         'bg-blue-100 text-blue-700',
+  rejected:         'bg-red-100 text-red-700',
+  paid:             'bg-green-100 text-green-700',
 }
 
 // ── Run List ──────────────────────────────────────────────────────────────────
@@ -139,23 +148,75 @@ function NewRunModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   )
 }
 
+// ── Reject Modal ──────────────────────────────────────────────────────────────
+function RejectModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: (reason: string) => void }) {
+  const [reason,  setReason]  = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!reason.trim()) return
+    setLoading(true)
+    await onConfirm(reason.trim())
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-surface rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h3 className="text-base font-semibold text-text">Reject Payroll Run</h3>
+          <button onClick={onClose} className="text-text-muted hover:text-text text-lg">✕</button>
+        </div>
+        <form onSubmit={submit} className="p-6 space-y-4">
+          <p className="text-sm text-text-muted">Provide a reason so the maker can correct and re-submit.</p>
+          <textarea
+            value={reason} onChange={e => setReason(e.target.value)} required rows={3}
+            placeholder="e.g. Daily rates for 3 workers are incorrect — please verify against HR records"
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-bg text-text focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+          />
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:bg-bg">Cancel</button>
+            <button type="submit" disabled={loading || !reason.trim()}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+              {loading ? 'Rejecting…' : 'Reject Run'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Run Detail ────────────────────────────────────────────────────────────────
 function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () => void }) {
-  const [run,       setRun]       = useState<PayrollRun>(initialRun)
-  const [uploading, setUploading] = useState(false)
-  const [upError,   setUpError]   = useState('')
-  const [saving,    setSaving]    = useState<string | null>(null)
+  const { subject } = useAbac()
+  const [run,          setRun]         = useState<PayrollRun>(initialRun)
+  const [uploading,    setUploading]   = useState(false)
+  const [upError,      setUpError]     = useState('')
+  const [saving,       setSaving]      = useState<string | null>(null)
+  const [actioning,    setActioning]   = useState(false)
+  const [actionError,  setActionError] = useState('')
+  const [showReject,   setShowReject]  = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const entries = run.entries ?? []
+  const entries  = run.entries ?? []
   const unmatched = entries.filter(e => !e.matched)
-  const canUpload = run.status === 'draft' || run.status === 'in_review'
+  const canUpload = ['draft', 'in_review', 'rejected'].includes(run.status)
+
+  // Checker = FM or FIN; cannot be the same person who submitted
+  const isChecker = ['facility_manager', 'finance_officer'].includes(subject.role)
+  const isSubmitter = run.submitted_by === subject.id
+  const canCheck = isChecker && !isSubmitter
+
+  const fmtDate = (s: string | null) => s
+    ? new Date(s).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—'
 
   async function handleFile(file: File) {
     setUploading(true); setUpError('')
     try {
-      const updated = await uploadAttendance(run.id, file)
-      // Re-fetch with entries
+      await uploadAttendance(run.id, file)
       const full = await getRun(run.id)
       setRun(full)
     } catch (err) {
@@ -169,11 +230,7 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
     setSaving(entry.id)
     try {
       const updated = await patchEntry(run.id, entry.id, patch)
-      setRun(r => ({
-        ...r,
-        entries: r.entries?.map(e => e.id === updated.id ? updated : e),
-      }))
-      // Refresh run totals
+      setRun(r => ({ ...r, entries: r.entries?.map(e => e.id === updated.id ? updated : e) }))
       const full = await getRun(run.id)
       setRun(full)
     } finally {
@@ -181,9 +238,16 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
     }
   }
 
-  async function changeStatus(status: string) {
-    const updated = await updateRunStatus(run.id, status)
-    setRun(r => ({ ...r, ...updated }))
+  async function handleAction(action: () => Promise<PayrollRun>) {
+    setActioning(true); setActionError('')
+    try {
+      const updated = await action()
+      setRun(r => ({ ...r, ...updated }))
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed.')
+    } finally {
+      setActioning(false)
+    }
   }
 
   return (
@@ -192,7 +256,7 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
       <div className="flex items-center gap-3">
         <button onClick={onBack} className="text-text-muted hover:text-text text-sm">← Back</button>
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-semibold text-text">
               {new Date(run.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
               {' – '}
@@ -206,21 +270,38 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
-          {run.status === 'in_review' && (
-            <button onClick={() => changeStatus('approved')}
-              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
-              Approve
+          {/* Maker: submit for approval */}
+          {(run.status === 'in_review' || run.status === 'rejected') && entries.length > 0 && (
+            <button onClick={() => handleAction(() => submitForApproval(run.id))} disabled={actioning}
+              className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+              {actioning ? 'Submitting…' : 'Submit for Approval'}
             </button>
           )}
+
+          {/* Checker: approve / reject */}
+          {run.status === 'pending_approval' && canCheck && (
+            <>
+              <button onClick={() => setShowReject(true)} disabled={actioning}
+                className="px-3 py-1.5 rounded-lg border border-red-300 text-red-600 text-sm font-medium hover:bg-red-50 disabled:opacity-50">
+                Reject
+              </button>
+              <button onClick={() => handleAction(() => approveRun(run.id))} disabled={actioning}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {actioning ? 'Approving…' : 'Approve'}
+              </button>
+            </>
+          )}
+
+          {/* Approved: export + mark paid */}
           {run.status === 'approved' && (
             <>
               <button onClick={() => exportKcb(run.id)}
                 className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700">
                 Export KCB CSV
               </button>
-              <button onClick={() => changeStatus('paid')}
-                className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700">
-                Mark as Paid
+              <button onClick={() => handleAction(() => updateRunStatus(run.id, 'paid'))} disabled={actioning}
+                className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50">
+                {actioning ? '…' : 'Mark as Paid'}
               </button>
             </>
           )}
@@ -233,13 +314,53 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
         </div>
       </div>
 
+      {actionError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{actionError}</div>
+      )}
+
+      {/* Pending approval info */}
+      {run.status === 'pending_approval' && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800 flex items-start gap-3">
+          <span className="text-lg">🔍</span>
+          <div>
+            <p className="font-medium">Awaiting approval</p>
+            <p className="text-xs mt-0.5 text-purple-700">
+              Submitted by <strong>{run.submitted_by_name}</strong> on {fmtDate(run.submitted_at)}.
+              {canCheck
+                ? ' You can approve or reject this run.'
+                : isSubmitter
+                  ? ' You submitted this run — another authorised user must approve it.'
+                  : ' A Facility Manager or Finance Officer must approve it.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection reason */}
+      {run.status === 'rejected' && run.review_notes && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-medium">Rejected by {run.reviewed_by_name} on {fmtDate(run.reviewed_at)}</p>
+          <p className="mt-1 text-red-700">{run.review_notes}</p>
+          <p className="mt-1 text-xs text-red-600">Fix the issues above then re-submit for approval.</p>
+        </div>
+      )}
+
+      {/* Approval info for approved/paid runs */}
+      {(run.status === 'approved' || run.status === 'paid') && run.reviewed_by_name && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2.5 text-xs text-blue-700 flex gap-4">
+          <span>Submitted by <strong>{run.submitted_by_name}</strong> · {fmtDate(run.submitted_at)}</span>
+          <span className="text-blue-400">|</span>
+          <span>Approved by <strong>{run.reviewed_by_name}</strong> · {fmtDate(run.reviewed_at)}</span>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Workers',    value: run.entry_count ?? 0,           sub: `${unmatched.length} unmatched` },
-          { label: 'Total Gross', value: fmt(run.total_gross),          sub: 'Before deductions' },
-          { label: 'Total Net',  value: fmt(run.total_net),             sub: 'After deductions' },
-          { label: 'Period',     value: `${run.entry_count ?? 0}`,      sub: `${run.period_start} → ${run.period_end}` },
+          { label: 'Workers',     value: run.entry_count ?? 0,  sub: `${unmatched.length} unmatched` },
+          { label: 'Total Gross', value: fmt(run.total_gross),  sub: 'Before deductions' },
+          { label: 'Total Net',   value: fmt(run.total_net),    sub: 'After deductions' },
+          { label: 'Period',      value: `${run.entry_count ?? 0}`, sub: `${run.period_start} → ${run.period_end}` },
         ].map(c => (
           <Card key={c.label} className="p-4">
             <p className="text-xs text-text-muted">{c.label}</p>
@@ -310,6 +431,16 @@ function RunDetail({ run: initialRun, onBack }: { run: PayrollRun; onBack: () =>
           Upload the Deli attendance file to populate this run.
         </Card>
       )}
+
+      {showReject && (
+        <RejectModal
+          onClose={() => setShowReject(false)}
+          onConfirm={async (reason) => {
+            await handleAction(() => rejectRun(run.id, reason))
+            setShowReject(false)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -321,7 +452,7 @@ function EntryRow({ entry, runStatus, saving, onPatch }: {
   saving: boolean
   onPatch: (p: Record<string, unknown>) => void
 }) {
-  const editable = runStatus === 'in_review'
+  const editable = runStatus === 'in_review' || runStatus === 'rejected'
   const [daysWorked,   setDaysWorked]   = useState(String(entry.days_worked))
   const [overtimeHrs,  setOvertimeHrs]  = useState(String(entry.overtime_hours))
   const [dailyRate,    setDailyRate]    = useState(entry.daily_rate != null ? String(entry.daily_rate) : '')
