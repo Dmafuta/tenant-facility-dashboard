@@ -12,11 +12,13 @@ import {
   bulkIssueInvoices, sendInvoiceEmail, applyLateFees,
   writeOffInvoice, bulkEmailInvoices, sendInvoiceDisconnectionNotice,
   getAgedDebtors, getBillingSummary, getOutstandingBalances,
+  requestVoidInvoice, approveVoidInvoice, rejectVoidInvoice,
   type InvoiceData, type InvoiceCategory, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
   getInvoiceCategories,
 } from '@/lib/api/invoices'
 import { apiFetch } from '@/lib/api/fetch'
+import { useAbac } from '@/lib/abac/context'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -30,12 +32,13 @@ function fmtDate(s: string | null) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'warning' | 'success' | 'danger' | 'blue' | 'purple' }> = {
-  draft:        { label: 'Draft',        variant: 'default' },
-  issued:       { label: 'Issued',       variant: 'blue' },
-  partial:      { label: 'Partial',      variant: 'warning' },
-  paid:         { label: 'Paid',         variant: 'success' },
-  voided:       { label: 'Voided',       variant: 'danger' },
-  written_off:  { label: 'Written Off',  variant: 'purple' },
+  draft:           { label: 'Draft',           variant: 'default' },
+  issued:          { label: 'Issued',          variant: 'blue' },
+  partial:         { label: 'Partial',         variant: 'warning' },
+  paid:            { label: 'Paid',            variant: 'success' },
+  void_requested:  { label: 'Void Requested',  variant: 'warning' },
+  voided:          { label: 'Voided',          variant: 'danger' },
+  written_off:     { label: 'Written Off',     variant: 'purple' },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -59,6 +62,7 @@ const CHARGE_TYPE_LABELS: Record<string, string> = {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function BillingPageClient() {
+  const { subject } = useAbac()
   const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
@@ -108,11 +112,16 @@ export function BillingPageClient() {
   const [lateFeeRunning, setLateFeeRunning] = useState(false)
   const [lateFeeResult, setLateFeeResult] = useState<{ updated: number; message: string } | null>(null)
 
-  // Void modal
+  // Void modal (maker: request void)
   const [voidTarget, setVoidTarget]   = useState<InvoiceData | null>(null)
   const [voidReason, setVoidReason]   = useState('')
   const [voidNotes, setVoidNotes]     = useState('')
   const [voiding, setVoiding]         = useState(false)
+
+  // Reject void modal (checker)
+  const [rejectVoidTarget, setRejectVoidTarget] = useState<InvoiceData | null>(null)
+  const [rejectingVoid, setRejectingVoid]       = useState(false)
+  const [approvingVoid, setApprovingVoid]       = useState<string | null>(null)
 
   // Write-off modal
   const [writeOffTarget, setWriteOffTarget] = useState<InvoiceData | null>(null)
@@ -223,14 +232,43 @@ export function BillingPageClient() {
     setVoiding(true)
     setError(null)
     try {
-      const updated = await voidInvoice(voidTarget.id, { void_reason: voidReason, void_notes: voidNotes || undefined })
+      const updated = await requestVoidInvoice(voidTarget.id, { void_reason: voidReason, void_notes: voidNotes || undefined })
       setInvoices(prev => prev.map(i => i.id === voidTarget.id ? updated : i))
       if (selected?.id === voidTarget.id) setSelected(updated)
       setVoidTarget(null)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to void invoice')
+      setError(e instanceof Error ? e.message : 'Failed to request void')
     } finally {
       setVoiding(false)
+    }
+  }
+
+  async function handleApproveVoid(inv: InvoiceData) {
+    setApprovingVoid(inv.id)
+    setError(null)
+    try {
+      const updated = await approveVoidInvoice(inv.id)
+      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      if (selected?.id === inv.id) setSelected(updated)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to approve void')
+    } finally {
+      setApprovingVoid(null)
+    }
+  }
+
+  async function handleRejectVoid(inv: InvoiceData) {
+    setRejectingVoid(true)
+    setError(null)
+    try {
+      const updated = await rejectVoidInvoice(inv.id)
+      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      if (selected?.id === inv.id) setSelected(updated)
+      setRejectVoidTarget(null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to reject void')
+    } finally {
+      setRejectingVoid(false)
     }
   }
 
@@ -824,7 +862,7 @@ export function BillingPageClient() {
                             disabled={actioning === inv.id}
                             onClick={() => openVoid(inv)}
                           >
-                            Void
+                            Request Void
                           </Button>
                         )}
                         {['issued', 'partial'].includes(inv.status) && (
@@ -901,6 +939,52 @@ export function BillingPageClient() {
                   </div>
                 </div>
               )}
+
+              {/* Void request pending */}
+              {selected.status === 'void_requested' && (() => {
+                const isChecker = ['facility_manager', 'finance_officer'].includes(subject.role)
+                const isRequestor = selected.void_requested_by === subject.id
+                const canCheck = isChecker && !isRequestor
+                return (
+                  <div className="border border-warning/40 bg-warning/5 rounded-lg p-3 space-y-2 text-xs">
+                    <p className="font-semibold text-warning uppercase tracking-wide text-[10px]">Void Pending Approval</p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                      <span className="text-text-muted">Requested By</span>
+                      <span className="font-medium">{selected.void_requested_by_name ?? '—'}</span>
+                      <span className="text-text-muted">Requested At</span>
+                      <span className="font-medium">{selected.void_requested_at ? fmtDate(selected.void_requested_at) : '—'}</span>
+                      <span className="text-text-muted">Reason</span>
+                      <span className="font-medium capitalize">{selected.void_reason?.replace(/_/g, ' ') ?? '—'}</span>
+                      {selected.void_notes && (
+                        <>
+                          <span className="text-text-muted">Notes</span>
+                          <span className="font-medium">{selected.void_notes}</span>
+                        </>
+                      )}
+                    </div>
+                    {canCheck && (
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" variant="danger" className="flex-1"
+                          disabled={approvingVoid === selected.id}
+                          onClick={() => handleApproveVoid(selected)}>
+                          {approvingVoid === selected.id ? 'Approving…' : 'Approve Void'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="flex-1"
+                          onClick={() => setRejectVoidTarget(selected)}>
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                    {!canCheck && (
+                      <p className="text-text-muted italic">
+                        {isRequestor
+                          ? 'Awaiting approval from another authorised user.'
+                          : 'Awaiting approval from Facility Manager or Finance Officer.'}
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Category tagline */}
               {activeCategory?.tagline && (
@@ -1014,7 +1098,7 @@ export function BillingPageClient() {
                     disabled={actioning === selected.id}
                     onClick={() => openVoid(selected)}
                   >
-                    Void
+                    Request Void
                   </Button>
                 )}
                 <a
@@ -1271,7 +1355,7 @@ export function BillingPageClient() {
       <Modal
         open={!!voidTarget}
         onClose={() => setVoidTarget(null)}
-        title={`Void Invoice — ${voidTarget?.statement_no ?? ''}`}
+        title={`Request Void — ${voidTarget?.statement_no ?? ''}`}
         size="sm"
       >
         <div className="p-5 space-y-4">
@@ -1330,7 +1414,43 @@ export function BillingPageClient() {
               disabled={voiding || !voidReason}
               onClick={handleVoid}
             >
-              {voiding ? 'Voiding…' : 'Void Invoice'}
+              {voiding ? 'Requesting…' : 'Request Void'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reject void modal */}
+      <Modal
+        open={!!rejectVoidTarget}
+        onClose={() => setRejectVoidTarget(null)}
+        title={`Reject Void — ${rejectVoidTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-text-muted">
+            Rejecting will restore the invoice to its previous status. The requestor will need to submit a new void request if needed.
+          </p>
+          {rejectVoidTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Requested By</span>
+                <span className="font-medium">{rejectVoidTarget.void_requested_by_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Reason</span>
+                <span className="font-medium capitalize">{rejectVoidTarget.void_reason?.replace(/_/g, ' ')}</span>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setRejectVoidTarget(null)}>Cancel</Button>
+            <Button
+              variant="ghost" className="flex-1 border border-danger text-danger hover:bg-danger/5"
+              disabled={rejectingVoid}
+              onClick={() => rejectVoidTarget && handleRejectVoid(rejectVoidTarget)}
+            >
+              {rejectingVoid ? 'Rejecting…' : 'Reject Void Request'}
             </Button>
           </div>
         </div>

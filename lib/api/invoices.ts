@@ -45,6 +45,9 @@ export interface InvoiceData {
   void_notes: string | null
   voided_at: string | null
   voided_by: string | null
+  void_requested_by: string | null
+  void_requested_by_name: string | null
+  void_requested_at: string | null
   created_at: string
   updated_at: string
   line_items: InvoiceLineItem[] | null
@@ -93,6 +96,24 @@ export async function voidInvoice(
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+}
+
+export async function requestVoidInvoice(
+  id: string,
+  payload: { void_reason: string; void_notes?: string }
+): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/request-void`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function approveVoidInvoice(id: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/approve-void`, { method: 'POST' })
+}
+
+export async function rejectVoidInvoice(id: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/reject-void`, { method: 'POST' })
 }
 
 export async function applyPayment(
