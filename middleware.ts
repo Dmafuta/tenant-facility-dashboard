@@ -34,6 +34,9 @@ function applyRouteGuard(request: NextRequest, token: string): NextResponse {
 
   const role    = (decodeJwtPayload(token).role as string) ?? 'facility_manager'
   const allowed = getAllowedPaths(role)
+  // Custom app roles not in nav-config have no allowed paths — let them through.
+  // The backend enforces actual access; we just prevent the redirect loop here.
+  if (allowed.length === 0) return NextResponse.next()
   const canAccess = allowed.some(p => pathname === p || pathname.startsWith(p + '/'))
   if (canAccess) return NextResponse.next()
 

@@ -11,14 +11,16 @@ export const ROLE_HOME: Record<string, string> = {
   security_officer:       '/access',
   receptionist:           '/people',
   owner:                  '/property',
+  payroll_officer:        '/payroll',
 }
 
-const FM    = 'facility_manager'
-const FIN   = 'finance_officer'
-const MAINT = 'maintenance_supervisor'
-const SEC   = 'security_officer'
-const RECEP = 'receptionist'
-const OWNER = 'owner'
+const FM     = 'facility_manager'
+const FIN    = 'finance_officer'
+const MAINT  = 'maintenance_supervisor'
+const SEC    = 'security_officer'
+const RECEP  = 'receptionist'
+const OWNER  = 'owner'
+const PAYRLL = 'payroll_officer'
 
 export const NAV: NavGroup[] = [
   {
@@ -54,7 +56,7 @@ export const NAV: NavGroup[] = [
       { label: 'Maintenance', href: '/maintenance', icon: '🔧', roles: [FM, MAINT] },
       { label: 'Issues',      href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
       { label: 'HR & Staff',  href: '/hr',          icon: '💼', roles: [FM] },
-      { label: 'Payroll',     href: '/payroll',     icon: '💵', roles: [FM] },
+      { label: 'Payroll',     href: '/payroll',     icon: '💵', roles: [FM, PAYRLL] },
     ],
   },
   {
