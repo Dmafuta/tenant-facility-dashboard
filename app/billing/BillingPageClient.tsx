@@ -13,6 +13,7 @@ import {
   writeOffInvoice, bulkEmailInvoices, sendInvoiceDisconnectionNotice,
   getAgedDebtors, getBillingSummary, getOutstandingBalances,
   requestVoidInvoice, approveVoidInvoice, rejectVoidInvoice,
+  requestWriteOffInvoice, approveWriteOffInvoice, rejectWriteOffInvoice,
   type InvoiceData, type InvoiceCategory, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
   getInvoiceCategories,
@@ -36,7 +37,8 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'warni
   issued:          { label: 'Issued',          variant: 'blue' },
   partial:         { label: 'Partial',         variant: 'warning' },
   paid:            { label: 'Paid',            variant: 'success' },
-  void_requested:  { label: 'Void Requested',  variant: 'warning' },
+  void_requested:       { label: 'Void Requested',       variant: 'warning' },
+  write_off_requested:  { label: 'Write-Off Requested',  variant: 'warning' },
   voided:          { label: 'Voided',          variant: 'danger' },
   written_off:     { label: 'Written Off',     variant: 'purple' },
 }
@@ -123,9 +125,15 @@ export function BillingPageClient() {
   const [rejectingVoid, setRejectingVoid]       = useState(false)
   const [approvingVoid, setApprovingVoid]       = useState<string | null>(null)
 
-  // Write-off modal
-  const [writeOffTarget, setWriteOffTarget] = useState<InvoiceData | null>(null)
-  const [writingOff, setWritingOff]         = useState(false)
+  // Write-off modal (maker: request write-off)
+  const [writeOffTarget, setWriteOffTarget]     = useState<InvoiceData | null>(null)
+  const [writeOffNotes, setWriteOffNotes]       = useState('')
+  const [writingOff, setWritingOff]             = useState(false)
+
+  // Reject write-off modal (checker)
+  const [rejectWriteOffTarget, setRejectWriteOffTarget] = useState<InvoiceData | null>(null)
+  const [rejectingWriteOff, setRejectingWriteOff]       = useState(false)
+  const [approvingWriteOff, setApprovingWriteOff]       = useState<string | null>(null)
 
   // Bulk email modal
   const [showBulkEmailModal, setShowBulkEmailModal] = useState(false)
@@ -406,14 +414,44 @@ export function BillingPageClient() {
     setWritingOff(true)
     setError(null)
     try {
-      const updated = await writeOffInvoice(writeOffTarget.id)
+      const updated = await requestWriteOffInvoice(writeOffTarget.id, writeOffNotes || undefined)
       setInvoices(prev => prev.map(i => i.id === writeOffTarget.id ? updated : i))
       if (selected?.id === writeOffTarget.id) setSelected(updated)
       setWriteOffTarget(null)
+      setWriteOffNotes('')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to write off invoice')
+      setError(e instanceof Error ? e.message : 'Failed to request write-off')
     } finally {
       setWritingOff(false)
+    }
+  }
+
+  async function handleApproveWriteOff(inv: InvoiceData) {
+    setApprovingWriteOff(inv.id)
+    setError(null)
+    try {
+      const updated = await approveWriteOffInvoice(inv.id)
+      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      if (selected?.id === inv.id) setSelected(updated)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to approve write-off')
+    } finally {
+      setApprovingWriteOff(null)
+    }
+  }
+
+  async function handleRejectWriteOff(inv: InvoiceData) {
+    setRejectingWriteOff(true)
+    setError(null)
+    try {
+      const updated = await rejectWriteOffInvoice(inv.id)
+      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      if (selected?.id === inv.id) setSelected(updated)
+      setRejectWriteOffTarget(null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to reject write-off')
+    } finally {
+      setRejectingWriteOff(false)
     }
   }
 
@@ -986,6 +1024,52 @@ export function BillingPageClient() {
                 )
               })()}
 
+              {/* Write-off request pending */}
+              {selected.status === 'write_off_requested' && (() => {
+                const isChecker = ['facility_manager', 'finance_officer'].includes(subject.role)
+                const isRequestor = selected.write_off_requested_by === subject.id
+                const canCheck = isChecker && !isRequestor
+                return (
+                  <div className="border border-warning/40 bg-warning/5 rounded-lg p-3 space-y-2 text-xs">
+                    <p className="font-semibold text-warning uppercase tracking-wide text-[10px]">Write-Off Pending Approval</p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                      <span className="text-text-muted">Requested By</span>
+                      <span className="font-medium">{selected.write_off_requested_by_name ?? '—'}</span>
+                      <span className="text-text-muted">Requested At</span>
+                      <span className="font-medium">{selected.write_off_requested_at ? fmtDate(selected.write_off_requested_at) : '—'}</span>
+                      <span className="text-text-muted">Balance</span>
+                      <span className="font-medium text-danger">{fmt(selected.balance)}</span>
+                      {selected.write_off_request_notes && (
+                        <>
+                          <span className="text-text-muted">Notes</span>
+                          <span className="font-medium">{selected.write_off_request_notes}</span>
+                        </>
+                      )}
+                    </div>
+                    {canCheck && (
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" variant="danger" className="flex-1"
+                          disabled={approvingWriteOff === selected.id}
+                          onClick={() => handleApproveWriteOff(selected)}>
+                          {approvingWriteOff === selected.id ? 'Approving…' : 'Approve Write-Off'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="flex-1"
+                          onClick={() => setRejectWriteOffTarget(selected)}>
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                    {!canCheck && (
+                      <p className="text-text-muted italic">
+                        {isRequestor
+                          ? 'Awaiting approval from another authorised user.'
+                          : 'Awaiting approval from Facility Manager or Finance Officer.'}
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
               {/* Category tagline */}
               {activeCategory?.tagline && (
                 <p className="text-xs text-text-muted italic border-t border-surface-border dark:border-dark-border pt-2">
@@ -1456,17 +1540,17 @@ export function BillingPageClient() {
         </div>
       </Modal>
 
-      {/* Write-off modal */}
+      {/* Write-off modal (maker: request write-off) */}
       <Modal
         open={!!writeOffTarget}
-        onClose={() => setWriteOffTarget(null)}
-        title={`Write Off Invoice — ${writeOffTarget?.statement_no ?? ''}`}
+        onClose={() => { setWriteOffTarget(null); setWriteOffNotes('') }}
+        title={`Request Write-Off — ${writeOffTarget?.statement_no ?? ''}`}
         size="sm"
       >
         <div className="p-5 space-y-4">
-          <div className="bg-danger/10 text-danger text-sm rounded-lg p-4">
-            <p className="font-semibold mb-1">Confirm Write-Off</p>
-            <p>This will set the invoice balance to zero and mark it as <strong>written off</strong>. This action cannot be undone.</p>
+          <div className="bg-warning/10 text-warning text-sm rounded-lg p-4">
+            <p className="font-semibold mb-1">Request Write-Off</p>
+            <p>This will submit a write-off request for approval. A second authorised user must approve before the balance is cleared.</p>
           </div>
           {writeOffTarget && (
             <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
@@ -1475,15 +1559,67 @@ export function BillingPageClient() {
                 <span>{writeOffTarget.unit_label}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-text-muted">Balance</span>
+                <span className="text-text-muted">Balance to Write Off</span>
                 <span className="font-semibold text-danger">{fmt(writeOffTarget.balance)}</span>
               </div>
             </div>
           )}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Reason / Notes (optional)</label>
+            <textarea
+              value={writeOffNotes}
+              onChange={e => setWriteOffNotes(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              placeholder="e.g. Tenant vacated with unrecoverable debt, approved by management"
+            />
+          </div>
           <div className="flex gap-2">
-            <Button variant="ghost" className="flex-1" onClick={() => setWriteOffTarget(null)}>Cancel</Button>
+            <Button variant="ghost" className="flex-1" onClick={() => { setWriteOffTarget(null); setWriteOffNotes('') }}>Cancel</Button>
             <Button variant="danger" className="flex-1" disabled={writingOff} onClick={handleWriteOff}>
-              {writingOff ? 'Writing Off…' : 'Write Off Invoice'}
+              {writingOff ? 'Requesting…' : 'Request Write-Off'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reject write-off modal */}
+      <Modal
+        open={!!rejectWriteOffTarget}
+        onClose={() => setRejectWriteOffTarget(null)}
+        title={`Reject Write-Off — ${rejectWriteOffTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-text-muted">
+            Rejecting will restore the invoice to its previous status.
+          </p>
+          {rejectWriteOffTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Requested By</span>
+                <span className="font-medium">{rejectWriteOffTarget.write_off_requested_by_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Balance</span>
+                <span className="font-semibold text-danger">{fmt(rejectWriteOffTarget.balance)}</span>
+              </div>
+              {rejectWriteOffTarget.write_off_request_notes && (
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Notes</span>
+                  <span className="font-medium">{rejectWriteOffTarget.write_off_request_notes}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setRejectWriteOffTarget(null)}>Cancel</Button>
+            <Button
+              variant="ghost" className="flex-1 border border-danger text-danger hover:bg-danger/5"
+              disabled={rejectingWriteOff}
+              onClick={() => rejectWriteOffTarget && handleRejectWriteOff(rejectWriteOffTarget)}
+            >
+              {rejectingWriteOff ? 'Rejecting…' : 'Reject Write-Off Request'}
             </Button>
           </div>
         </div>

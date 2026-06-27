@@ -48,6 +48,10 @@ export interface InvoiceData {
   void_requested_by: string | null
   void_requested_by_name: string | null
   void_requested_at: string | null
+  write_off_requested_by: string | null
+  write_off_requested_by_name: string | null
+  write_off_requested_at: string | null
+  write_off_request_notes: string | null
   created_at: string
   updated_at: string
   line_items: InvoiceLineItem[] | null
@@ -114,6 +118,21 @@ export async function approveVoidInvoice(id: string): Promise<InvoiceData> {
 
 export async function rejectVoidInvoice(id: string): Promise<InvoiceData> {
   return apiFetch<InvoiceData>(`/invoices/${id}/reject-void`, { method: 'POST' })
+}
+
+export async function requestWriteOffInvoice(id: string, notes?: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/request-write-off`, {
+    method: 'POST',
+    body: JSON.stringify({ notes: notes ?? null }),
+  })
+}
+
+export async function approveWriteOffInvoice(id: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/approve-write-off`, { method: 'POST' })
+}
+
+export async function rejectWriteOffInvoice(id: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/reject-write-off`, { method: 'POST' })
 }
 
 export async function applyPayment(
