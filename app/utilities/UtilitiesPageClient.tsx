@@ -91,16 +91,18 @@ function readingActionLabel(meterType: string): string {
 // ── Reading Entry Modal ────────────────────────────────────────────────────
 
 function ReadingEntryModal({
-  meter, open, onClose, onSaved,
+  meter, open, onClose, onSaved, defaultPeriod,
 }: {
   meter: MeterData | null
   open: boolean
   onClose: () => void
   onSaved?: () => void
+  defaultPeriod?: string
 }) {
   const [reading, setReading]     = useState('')
   const [date, setDate]           = useState(new Date().toISOString().slice(0, 10))
   const [billingPeriod, setBp]    = useState(() => {
+    if (defaultPeriod) return defaultPeriod
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
@@ -117,13 +119,13 @@ function ReadingEntryModal({
     if (open && meter) {
       setReading('')
       setDate(new Date().toISOString().slice(0, 10))
-      setBp('')
+      setBp(defaultPeriod ?? (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}` })())
       setUnitCost('')
       setMgmtFee(meter.management_fee_pct?.toString() ?? '')
       setNotes('')
       setError(null)
     }
-  }, [open, meter])
+  }, [open, meter, defaultPeriod])
 
   useEffect(() => {
     if (open && isWaterMeter) {
@@ -3123,6 +3125,388 @@ function InventoryTab({
 
 // ── Main Page ──────────────────────────────────────────────────────────────────────────
 
+// ── Reading Run Tab ────────────────────────────────────────────────────────
+
+function currentPeriodStr() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function fmtPeriodLabel(period: string) {
+  try {
+    const [y, m] = period.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  } catch { return period }
+}
+
+function fmtReading3(n: number) {
+  return n.toLocaleString('en-KE', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+}
+
+function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRefreshMeters: () => void }) {
+  const [period, setPeriod]             = useState(currentPeriodStr)
+  const [utilFilter, setUtilFilter]     = useState('all')
+  const [search, setSearch]             = useState('')
+  const [readings, setReadings]         = useState<MeterReadingData[]>([])
+  const [loading, setLoading]           = useState(false)
+  const [readTarget, setReadTarget]     = useState<MeterData | null>(null)
+  const [showRead, setShowRead]         = useState(false)
+  const [estimating, setEstimating]     = useState(false)
+  const [toast, setToast]               = useState<{ msg: string; ok: boolean } | null>(null)
+
+  // Active consumer meters only
+  const consumerMeters = useMemo(
+    () => meters.filter(m => m.status === 'active' && (!m.meter_role || m.meter_role === 'consumer')),
+    [meters],
+  )
+
+  const utilTypes = useMemo(
+    () => [...new Set(consumerMeters.map(m => m.utility_type))].sort(),
+    [consumerMeters],
+  )
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return consumerMeters.filter(m =>
+      (utilFilter === 'all' || m.utility_type === utilFilter) &&
+      (!q || (m.unit_label ?? '').toLowerCase().includes(q) || m.meter_number.toLowerCase().includes(q)),
+    )
+  }, [consumerMeters, utilFilter, search])
+
+  const readingByMeter = useMemo(() => new Map(readings.map(r => [r.meter_id, r])), [readings])
+
+  const rows = useMemo(
+    () => filtered.map(m => ({ ...m, reading: readingByMeter.get(m.id) ?? null })),
+    [filtered, readingByMeter],
+  )
+
+  const pending   = rows.filter(r => !r.reading)
+  const read      = rows.filter(r =>  r.reading)
+  const anomalies = read.filter(r => r.reading?.anomaly)
+  const pct       = rows.length > 0 ? Math.round((read.length / rows.length) * 100) : 0
+
+  const showToast = (msg: string, ok = true) => {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  useEffect(() => { fetchReadings() }, [period]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function fetchReadings() {
+    setLoading(true)
+    try { setReadings(await getMeterReadings({ period })) }
+    catch { /* silent */ }
+    finally { setLoading(false) }
+  }
+
+  async function handleEstimate() {
+    setEstimating(true)
+    try {
+      const res = await generateEstimatedReadings(period)
+      showToast(`Generated ${res.generated ?? 0} estimated reading${(res.generated ?? 0) === 1 ? '' : 's'}.`)
+      await fetchReadings()
+    } catch {
+      showToast('Failed to generate estimates.', false)
+    } finally {
+      setEstimating(false)
+    }
+  }
+
+  function shiftPeriod(delta: number) {
+    const [y, m] = period.split('-').map(Number)
+    const d = new Date(y, m - 1 + delta)
+    setPeriod(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  const progressColor =
+    pct === 100 ? 'bg-green-500' :
+    pct >= 75   ? 'bg-primary-500' :
+    pct >= 40   ? 'bg-amber-400'  : 'bg-red-400'
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Period selector + actions ─────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => shiftPeriod(-1)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors text-lg font-light"
+          >‹</button>
+          <input
+            type="month"
+            value={period}
+            onChange={e => setPeriod(e.target.value)}
+            className="h-9 px-3 text-sm font-medium border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500"
+          />
+          <button
+            onClick={() => shiftPeriod(1)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors text-lg font-light"
+          >›</button>
+          <span className="text-sm font-semibold text-text hidden sm:block">{fmtPeriodLabel(period)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {pending.length > 0 && (
+            <Button variant="outline" size="sm" disabled={estimating} onClick={handleEstimate}>
+              {estimating
+                ? <><span className="w-3 h-3 border-2 border-primary-400/40 border-t-primary-500 rounded-full animate-spin mr-1.5 inline-block" />Generating…</>
+                : `✦ Estimate ${pending.length} unread`}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" disabled={loading} onClick={fetchReadings}>
+            {loading ? '…' : '↺ Refresh'}
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Toast ────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className={cn(
+          'px-4 py-3 rounded-xl border text-sm font-medium',
+          toast.ok
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300',
+        )}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* ── Stat cards ───────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-5">
+          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Total Meters</p>
+          <p className="text-3xl font-bold text-text">{rows.length}</p>
+          <p className="text-xs text-text-muted mt-1.5">Active consumer meters</p>
+        </Card>
+        <Card className="p-5 border-l-[3px] border-green-500">
+          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Read</p>
+          <p className="text-3xl font-bold text-green-600 dark:text-green-400">{read.length}</p>
+          <p className="text-xs text-text-muted mt-1.5">{pct}% complete</p>
+        </Card>
+        <Card className="p-5 border-l-[3px] border-amber-400">
+          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Pending</p>
+          <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">{pending.length}</p>
+          <p className="text-xs text-text-muted mt-1.5">{pending.length === 0 ? 'All meters read' : 'Not yet recorded'}</p>
+        </Card>
+        <Card className={cn('p-5 border-l-[3px]', anomalies.length > 0 ? 'border-red-500' : 'border-surface-border dark:border-dark-border')}>
+          <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Anomalies</p>
+          <p className={cn('text-3xl font-bold', anomalies.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-text-muted')}>{anomalies.length}</p>
+          <p className="text-xs text-text-muted mt-1.5">{anomalies.length > 0 ? 'Review flagged readings' : 'All readings normal'}</p>
+        </Card>
+      </div>
+
+      {/* ── Progress bar ─────────────────────────────────────────────────── */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm font-semibold text-text">Reading Progress</p>
+            <p className="text-xs text-text-muted mt-0.5">{fmtPeriodLabel(period)}</p>
+          </div>
+          <span className={cn(
+            'text-2xl font-bold',
+            pct === 100 ? 'text-green-600 dark:text-green-400' :
+            pct >= 75   ? 'text-primary-600 dark:text-primary-400' :
+            pct >= 40   ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400',
+          )}>{pct}%</span>
+        </div>
+        <div className="h-3 rounded-full bg-surface-muted dark:bg-dark-hover overflow-hidden">
+          <div
+            className={cn('h-full rounded-full transition-all duration-700', progressColor)}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between mt-2.5">
+          <span className="text-xs text-text-muted">{read.length} of {rows.length} meters read</span>
+          {pct === 100
+            ? <span className="text-xs font-semibold text-green-600 dark:text-green-400">All readings complete</span>
+            : <span className="text-xs text-text-muted">{pending.length} remaining</span>}
+        </div>
+      </Card>
+
+      {/* ── Filters ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search unit or meter number…"
+          className="w-64"
+        />
+        <select
+          value={utilFilter}
+          onChange={e => setUtilFilter(e.target.value)}
+          className="h-9 w-44 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500"
+        >
+          <option value="all">All utilities</option>
+          {utilTypes.map(t => (
+            <option key={t} value={t}>{utilityLabel(t)}</option>
+          ))}
+        </select>
+        {(search || utilFilter !== 'all') && (
+          <button
+            onClick={() => { setSearch(''); setUtilFilter('all') }}
+            className="text-xs text-text-muted hover:text-text transition-colors"
+          >✕ Clear filters</button>
+        )}
+      </div>
+
+      {/* ── Table ────────────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden p-0">
+        {loading ? (
+          <div className="py-24 flex flex-col items-center gap-3 text-text-muted">
+            <span className="w-7 h-7 border-2 border-primary-400/30 border-t-primary-500 rounded-full animate-spin" />
+            <span className="text-sm">Loading readings for {fmtPeriodLabel(period)}…</span>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="py-24 text-center">
+            <p className="text-4xl mb-3">📊</p>
+            <p className="font-semibold text-text">No active consumer meters found</p>
+            <p className="text-sm text-text-muted mt-1">Assign meters to units from the Meters tab first</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-border dark:border-dark-border bg-slate-50 dark:bg-dark-card">
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider">Unit</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider">Meter No.</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider">Utility</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wider">Prev Reading</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wider">Curr Reading</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wider">Consumed</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider">Date Read</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider">Read By</th>
+                  <th className="px-4 py-3 text-center text-[11px] font-semibold text-text-muted uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 w-24" />
+                </tr>
+              </thead>
+              <tbody>
+                {/* Pending rows — amber tint, float to top */}
+                {pending.map((m, i) => (
+                  <tr
+                    key={m.id}
+                    className={cn(
+                      'border-b border-surface-border dark:border-dark-border transition-colors',
+                      i % 2 === 0
+                        ? 'bg-amber-50/70 dark:bg-amber-900/10'
+                        : 'bg-amber-50/40 dark:bg-amber-900/5',
+                    )}
+                  >
+                    <td className="px-4 py-3 font-semibold text-text">{m.unit_label ?? <span className="text-text-muted italic">Unassigned</span>}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-text-muted">{m.meter_number}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-base mr-1">{utilityIcon(m.utility_type)}</span>
+                      <span className="text-xs text-text-muted">{utilityLabel(m.utility_type)}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-text-muted">
+                      {m.last_reading != null ? fmtReading3(Number(m.last_reading)) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-text-muted">—</td>
+                    <td className="px-4 py-3 text-right text-text-muted">—</td>
+                    <td className="px-4 py-3 text-text-muted text-xs">—</td>
+                    <td className="px-4 py-3 text-text-muted text-xs">—</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                        ⏳ Pending
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => { setReadTarget(m); setShowRead(true) }}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors shadow-sm"
+                      >
+                        Record
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {/* Read rows */}
+                {read.map((m, i) => {
+                  const r = m.reading!
+                  return (
+                    <tr
+                      key={m.id}
+                      className={cn(
+                        'border-b border-surface-border dark:border-dark-border transition-colors',
+                        r.anomaly
+                          ? 'bg-red-50/60 dark:bg-red-900/10'
+                          : (pending.length + i) % 2 === 0
+                            ? 'bg-white dark:bg-transparent'
+                            : 'bg-slate-50/60 dark:bg-dark-card/20',
+                      )}
+                    >
+                      <td className="px-4 py-3 font-semibold text-text">{m.unit_label ?? <span className="text-text-muted italic">Unassigned</span>}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-text-muted">{m.meter_number}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-base mr-1">{utilityIcon(m.utility_type)}</span>
+                        <span className="text-xs text-text-muted">{utilityLabel(m.utility_type)}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-text-muted">{fmtReading3(r.previous_value)}</td>
+                      <td className="px-4 py-3 text-right font-mono font-semibold text-text">{fmtReading3(r.current_value)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-text">
+                        {fmtReading3(r.units_consumed)} <span className="text-text-muted text-xs">m³</span>
+                        {r.anomaly && (
+                          <span className="ml-1.5 text-red-500" title="Anomaly: consumption significantly above average">⚠</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-text-muted">
+                        {r.reading_date
+                          ? new Date(r.reading_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-text-muted">{r.read_by ?? '—'}</td>
+                      <td className="px-4 py-3 text-center">
+                        {r.anomaly ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                            ⚠ Anomaly
+                          </span>
+                        ) : r.source === 'estimated' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                            ~ Estimated
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                            ✓ Read
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3" />
+                    </tr>
+                  )
+                })}
+              </tbody>
+
+              {/* Summary footer */}
+              {read.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-surface-border dark:border-dark-border bg-slate-100 dark:bg-dark-card font-semibold text-sm">
+                    <td className="px-4 py-3 text-text-muted" colSpan={5}>
+                      {read.length} reading{read.length !== 1 ? 's' : ''} recorded
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-text">
+                      {fmtReading3(read.reduce((s, m) => s + (m.reading?.units_consumed ?? 0), 0))} <span className="text-text-muted text-xs">m³</span>
+                    </td>
+                    <td colSpan={4} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Reading entry modal */}
+      <ReadingEntryModal
+        meter={readTarget}
+        open={showRead}
+        defaultPeriod={period}
+        onClose={() => { setShowRead(false); setReadTarget(null) }}
+        onSaved={fetchReadings}
+      />
+    </div>
+  )
+}
+
 export function UtilitiesPageClient() {
   const [readTarget, setReadTarget]       = useState<MeterData | null>(null)
   const [showRead, setShowRead]           = useState(false)
@@ -3292,6 +3676,16 @@ export function UtilitiesPageClient() {
             )}
           </TabsTrigger>
           <TabsTrigger value="readings">Readings</TabsTrigger>
+          <TabsTrigger value="reading-run">
+            Reading Run
+            {(() => {
+              const consumer = meters.filter(m => m.status === 'active' && (!m.meter_role || m.meter_role === 'consumer'))
+              const pending = consumer.filter(m => !readings.some(r => r.meter_id === m.id && r.billing_period === currentPeriodStr()))
+              return pending.length > 0
+                ? <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-[10px] font-bold px-1">{pending.length}</span>
+                : null
+            })()}
+          </TabsTrigger>
           <TabsTrigger value="disconnections">Disconnections</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
@@ -3334,6 +3728,9 @@ export function UtilitiesPageClient() {
         </TabsContent>
         <TabsContent value="readings" className="pt-5">
           <ReadingsTab readings={readings} loading={loadingReadings} onRefresh={fetchReadings} />
+        </TabsContent>
+        <TabsContent value="reading-run" className="pt-5">
+          <ReadingRunTab meters={meters} onRefreshMeters={fetchMeters} />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
           <DisconnectionTab
