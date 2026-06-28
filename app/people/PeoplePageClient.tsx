@@ -2429,14 +2429,24 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
     <RegisterOwnerModal          open={showOwner}     onClose={() => setShowOwner(false)}     onRegister={addPerson} />
     <RegisterCorporateOwnerModal open={showCorporate} onClose={() => setShowCorporate(false)} onRegister={addPerson} />
 
-    {selected?.type === 'tenant' && (
-      <TenantExitModal
-        open={showExit}
-        onClose={() => setShowExit(false)}
-        personName={`${selected.first_name} ${selected.last_name}`}
-        currentUnit={allUnits.find(u => (selected.unit_ids ?? []).includes(u.id))?.number ?? '—'}
-      />
-    )}
+    {selected?.type === 'tenant' && (() => {
+      const tenantUnit = allUnits.find(u => (selected.unit_ids ?? []).includes(u.id))
+      return (
+        <TenantExitModal
+          open={showExit}
+          onClose={() => setShowExit(false)}
+          onComplete={() => {
+            // Refresh the person record to reflect unit unassignment
+            getPersonById(selected.id).then(p => { if (p) updatePerson(apiPersonToPerson(p)) })
+            setShowExit(false)
+          }}
+          personId={selected.id}
+          personName={`${selected.first_name} ${selected.last_name}`}
+          unitId={tenantUnit?.id ?? ''}
+          unitLabel={tenantUnit ? `Block ${tenantUnit.block}-${tenantUnit.number}` : '—'}
+        />
+      )
+    })()}
     {(selected?.type === 'resident_owner' || selected?.type === 'non_resident_owner') && (
       <OwnerExitModal
         open={showExit}

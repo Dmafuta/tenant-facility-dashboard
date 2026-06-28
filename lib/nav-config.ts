@@ -1,6 +1,6 @@
 // Single source of truth for navigation, role visibility, and landing pages.
 
-export interface NavItem  { label: string; href: string; icon: string; premium?: boolean; roles?: string[] }
+export interface NavItem  { label: string; href: string; icon: string; premium?: boolean; roles?: string[]; children?: NavItem[] }
 export interface NavGroup { group: string; items: NavItem[] }
 
 /** Role → first page after login (and fallback for unauthorized access) */
@@ -52,7 +52,9 @@ export const NAV: NavGroup[] = [
     group: 'Operations',
     items: [
       { label: 'Financials',  href: '/financials',  icon: '💰', roles: [FM, FIN] },
-      { label: 'Billing',     href: '/billing',     icon: '🧾', roles: [FM, FIN] },
+      { label: 'Billing',     href: '/billing',     icon: '🧾', roles: [FM, FIN], children: [
+        { label: 'Move-Out Clearances', href: '/billing/clearances', icon: '🏠', roles: [FM, FIN, RECEP] },
+      ]},
       { label: 'Maintenance', href: '/maintenance', icon: '🔧', roles: [FM, MAINT] },
       { label: 'Issues',      href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
       { label: 'HR & Staff',  href: '/hr',          icon: '💼', roles: [FM] },

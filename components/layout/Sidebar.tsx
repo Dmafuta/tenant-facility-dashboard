@@ -11,11 +11,19 @@ export function Sidebar() {
   const { collapsed, mobileOpen, toggleCollapsed, closeMobile } = useSidebar()
   const { subject } = useAbac()
 
-  // Filter nav to only items this role can see; drop empty groups
+  // Filter nav to only items this role can see; propagate children; drop empty groups
   const visibleNav = NAV
     .map(group => ({
       ...group,
-      items: group.items.filter(item => !item.roles || item.roles.includes(subject.role)),
+      items: group.items
+        .map(item => ({
+          ...item,
+          children: item.children?.filter(c => !c.roles || c.roles.includes(subject.role)),
+        }))
+        .filter(item =>
+          (!item.roles || item.roles.includes(subject.role)) ||
+          (item.children && item.children.length > 0)
+        ),
     }))
     .filter(group => group.items.length > 0)
 
@@ -53,41 +61,70 @@ export function Sidebar() {
             {collapsed && <div className="h-px bg-surface-border dark:bg-dark-border mx-1 mb-2" />}
             {items.map(item => {
               const active = pathname === item.href || pathname.startsWith(item.href + '/')
+              const hasVisibleChildren = item.children && item.children.length > 0
+              const childActive = hasVisibleChildren && item.children!.some(
+                c => pathname === c.href || pathname.startsWith(c.href + '/')
+              )
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={closeMobile}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-md text-sm transition-colors mb-0.5 group relative',
-                    collapsed ? 'px-0 py-2 justify-center' : 'px-2 py-1.5',
-                    active
-                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
-                      : 'text-text-muted hover:bg-surface-hover hover:text-text dark:hover:bg-dark-hover'
-                  )}
-                >
-                  <span className={cn('text-base text-center flex-shrink-0', collapsed ? 'w-full' : 'w-5')}>
-                    {item.icon}
-                  </span>
-                  {!collapsed && (
-                    <>
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.premium && (
-                        <span className="text-[9px] font-semibold uppercase tracking-wide text-primary-500 bg-primary-50 dark:bg-primary-900/30 px-1.5 py-0.5 rounded">
-                          Pro
-                        </span>
-                      )}
-                    </>
-                  )}
-                  {/* Tooltip on collapsed */}
-                  {collapsed && (
-                    <span className="absolute left-full ml-2 px-2 py-1 rounded-md bg-gray-900 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
-                      {item.label}
-                      {item.premium && <span className="ml-1 text-primary-300">(Pro)</span>}
+                <div key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={closeMobile}
+                    title={collapsed ? item.label : undefined}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-md text-sm transition-colors mb-0.5 group relative',
+                      collapsed ? 'px-0 py-2 justify-center' : 'px-2 py-1.5',
+                      (active || childActive)
+                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
+                        : 'text-text-muted hover:bg-surface-hover hover:text-text dark:hover:bg-dark-hover'
+                    )}
+                  >
+                    <span className={cn('text-base text-center flex-shrink-0', collapsed ? 'w-full' : 'w-5')}>
+                      {item.icon}
                     </span>
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {item.premium && (
+                          <span className="text-[9px] font-semibold uppercase tracking-wide text-primary-500 bg-primary-50 dark:bg-primary-900/30 px-1.5 py-0.5 rounded">
+                            Pro
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {collapsed && (
+                      <span className="absolute left-full ml-2 px-2 py-1 rounded-md bg-gray-900 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                        {item.label}
+                        {item.premium && <span className="ml-1 text-primary-300">(Pro)</span>}
+                      </span>
+                    )}
+                  </Link>
+
+                  {/* Sub-items (only shown when sidebar is expanded) */}
+                  {!collapsed && hasVisibleChildren && (
+                    <div className="ml-4 pl-2 border-l border-surface-border dark:border-dark-border space-y-0.5 mb-1">
+                      {item.children!.map(child => {
+                        const childIsActive = pathname === child.href || pathname.startsWith(child.href + '/')
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={closeMobile}
+                            className={cn(
+                              'flex items-center gap-2 rounded-md text-xs transition-colors px-2 py-1.5 group relative',
+                              childIsActive
+                                ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
+                                : 'text-text-muted hover:bg-surface-hover hover:text-text dark:hover:bg-dark-hover'
+                            )}
+                          >
+                            <span className="w-4 text-center flex-shrink-0">{child.icon}</span>
+                            <span className="flex-1 truncate">{child.label}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
                   )}
-                </Link>
+                </div>
               )
             })}
           </div>

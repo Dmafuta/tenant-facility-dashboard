@@ -12,6 +12,7 @@ import { getOverdueUtilityCharges } from '@/lib/api/disconnection'
 import type { ChargeData as UtilityChargeData } from '@/lib/api/disconnection'
 import { getConsumableStock } from '@/lib/api/consumables'
 import type { ConsumableStockData } from '@/lib/api/consumables'
+import { getPendingExitCount } from '@/lib/api/exitRequests'
 import type { DashboardData } from './page'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -96,18 +97,30 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
   const [liveMeters,    setLiveMeters]    = useState<MeterData[]>([])
   const [overdueUtility,setOverdueUtility]= useState<UtilityChargeData[]>([])
   const [liveStock,     setLiveStock]     = useState<ConsumableStockData[]>([])
+  const [pendingExits,  setPendingExits]  = useState(0)
+
   useEffect(() => {
     Promise.all([
       getMpesaTransactions().catch(() => [] as MpesaTransactionData[]),
       getAllMeters({ meterType: 'postpaid' }).catch(() => [] as MeterData[]),
       getOverdueUtilityCharges().catch(() => [] as UtilityChargeData[]),
       getConsumableStock().catch(() => [] as ConsumableStockData[]),
-    ]).then(([txns, meters, overdueUtil, stock]) => {
+      getPendingExitCount().catch(() => 0),
+    ]).then(([txns, meters, overdueUtil, stock, exitCount]) => {
       setMpesaTxns(txns)
       setLiveMeters(meters)
       setOverdueUtility(overdueUtil)
       setLiveStock(stock)
+      setPendingExits(exitCount)
     })
+  }, [])
+
+  // Poll move-out clearances every 30 seconds
+  useEffect(() => {
+    const id = setInterval(() => {
+      getPendingExitCount().then(setPendingExits).catch(() => {})
+    }, 30_000)
+    return () => clearInterval(id)
   }, [])
 
   // ── Occupancy ─────────────────────────────────────────────────────────────
@@ -338,7 +351,21 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
                   </div>
                 </a>
               )}
-              {[expiringLeases.length, urgentIssues, overdueCharges.length, postpaidOverdue.length, lowStock.length, pendingVerification].every(n => n === 0) && (
+              {pendingExits > 0 && (
+                <a href="/billing/clearances" className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 dark:border-amber-800 px-3 py-2 hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-900/30 dark:hover:to-orange-900/30 transition-colors">
+                  <span>🏠</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-amber-900 dark:text-amber-300">
+                      {pendingExits} move-out clearance{pendingExits !== 1 ? 's' : ''} pending
+                    </p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400">W&S bills need billing review</p>
+                  </div>
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {pendingExits > 9 ? '9+' : pendingExits}
+                  </span>
+                </a>
+              )}
+              {[expiringLeases.length, urgentIssues, overdueCharges.length, postpaidOverdue.length, lowStock.length, pendingVerification, pendingExits].every(n => n === 0) && (
                 <div className="py-6 text-center text-sm text-text-muted">
                   <p className="text-2xl mb-1">✅</p>
                   All clear — no pending actions.
