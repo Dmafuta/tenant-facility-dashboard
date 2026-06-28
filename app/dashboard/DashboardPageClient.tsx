@@ -6,8 +6,8 @@ import { Card } from '@/components/ui/Card'
 import { useCountUp } from '@/hooks/useCountUp'
 import { getMpesaTransactions } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
-import { getAllMeters } from '@/lib/api/meters'
-import type { MeterData } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings } from '@/lib/api/meters'
+import type { MeterData, MeterReadingData } from '@/lib/api/meters'
 import { getOverdueUtilityCharges } from '@/lib/api/disconnection'
 import type { ChargeData as UtilityChargeData } from '@/lib/api/disconnection'
 import { getConsumableStock } from '@/lib/api/consumables'
@@ -98,20 +98,29 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
   const [overdueUtility,setOverdueUtility]= useState<UtilityChargeData[]>([])
   const [liveStock,     setLiveStock]     = useState<ConsumableStockData[]>([])
   const [pendingExits,  setPendingExits]  = useState(0)
+  const [recentReadings,setRecentReadings]= useState<MeterReadingData[]>([])
 
   useEffect(() => {
+    const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
     Promise.all([
       getMpesaTransactions().catch(() => [] as MpesaTransactionData[]),
       getAllMeters({ meterType: 'postpaid' }).catch(() => [] as MeterData[]),
       getOverdueUtilityCharges().catch(() => [] as UtilityChargeData[]),
       getConsumableStock().catch(() => [] as ConsumableStockData[]),
       getPendingExitCount().catch(() => 0),
-    ]).then(([txns, meters, overdueUtil, stock, exitCount]) => {
+      getMeterReadings({ period: currentPeriod }).catch(() => [] as MeterReadingData[]),
+    ]).then(([txns, meters, overdueUtil, stock, exitCount, readings]) => {
       setMpesaTxns(txns)
       setLiveMeters(meters)
       setOverdueUtility(overdueUtil)
       setLiveStock(stock)
       setPendingExits(exitCount)
+      setRecentReadings(
+        readings
+          .filter(r => r.read_by)
+          .sort((a, b) => (b.reading_date ?? '').localeCompare(a.reading_date ?? ''))
+          .slice(0, 8)
+      )
     })
   }, [])
 
@@ -467,6 +476,64 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
             )}
           </Card>
         </div>
+
+        {/* ── Recent Meter Readings ─────────────────────────────────────── */}
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text">Recent Meter Readings</h3>
+              <p className="text-xs text-text-muted mt-0.5">
+                {today.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+            <a href="/utilities" className="text-xs text-teal-600 hover:underline">View all →</a>
+          </div>
+          {recentReadings.length === 0 ? (
+            <div className="py-6 text-center">
+              <p className="text-2xl mb-1">💧</p>
+              <p className="text-xs text-text-muted">No meter readings recorded this period.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              {recentReadings.map(r => {
+                const utilityColors: Record<string, string> = {
+                  water:       'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800',
+                  water_sewer: 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-100 dark:border-cyan-800',
+                  electricity: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-100 dark:border-yellow-800',
+                  gas:         'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800',
+                }
+                const utilityIcons: Record<string, string> = {
+                  water: '💧', water_sewer: '🚿', electricity: '⚡', gas: '🔥',
+                }
+                const colorCls = utilityColors[r.utility_type] ?? 'bg-surface-muted dark:bg-dark-hover border-surface-border dark:border-dark-border'
+                const icon     = utilityIcons[r.utility_type] ?? '📊'
+                return (
+                  <div key={r.id} className={`rounded-xl border p-3 ${colorCls}`}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-sm">{icon}</span>
+                      <span className="text-xs font-semibold text-text truncate flex-1">{r.unit_label ?? '—'}</span>
+                      {r.anomaly && (
+                        <span className="text-amber-500 text-xs flex-shrink-0" title="Anomaly detected">⚠</span>
+                      )}
+                    </div>
+                    <p className="text-lg font-bold text-text leading-none">
+                      {r.current_value.toLocaleString()}
+                      <span className="text-xs font-normal text-text-muted ml-1">m³</span>
+                    </p>
+                    <p className="text-[11px] text-text-muted mt-1 truncate">#{r.meter_number}</p>
+                    <div className="mt-2 pt-2 border-t border-black/5 dark:border-white/5 flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded-full bg-white/60 dark:bg-black/20 flex items-center justify-center text-[9px] font-bold text-text flex-shrink-0">
+                        {(r.read_by ?? 'U').slice(0, 1).toUpperCase()}
+                      </div>
+                      <span className="text-[11px] text-text-muted truncate flex-1">{r.read_by ?? 'Unknown'}</span>
+                      <span className="text-[10px] text-text-muted flex-shrink-0">{r.reading_date ?? '—'}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Card>
 
       </main>
     </DashboardLayout>
