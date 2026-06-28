@@ -2118,6 +2118,15 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
                 )}
               </CanDo>
 
+              {(isTenant || isOwner) && (
+                <a
+                  href={`/billing/statements?personId=${person.id}`}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                >
+                  📋 View W&amp;S Statement
+                </a>
+              )}
+
               <CanDo action="write" resource={{ type: 'person', id: person.id }} fallback={null}>
                 {isTenant && (
                   <button onClick={onExit} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors">
