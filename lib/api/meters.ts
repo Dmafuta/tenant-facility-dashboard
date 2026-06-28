@@ -183,8 +183,8 @@ export async function bulkCreateReadings(items: BulkReadingItem[]): Promise<{ cr
   })
 }
 
-export async function generateEstimatedReadings(period: string): Promise<{ generated: number; skipped: number }> {
-  return apiFetch<{ generated: number; skipped: number }>(
+export async function generateEstimatedReadings(period: string): Promise<{ generated: number; skipped: number; back_billing_blocked: number }> {
+  return apiFetch<{ generated: number; skipped: number; back_billing_blocked: number }>(
     `/meter-readings/generate-estimated?period=${encodeURIComponent(period)}`,
     { method: 'POST' }
   )

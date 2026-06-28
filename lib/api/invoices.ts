@@ -161,10 +161,41 @@ export async function removePayment(paymentId: string): Promise<InvoiceData | nu
   return apiFetch<InvoiceData | null>(`/invoices/payments/${paymentId}`, { method: 'DELETE' })
 }
 
-export async function bulkIssueInvoices(period: string, categoryCode?: string): Promise<{ issued: number }> {
+export async function bulkIssueInvoices(period: string, categoryCode?: string): Promise<{ issued: number; skipped: number }> {
   const qs = new URLSearchParams({ period })
   if (categoryCode) qs.set('categoryCode', categoryCode)
-  return apiFetch<{ issued: number }>(`/invoices/bulk-issue?${qs}`, { method: 'POST' })
+  return apiFetch<{ issued: number; skipped: number }>(`/invoices/bulk-issue?${qs}`, { method: 'POST' })
+}
+
+export interface CreditNoteData {
+  id: string
+  unit_id: string
+  category_code: string
+  amount: number
+  payment_date: string | null
+  payment_method: string
+  reference_no: string | null
+  notes: string | null
+  created_at: string
+}
+
+export async function createCreditNote(payload: {
+  unitId: string
+  categoryCode: string
+  amount: number
+  reason: string
+  referenceInvoiceId?: string
+}): Promise<CreditNoteData> {
+  return apiFetch<CreditNoteData>('/invoices/credit-note', {
+    method: 'POST',
+    body: JSON.stringify({
+      unitId:             payload.unitId,
+      categoryCode:       payload.categoryCode,
+      amount:             payload.amount,
+      reason:             payload.reason,
+      referenceInvoiceId: payload.referenceInvoiceId,
+    }),
+  })
 }
 
 export async function getInvoiceCategories(): Promise<InvoiceCategory[]> {
@@ -266,6 +297,40 @@ export async function bulkEmailInvoices(
 
 export async function getTenantStatement(personId: string): Promise<InvoiceData[]> {
   return apiFetch<InvoiceData[]>(`/invoices/statement/${personId}`)
+}
+
+export interface CollectionSummaryRow {
+  id: string
+  statement_no: string
+  unit_label: string | null
+  person_name: string | null
+  billed: number
+  collected: number
+  outstanding: number
+  status: string
+  due_date: string | null
+}
+
+export interface CollectionSummary {
+  period: string
+  category_code: string
+  total_billed: number
+  total_collected: number
+  total_outstanding: number
+  collection_rate: number
+  fully_paid: number
+  partial: number
+  unpaid: number
+  total_invoices: number
+}
+
+export async function getCollectionSummary(
+  period: string,
+  categoryCode = 'WS'
+): Promise<{ summary: CollectionSummary; rows: CollectionSummaryRow[] }> {
+  return apiFetch<{ summary: CollectionSummary; rows: CollectionSummaryRow[] }>(
+    `/reports/collection-summary?period=${encodeURIComponent(period)}&categoryCode=${categoryCode}`
+  )
 }
 
 export async function sendInvoiceDisconnectionNotice(

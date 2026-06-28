@@ -3223,7 +3223,11 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
     setEstimating(true)
     try {
       const res = await generateEstimatedReadings(period)
-      showToast(`Generated ${res.generated ?? 0} estimated reading${(res.generated ?? 0) === 1 ? '' : 's'}.`)
+      const gen = res.generated ?? 0
+      const blocked = res.back_billing_blocked ?? 0
+      let msg = `Generated ${gen} estimated reading${gen === 1 ? '' : 's'}.`
+      if (blocked > 0) msg += ` ${blocked} skipped — already billed for a later period.`
+      showToast(msg, blocked === 0 || gen > 0)
       await fetchReadings()
     } catch {
       showToast('Failed to generate estimates.', false)

@@ -14,10 +14,16 @@ import {
   getAgedDebtors, getBillingSummary, getOutstandingBalances,
   requestVoidInvoice, approveVoidInvoice, rejectVoidInvoice,
   requestWriteOffInvoice, approveWriteOffInvoice, rejectWriteOffInvoice,
+  createCreditNote, getCollectionSummary,
   type InvoiceData, type InvoiceCategory, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
+  type CollectionSummary, type CollectionSummaryRow,
   getInvoiceCategories,
 } from '@/lib/api/invoices'
+import {
+  getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
+  type OpeningBalance,
+} from '@/lib/api/opening-balances'
 import { apiFetch } from '@/lib/api/fetch'
 import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
@@ -124,7 +130,7 @@ function PeriodPicker({ cycle, value, onChange }: {
 
 export function BillingPageClient() {
   const { subject } = useAbac()
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
   const [loading, setLoading]         = useState(true)
@@ -184,7 +190,7 @@ export function BillingPageClient() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
   const [bulkIssuing, setBulkIssuing]       = useState(false)
-  const [bulkResult, setBulkResult]         = useState<{ issued: number } | null>(null)
+  const [bulkResult, setBulkResult]         = useState<{ issued: number; skipped: number } | null>(null)
 
   // Send email
   const [emailing, setEmailing]       = useState<string | null>(null)
@@ -230,16 +236,39 @@ export function BillingPageClient() {
   const [disconnectType, setDisconnectType]     = useState<'reminder' | 'formal'>('reminder')
   const [sendingNotice, setSendingNotice]       = useState(false)
 
+  // Credit note modal
+  const [creditNoteTarget, setCreditNoteTarget]   = useState<InvoiceData | null>(null)
+  const [creditNoteAmount, setCreditNoteAmount]   = useState('')
+  const [creditNoteReason, setCreditNoteReason]   = useState('')
+  const [issuingCredit, setIssuingCredit]         = useState(false)
+  const [creditSuccess, setCreditSuccess]         = useState<string | null>(null)
+
+  // Opening balances (Adjustments tab)
+  const [openingBals, setOpeningBals]         = useState<OpeningBalance[]>([])
+  const [obLoading, setObLoading]             = useState(false)
+  const [showAddOb, setShowAddOb]             = useState(false)
+  const [obCategory, setObCategory]           = useState<'WS' | 'SC'>('WS')
+  const [obUnitLabel, setObUnitLabel]         = useState('')
+  const [obUnitId, setObUnitId]               = useState('')
+  const [obAmount, setObAmount]               = useState('')
+  const [obNotes, setObNotes]                 = useState('')
+  const [obSaving, setObSaving]               = useState(false)
+  const [obError, setObError]                 = useState<string | null>(null)
+  const [editOb, setEditOb]                   = useState<OpeningBalance | null>(null)
+  const [editObAmount, setEditObAmount]       = useState('')
+  const [editObNotes, setEditObNotes]         = useState('')
+
   // Reports tab
-  const [reportTab, setReportTab]       = useState<'aged' | 'outstanding' | 'summary'>('aged')
+  const [reportTab, setReportTab]       = useState<'aged' | 'outstanding' | 'summary' | 'collection'>('aged')
   const [reportPeriod, setReportPeriod] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
-  const [agedData, setAgedData]         = useState<{ rows: AgedDebtorRow[]; summary: AgedDebtorSummary } | null>(null)
-  const [summaryData, setSummaryData]   = useState<BillingSummary | null>(null)
+  const [agedData, setAgedData]               = useState<{ rows: AgedDebtorRow[]; summary: AgedDebtorSummary } | null>(null)
+  const [summaryData, setSummaryData]         = useState<BillingSummary | null>(null)
   const [outstandingData, setOutstandingData] = useState<OutstandingBalanceRow[] | null>(null)
-  const [reportLoading, setReportLoading] = useState(false)
+  const [collectionData, setCollectionData]   = useState<{ summary: CollectionSummary; rows: CollectionSummaryRow[] } | null>(null)
+  const [reportLoading, setReportLoading]     = useState(false)
 
   // Action states
   const [actioning, setActioning]     = useState<string | null>(null)
@@ -478,7 +507,7 @@ export function BillingPageClient() {
   async function handleApplyLateFees() {
     setLateFeeRunning(true); setError(null); setLateFeeResult(null)
     try {
-      const result = await applyLateFees(parseFloat(latePct), activeTab !== 'Reports' ? activeTab : undefined)
+      const result = await applyLateFees(parseFloat(latePct), !['Reports','Adjustments'].includes(activeTab) ? activeTab : undefined)
       setLateFeeResult(result)
       await load()
     } catch (e: unknown) {
@@ -541,7 +570,7 @@ export function BillingPageClient() {
   async function handleBulkEmail() {
     setBulkEmailing(true); setError(null); setBulkEmailResult(null)
     try {
-      const result = await bulkEmailInvoices(bulkEmailPeriod, activeTab !== 'Reports' ? activeTab : undefined)
+      const result = await bulkEmailInvoices(bulkEmailPeriod, !['Reports','Adjustments'].includes(activeTab) ? activeTab : undefined)
       setBulkEmailResult(result)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Bulk email failed')
@@ -571,15 +600,24 @@ export function BillingPageClient() {
 
   async function loadReport(tab: typeof reportTab, period?: string) {
     setReportLoading(true)
+    const p = period ?? reportPeriod
     try {
       if (tab === 'aged')        setAgedData(await getAgedDebtors())
       if (tab === 'outstanding') setOutstandingData(await getOutstandingBalances())
-      if (tab === 'summary')     setSummaryData(await getBillingSummary(period ?? reportPeriod))
+      if (tab === 'summary')     setSummaryData(await getBillingSummary(p))
+      if (tab === 'collection')  setCollectionData(await getCollectionSummary(p, activeTab !== 'Reports' ? activeTab : 'WS'))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load report')
     } finally {
       setReportLoading(false)
     }
+  }
+
+  async function loadOpeningBalances() {
+    setObLoading(true)
+    try { setOpeningBals(await getOpeningBalances()) }
+    catch { /* silent */ }
+    finally { setObLoading(false) }
   }
 
   function switchReportTab(t: typeof reportTab) {
@@ -589,11 +627,12 @@ export function BillingPageClient() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT' | 'Reports'; label: string }[] = [
-    { code: 'WS',      label: 'Water & Sewerage' },
-    { code: 'SC',      label: 'Service Charge' },
-    { code: 'OT',      label: 'Other Charges' },
-    { code: 'Reports', label: 'Reports' },
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments'; label: string }[] = [
+    { code: 'WS',          label: 'Water & Sewerage' },
+    { code: 'SC',          label: 'Service Charge' },
+    { code: 'OT',          label: 'Other Charges' },
+    { code: 'Adjustments', label: 'Adjustments' },
+    { code: 'Reports',     label: 'Reports' },
   ]
 
   const activeCategory = categories.find(c => c.code === activeTab)
@@ -616,7 +655,10 @@ export function BillingPageClient() {
         {tabs.map(t => (
           <button
             key={t.code}
-            onClick={() => setActiveTab(t.code)}
+            onClick={() => {
+              setActiveTab(t.code)
+              if (t.code === 'Adjustments') loadOpeningBalances()
+            }}
             className={cn(
               'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
               activeTab === t.code
@@ -646,7 +688,7 @@ export function BillingPageClient() {
       </div>
 
       {/* Toolbar */}
-      {activeTab !== 'Reports' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
       <div className="flex flex-wrap gap-2 items-center">
         <SearchInput
           value={search}
@@ -709,7 +751,7 @@ export function BillingPageClient() {
       {activeTab === 'Reports' && (
         <div className="space-y-4">
           <div className="flex gap-1 border-b border-surface-border dark:border-dark-border">
-            {(['aged', 'outstanding', 'summary'] as const).map(t => (
+            {(['aged', 'outstanding', 'summary', 'collection'] as const).map(t => (
               <button
                 key={t}
                 onClick={() => switchReportTab(t)}
@@ -720,7 +762,7 @@ export function BillingPageClient() {
                     : 'border-transparent text-text-muted hover:text-text'
                 )}
               >
-                {t === 'aged' ? 'Aged Debtors' : t === 'outstanding' ? 'Outstanding Balances' : 'Billing Summary'}
+                {t === 'aged' ? 'Aged Debtors' : t === 'outstanding' ? 'Outstanding Balances' : t === 'summary' ? 'Billing Summary' : 'Collection'}
               </button>
             ))}
           </div>
@@ -897,11 +939,174 @@ export function BillingPageClient() {
               )}
             </div>
           )}
+
+          {/* Collection Summary */}
+          {reportTab === 'collection' && !reportLoading && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2 items-center">
+                <label className="text-sm text-text-muted">Period</label>
+                <input
+                  type="month" value={reportPeriod}
+                  onChange={e => setReportPeriod(e.target.value)}
+                  className="h-8 px-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none"
+                />
+                {(['WS','SC','OT'] as const).map(cat => (
+                  <button key={cat} onClick={async () => { setReportLoading(true); try { setCollectionData(await getCollectionSummary(reportPeriod, cat)) } catch { setError('Failed to load') } finally { setReportLoading(false) } }}
+                    className="px-3 py-1 text-xs rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:bg-surface-hover dark:hover:bg-dark-hover">
+                    {cat === 'WS' ? 'Water & Sewerage' : cat === 'SC' ? 'Service Charge' : 'Other'}
+                  </button>
+                ))}
+                <Button size="sm" variant="outline" onClick={() => loadReport('collection')}>Load</Button>
+              </div>
+              {!collectionData ? (
+                <div className="py-16 text-center text-text-muted text-sm">Select a period and category, then click Load.</div>
+              ) : (
+                <>
+                  {/* KPI strip */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {([
+                      ['Billed',       collectionData.summary.total_billed,      'text-text'],
+                      ['Collected',    collectionData.summary.total_collected,   'text-success'],
+                      ['Outstanding',  collectionData.summary.total_outstanding, 'text-danger'],
+                      ['Collection %', null,                                     collectionData.summary.collection_rate >= 80 ? 'text-success' : collectionData.summary.collection_rate >= 50 ? 'text-warning' : 'text-danger'],
+                    ] as const).map(([label, val, cls]) => (
+                      <Card key={label} className="p-4">
+                        <p className="text-xs text-text-muted mb-1">{label}</p>
+                        <p className={cn('text-lg font-bold', cls)}>
+                          {label === 'Collection %' ? `${collectionData.summary.collection_rate}%` : fmt(val as number)}
+                        </p>
+                      </Card>
+                    ))}
+                  </div>
+                  {/* Status pills */}
+                  <div className="flex gap-3 text-xs text-text-muted">
+                    <span className="font-medium text-success">✓ {collectionData.summary.fully_paid} Paid</span>
+                    <span className="font-medium text-warning">~ {collectionData.summary.partial} Partial</span>
+                    <span className="font-medium text-danger">✗ {collectionData.summary.unpaid} Unpaid</span>
+                    <span>({collectionData.summary.total_invoices} total)</span>
+                  </div>
+                  {/* Per-unit table */}
+                  <Card className="overflow-hidden p-0">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide bg-slate-50 dark:bg-dark-card">
+                          <th className="px-4 py-3 text-left">Unit</th>
+                          <th className="px-4 py-3 text-left">Person</th>
+                          <th className="px-4 py-3 text-left">Statement</th>
+                          <th className="px-4 py-3 text-right">Billed</th>
+                          <th className="px-4 py-3 text-right">Collected</th>
+                          <th className="px-4 py-3 text-right">Outstanding</th>
+                          <th className="px-4 py-3 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {collectionData.rows.map((r, i) => (
+                          <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
+                            <td className="px-4 py-2.5 font-medium text-text">{r.unit_label ?? '—'}</td>
+                            <td className="px-4 py-2.5 text-text-muted">{r.person_name ?? '—'}</td>
+                            <td className="px-4 py-2.5 font-mono text-xs text-text-muted">{r.statement_no}</td>
+                            <td className="px-4 py-2.5 text-right">{fmt(r.billed)}</td>
+                            <td className="px-4 py-2.5 text-right text-success">{fmt(r.collected)}</td>
+                            <td className={cn('px-4 py-2.5 text-right font-semibold', r.outstanding > 0 ? 'text-danger' : 'text-success')}>{fmt(r.outstanding)}</td>
+                            <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                          </tr>
+                        ))}
+                        {collectionData.rows.length === 0 && (
+                          <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No invoices for this period and category.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </Card>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Adjustments tab */}
+      {activeTab === 'Adjustments' && (
+        <div className="space-y-6">
+
+          {/* Opening Balances */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-text">Opening Balances</h3>
+                <p className="text-xs text-text-muted mt-0.5">Carry-forward balances applied once on the next issued invoice. Cannot be edited once applied.</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => { setShowAddOb(true); setObError(null); setObUnitLabel(''); setObUnitId(''); setObAmount(''); setObNotes(''); setObCategory('WS') }}>
+                + Add Balance
+              </Button>
+            </div>
+            <Card className="overflow-hidden p-0">
+              {obLoading ? (
+                <div className="py-10 text-center text-text-muted text-sm">Loading…</div>
+              ) : openingBals.length === 0 ? (
+                <div className="py-10 text-center text-text-muted text-sm">No opening balances on file.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide bg-slate-50 dark:bg-dark-card">
+                      <th className="px-4 py-3 text-left">Unit</th>
+                      <th className="px-4 py-3 text-left">Category</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-left">As Of</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Notes</th>
+                      <th className="px-4 py-3 text-left">Created By</th>
+                      <th className="px-4 py-3 w-24" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openingBals.map((ob, i) => (
+                      <tr key={ob.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
+                        <td className="px-4 py-2.5 font-medium text-text">{ob.unit_label ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-text-muted">{ob.category_code}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold">{fmt(ob.amount)}</td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs">{ob.as_of_date ?? '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
+                            ob.status === 'active'  ? 'bg-success/10 text-success' :
+                            ob.status === 'applied' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400' :
+                            'bg-surface-border text-text-muted'
+                          )}>
+                            {ob.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs max-w-[160px] truncate">{ob.notes ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-text-muted text-xs">{ob.created_by ?? '—'}</td>
+                        <td className="px-4 py-2.5">
+                          {ob.status === 'active' && (
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => { setEditOb(ob); setEditObAmount(String(ob.amount)); setEditObNotes(ob.notes ?? '') }}
+                                className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                              >Edit</button>
+                              <span className="text-text-muted">·</span>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm('Void this opening balance?')) return
+                                  try { await voidOpeningBalance(ob.id); await loadOpeningBalances() }
+                                  catch { setObError('Failed to void') }
+                                }}
+                                className="text-xs text-danger hover:underline"
+                              >Void</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
         </div>
       )}
 
       {/* Main area: list + detail panel */}
-      {activeTab !== 'Reports' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
       <div className={cn('flex gap-4', selected ? 'items-start' : '')}>
 
         {/* Invoice list */}
@@ -1314,6 +1519,14 @@ export function BillingPageClient() {
                     Write Off
                   </Button>
                 )}
+                {['issued', 'partial', 'paid'].includes(selected.status) && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => { setCreditNoteTarget(selected); setCreditNoteAmount(''); setCreditNoteReason(''); setCreditSuccess(null) }}
+                  >
+                    Credit Note
+                  </Button>
+                )}
               </div>
             </Card>
           </div>
@@ -1397,6 +1610,12 @@ export function BillingPageClient() {
                 <p className="font-semibold mb-1">Done</p>
                 <p>{bulkResult.issued} invoice{bulkResult.issued !== 1 ? 's' : ''} issued successfully.</p>
               </div>
+              {bulkResult.skipped > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4 text-sm text-amber-800 dark:text-amber-200">
+                  <p className="font-semibold mb-1">⚠ {bulkResult.skipped} draft{bulkResult.skipped !== 1 ? 's' : ''} skipped</p>
+                  <p className="text-xs">These may have been blocked by the back-billing guard (unit already has a later issued invoice), or failed due to another validation error. Check server logs for details.</p>
+                </div>
+              )}
               <Button variant="primary" className="w-full" onClick={() => { setShowBulkModal(false); setBulkResult(null) }}>
                 Close
               </Button>
@@ -1720,7 +1939,7 @@ export function BillingPageClient() {
       <Modal
         open={showBulkEmailModal}
         onClose={() => { setShowBulkEmailModal(false); setBulkEmailResult(null) }}
-        title={`Bulk Email Invoices — ${activeTab !== 'Reports' ? activeTab : 'All'}`}
+        title={`Bulk Email Invoices — ${!['Reports','Adjustments'].includes(activeTab) ? activeTab : 'All'}`}
         size="sm"
       >
         <div className="p-5 space-y-4">
@@ -1835,7 +2054,7 @@ export function BillingPageClient() {
             <>
               <p className="text-sm text-text-muted">
                 This will add a late payment fee charge to all overdue invoices (past their due date)
-                {activeTab !== 'Reports' ? ` in the ${activeTab} category` : ''}.
+                {!['Reports','Adjustments'].includes(activeTab) ? ` in the ${activeTab} category` : ''}.
               </p>
               <div>
                 <label className="block text-xs font-medium text-text-muted mb-1">Late Fee Percentage (%)</label>
@@ -1860,6 +2079,196 @@ export function BillingPageClient() {
           )}
         </div>
       </Modal>
+
+      {/* Credit Note modal */}
+      <Modal
+        open={!!creditNoteTarget}
+        onClose={() => { setCreditNoteTarget(null); setCreditSuccess(null) }}
+        title={`Credit Note — ${creditNoteTarget?.unit_label ?? ''} (${creditNoteTarget?.category_code ?? ''})`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {creditSuccess ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Credit note issued</p>
+                <p>{creditSuccess}</p>
+                <p className="text-xs mt-1 opacity-80">The credit sits in the unit's unallocated pool. Apply it to the next invoice via the payment panel.</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => setCreditNoteTarget(null)}>Close</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                Issues an unallocated credit for this unit. The credit can be applied to any outstanding invoice
+                for <strong>{creditNoteTarget?.unit_label}</strong> in the <strong>{creditNoteTarget?.category_code}</strong> category.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES)</label>
+                <input
+                  type="number" min="0.01" step="0.01"
+                  value={creditNoteAmount}
+                  onChange={e => setCreditNoteAmount(e.target.value)}
+                  placeholder="e.g. 1500.00"
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Reason</label>
+                <input
+                  type="text"
+                  value={creditNoteReason}
+                  onChange={e => setCreditNoteReason(e.target.value)}
+                  placeholder="e.g. Meter over-read correction for June 2026"
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setCreditNoteTarget(null)}>Cancel</Button>
+                <Button
+                  variant="primary" className="flex-1"
+                  disabled={issuingCredit || !creditNoteAmount || !creditNoteReason || Number(creditNoteAmount) <= 0}
+                  onClick={async () => {
+                    if (!creditNoteTarget) return
+                    setIssuingCredit(true)
+                    try {
+                      await createCreditNote({
+                        unitId:       creditNoteTarget.unit_id,
+                        categoryCode: creditNoteTarget.category_code,
+                        amount:       Number(creditNoteAmount),
+                        reason:       creditNoteReason,
+                        referenceInvoiceId: creditNoteTarget.id,
+                      })
+                      setCreditSuccess(`KES ${Number(creditNoteAmount).toLocaleString()} credit created for ${creditNoteTarget.unit_label}.`)
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : 'Failed to create credit note')
+                      setCreditNoteTarget(null)
+                    } finally {
+                      setIssuingCredit(false)
+                    }
+                  }}
+                >
+                  {issuingCredit ? 'Issuing…' : 'Issue Credit Note'}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Add Opening Balance modal */}
+      <Modal
+        open={showAddOb}
+        onClose={() => setShowAddOb(false)}
+        title="Add Opening Balance"
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {obError && <div className="text-danger text-sm">{obError}</div>}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Category</label>
+              <select value={obCategory} onChange={e => setObCategory(e.target.value as 'WS' | 'SC')}
+                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none">
+                <option value="WS">Water & Sewerage</option>
+                <option value="SC">Service Charge</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES)</label>
+              <input type="number" min="0" step="0.01" value={obAmount} onChange={e => setObAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Unit Label</label>
+            <input type="text" value={obUnitLabel} onChange={e => setObUnitLabel(e.target.value)}
+              placeholder="e.g. A-101"
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none" />
+            <p className="text-xs text-text-muted mt-1">Must match an existing unit label exactly.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
+            <input type="text" value={obNotes} onChange={e => setObNotes(e.target.value)}
+              placeholder="e.g. Balance brought forward from legacy system"
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none" />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setShowAddOb(false)}>Cancel</Button>
+            <Button variant="primary" className="flex-1"
+              disabled={obSaving || !obUnitLabel || !obAmount || Number(obAmount) < 0}
+              onClick={async () => {
+                setObSaving(true); setObError(null)
+                try {
+                  // Find unit by label via existing invoices as a proxy
+                  const matchedInvoice = invoices.find(i => (i.unit_label ?? '').toLowerCase() === obUnitLabel.trim().toLowerCase())
+                  if (!matchedInvoice) { setObError(`Unit "${obUnitLabel}" not found. Check the label and try again.`); return }
+                  await createOpeningBalance({
+                    unitId:       matchedInvoice.unit_id,
+                    unitLabel:    matchedInvoice.unit_label ?? obUnitLabel,
+                    categoryCode: obCategory,
+                    amount:       Number(obAmount),
+                    notes:        obNotes || undefined,
+                  })
+                  setShowAddOb(false)
+                  await loadOpeningBalances()
+                } catch (e) {
+                  setObError(e instanceof Error ? e.message : 'Failed to save')
+                } finally {
+                  setObSaving(false)
+                }
+              }}
+            >
+              {obSaving ? 'Saving…' : 'Save Balance'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Opening Balance modal */}
+      <Modal
+        open={!!editOb}
+        onClose={() => setEditOb(null)}
+        title={`Edit Opening Balance — ${editOb?.unit_label ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {obError && <div className="text-danger text-sm">{obError}</div>}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES)</label>
+            <input type="number" min="0" step="0.01" value={editObAmount} onChange={e => setEditObAmount(e.target.value)}
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Notes</label>
+            <input type="text" value={editObNotes} onChange={e => setEditObNotes(e.target.value)}
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none" />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setEditOb(null)}>Cancel</Button>
+            <Button variant="primary" className="flex-1"
+              disabled={obSaving || !editObAmount || Number(editObAmount) < 0}
+              onClick={async () => {
+                if (!editOb) return
+                setObSaving(true); setObError(null)
+                try {
+                  await updateOpeningBalance(editOb.id, { amount: Number(editObAmount), notes: editObNotes || undefined })
+                  setEditOb(null)
+                  await loadOpeningBalances()
+                } catch (e) {
+                  setObError(e instanceof Error ? e.message : 'Failed to update')
+                } finally {
+                  setObSaving(false)
+                }
+              }}
+            >
+              {obSaving ? 'Saving…' : 'Update'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   )
 }
