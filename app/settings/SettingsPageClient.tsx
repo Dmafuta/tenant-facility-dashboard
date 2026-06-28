@@ -442,7 +442,7 @@ const ALL_RESOURCES = [
   // Financial
   'payment','mpesa','report',
   // Utilities
-  'meter','disconnection',
+  'utility','meter','disconnection',
   // Access & Security
   'booking','access_event','access_credential','visitor','vehicle',
   // Operations
