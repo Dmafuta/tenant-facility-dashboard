@@ -37,6 +37,7 @@ export interface PersonData {
   exit_reason: string | null
   exit_notes: string | null
   created_at: string | null
+  home_unit_label: string | null
 }
 
 

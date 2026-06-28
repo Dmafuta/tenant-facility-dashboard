@@ -52,9 +52,10 @@ export const NAV: NavGroup[] = [
     group: 'Operations',
     items: [
       { label: 'Financials',  href: '/financials',  icon: '💰', roles: [FM, FIN] },
-      { label: 'Billing',            href: '/billing',            icon: '🧾', roles: [FM, FIN] },
-      { label: 'Move-Out Clearances', href: '/billing/clearances', icon: '🏠', roles: [FM, FIN, RECEP] },
-      { label: 'Resident Statements', href: '/billing/statements', icon: '📋', roles: [FM, FIN, RECEP] },
+      { label: 'Billing', href: '/billing', icon: '🧾', roles: [FM, FIN], children: [
+        { label: 'Move-Out Clearances', href: '/billing/clearances', icon: '🏠', roles: [FM, FIN, RECEP] },
+        { label: 'Resident Statements', href: '/billing/statements', icon: '📋', roles: [FM, FIN, RECEP] },
+      ]},
       { label: 'Maintenance', href: '/maintenance', icon: '🔧', roles: [FM, MAINT] },
       { label: 'Issues',      href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
       { label: 'HR & Staff',  href: '/hr',          icon: '💼', roles: [FM] },

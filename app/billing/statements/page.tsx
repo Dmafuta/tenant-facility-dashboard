@@ -219,8 +219,11 @@ function PersonPicker({ value, onChange }: { value: PersonData | null; onChange:
   }, [])
 
   const filtered = people.filter(p => {
+    const q = query.toLowerCase()
     const name = `${p.first_name} ${p.last_name}`.toLowerCase()
-    return name.includes(query.toLowerCase()) || (p.email ?? '').toLowerCase().includes(query.toLowerCase())
+    return name.includes(q) ||
+      (p.email ?? '').toLowerCase().includes(q) ||
+      (p.home_unit_label ?? '').toLowerCase().includes(q)
   }).slice(0, 20)
 
   function select(p: PersonData) {
@@ -236,7 +239,7 @@ function PersonPicker({ value, onChange }: { value: PersonData | null; onChange:
         value={value ? (query || `${value.first_name} ${value.last_name}`) : query}
         onChange={e => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange(null) }}
         onFocus={() => setOpen(true)}
-        placeholder="Search by name…"
+        placeholder="Search by name or unit…"
         className="w-64 px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
       />
       {open && filtered.length > 0 && (
@@ -252,7 +255,9 @@ function PersonPicker({ value, onChange }: { value: PersonData | null; onChange:
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-text truncate">{p.first_name} {p.last_name}</p>
-                <p className="text-xs text-text-muted truncate">{p.person_type} · {p.email ?? '—'}</p>
+                <p className="text-xs text-text-muted truncate">
+                  {p.home_unit_label ? `Unit ${p.home_unit_label}` : p.person_type} · {p.email ?? '—'}
+                </p>
               </div>
             </button>
           ))}
