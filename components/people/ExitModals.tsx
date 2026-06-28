@@ -215,7 +215,7 @@ export function TenantExitModal({ open, onClose, onComplete, personId, personNam
   useEffect(() => {
     if (!open) return
     setStep(0)
-    setForm({ move_out_date: TODAY, reason: EXIT_REASONS[0], notes: '' })
+    setForm({ move_out_date: TODAY, reason: MOVE_OUT_REASONS[0], notes: '' })
     setCompForm({ condition: 'good', keys_returned: 'true', deposit_deduction: '0', notes: '' })
     setError('')
     setLoadingRequest(true)
