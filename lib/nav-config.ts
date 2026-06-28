@@ -99,11 +99,15 @@ export const NAV: NavGroup[] = [
   },
 ]
 
-/** All page paths a given role is permitted to visit */
+/** All page paths a given role is permitted to visit (includes child paths) */
 export function getAllowedPaths(role: string): string[] {
-  return NAV.flatMap(g => g.items)
-    .filter(item => !item.roles || item.roles.includes(role))
-    .map(item => item.href)
+  return NAV.flatMap(g => g.items).flatMap(item => {
+    const parentAllowed = !item.roles || item.roles.includes(role)
+    const childPaths = (item.children ?? [])
+      .filter(c => !c.roles || c.roles.includes(role))
+      .map(c => c.href)
+    return parentAllowed ? [item.href, ...childPaths] : childPaths
+  })
 }
 
 export function getInitials(name: string): string {
