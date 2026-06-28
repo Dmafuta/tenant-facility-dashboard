@@ -437,12 +437,12 @@ const ALL_ACTIONS = [
   'staff.onboard','staff.offboard','kyc.verify','settings.modify',
 ]
 const ALL_RESOURCES = [
+  // Utilities (most common for custom roles — kept first for visibility)
+  'utility','meter','disconnection',
   // Core
   'unit','person','lease','charge','work_order','document','system_config',
   // Financial
   'payment','mpesa','report',
-  // Utilities
-  'utility','meter','disconnection',
   // Access & Security
   'booking','access_event','access_credential','visitor','vehicle',
   // Operations
