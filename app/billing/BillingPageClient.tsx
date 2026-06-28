@@ -14,8 +14,8 @@ import {
   getAgedDebtors, getBillingSummary, getOutstandingBalances,
   requestVoidInvoice, approveVoidInvoice, rejectVoidInvoice,
   requestWriteOffInvoice, approveWriteOffInvoice, rejectWriteOffInvoice,
-  createCreditNote, getCollectionSummary,
-  type InvoiceData, type InvoiceCategory, type AgedDebtorRow, type AgedDebtorSummary,
+  createCreditNote, getCollectionSummary, getUnallocatedCredits, getAllCreditNotes, applyCredit,
+  type InvoiceData, type InvoiceCategory, type InvoicePayment, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
   type CollectionSummary, type CollectionSummaryRow,
   getInvoiceCategories,
@@ -243,6 +243,15 @@ export function BillingPageClient() {
   const [issuingCredit, setIssuingCredit]         = useState(false)
   const [creditSuccess, setCreditSuccess]         = useState<string | null>(null)
 
+  // Available credits for selected invoice
+  const [availableCredits, setAvailableCredits] = useState<InvoicePayment[]>([])
+  const [creditsLoading, setCreditsLoading]     = useState(false)
+  const [applyingCredit, setApplyingCredit]     = useState<string | null>(null)
+
+  // Credit notes ledger (Adjustments tab)
+  const [allCreditNotes, setAllCreditNotes]   = useState<InvoicePayment[]>([])
+  const [cnLoading, setCnLoading]             = useState(false)
+
   // Opening balances (Adjustments tab)
   const [openingBals, setOpeningBals]         = useState<OpeningBalance[]>([])
   const [obLoading, setObLoading]             = useState(false)
@@ -288,6 +297,19 @@ export function BillingPageClient() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Fetch unallocated credits when an issued/partial invoice is selected
+  useEffect(() => {
+    if (!selected || !['issued', 'partial'].includes(selected.status)) {
+      setAvailableCredits([])
+      return
+    }
+    setCreditsLoading(true)
+    getUnallocatedCredits(selected.unit_id, selected.category_code)
+      .then(setAvailableCredits)
+      .catch(() => setAvailableCredits([]))
+      .finally(() => setCreditsLoading(false))
+  }, [selected?.id, selected?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filtered list ────────────────────────────────────────────────────────
 
@@ -620,6 +642,13 @@ export function BillingPageClient() {
     finally { setObLoading(false) }
   }
 
+  async function loadCreditNotes() {
+    setCnLoading(true)
+    try { setAllCreditNotes(await getAllCreditNotes()) }
+    catch { /* silent */ }
+    finally { setCnLoading(false) }
+  }
+
   function switchReportTab(t: typeof reportTab) {
     setReportTab(t)
     loadReport(t)
@@ -657,7 +686,7 @@ export function BillingPageClient() {
             key={t.code}
             onClick={() => {
               setActiveTab(t.code)
-              if (t.code === 'Adjustments') loadOpeningBalances()
+              if (t.code === 'Adjustments') { loadOpeningBalances(); loadCreditNotes() }
             }}
             className={cn(
               'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
@@ -672,6 +701,7 @@ export function BillingPageClient() {
       </div>
 
       {/* Stats row */}
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted mb-1">Outstanding</p>
@@ -686,6 +716,7 @@ export function BillingPageClient() {
           <p className="text-lg font-semibold text-text">{tabStats.drafts}</p>
         </Card>
       </div>
+      )}
 
       {/* Toolbar */}
       {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
@@ -1102,6 +1133,49 @@ export function BillingPageClient() {
               )}
             </Card>
           </div>
+
+          {/* Credit Notes ledger */}
+          <div className="space-y-3">
+            <div>
+              <h3 className="font-semibold text-text">Unallocated Credit Notes</h3>
+              <p className="text-xs text-text-muted mt-0.5">Credits issued via Credit Note that haven't been applied to an invoice yet.</p>
+            </div>
+            <Card className="overflow-hidden p-0">
+              {cnLoading ? (
+                <div className="py-10 text-center text-text-muted text-sm">Loading…</div>
+              ) : allCreditNotes.length === 0 ? (
+                <div className="py-10 text-center text-text-muted text-sm">No unallocated credit notes.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide bg-slate-50 dark:bg-dark-card">
+                      <th className="px-4 py-3 text-left">Unit</th>
+                      <th className="px-4 py-3 text-left">Category</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Notes</th>
+                      <th className="px-4 py-3 text-left">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allCreditNotes.map((note, i) => {
+                      const unitLabel = invoices.find(inv => inv.unit_id === note.unit_id)?.unit_label ?? note.unit_id?.slice(0, 8) ?? '—'
+                      return (
+                        <tr key={note.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
+                          <td className="px-4 py-2.5 font-medium text-text">{unitLabel}</td>
+                          <td className="px-4 py-2.5 text-text-muted">{note.category_code ?? '—'}</td>
+                          <td className="px-4 py-2.5 text-right font-semibold text-success">{fmt(note.amount)}</td>
+                          <td className="px-4 py-2.5 text-text-muted text-xs">{fmtDate(note.payment_date)}</td>
+                          <td className="px-4 py-2.5 text-text-muted text-xs max-w-[200px] truncate">{note.notes ?? '—'}</td>
+                          <td className="px-4 py-2.5 text-text-muted text-xs">{fmtDate(note.created_at)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
         </div>
       )}
 
@@ -1446,6 +1520,49 @@ export function BillingPageClient() {
                   {activeCategory.bank_name && <p>Bank: <span className="text-text">{activeCategory.bank_name}</span></p>}
                   {activeCategory.bank_account && <p>Account: <span className="text-text font-mono">{activeCategory.bank_account}</span></p>}
                   {activeCategory.bank_branch && <p>Branch: <span className="text-text">{activeCategory.bank_branch}</span></p>}
+                </div>
+              )}
+
+              {/* Available credits */}
+              {['issued', 'partial'].includes(selected.status) && (
+                <div className="border-t border-surface-border dark:border-dark-border pt-3 space-y-2">
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">Available Credits</p>
+                  {creditsLoading ? (
+                    <p className="text-xs text-text-muted">Loading…</p>
+                  ) : availableCredits.length === 0 ? (
+                    <p className="text-xs text-text-muted">No unallocated credits for this unit.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {availableCredits.map(cr => (
+                        <div key={cr.id} className="flex items-center justify-between bg-success/5 border border-success/20 rounded-lg px-3 py-2">
+                          <div className="text-xs">
+                            <span className="font-semibold text-success">{fmt(cr.amount)}</span>
+                            <span className="text-text-muted ml-2">{cr.notes ?? cr.payment_method}</span>
+                            {cr.payment_date && <span className="text-text-muted ml-2">{fmtDate(cr.payment_date)}</span>}
+                          </div>
+                          <Button
+                            size="sm" variant="ghost"
+                            disabled={applyingCredit === cr.id}
+                            onClick={async () => {
+                              setApplyingCredit(cr.id)
+                              try {
+                                const updated = await applyCredit(selected.id, cr.id)
+                                setInvoices(prev => prev.map(i => i.id === updated.id ? updated : i))
+                                setSelected(updated)
+                                setAvailableCredits(prev => prev.filter(c => c.id !== cr.id))
+                              } catch (e: unknown) {
+                                setError(e instanceof Error ? e.message : 'Failed to apply credit')
+                              } finally {
+                                setApplyingCredit(null)
+                              }
+                            }}
+                          >
+                            {applyingCredit === cr.id ? 'Applying…' : 'Apply'}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

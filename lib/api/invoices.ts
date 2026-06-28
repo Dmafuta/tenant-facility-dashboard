@@ -11,6 +11,8 @@ export interface InvoiceLineItem {
 export interface InvoicePayment {
   id: string
   invoice_id: string | null
+  unit_id: string | null
+  category_code: string | null
   amount: number
   payment_date: string | null
   payment_method: string | null
@@ -341,6 +343,24 @@ export async function sendInvoiceDisconnectionNotice(
     `/invoices/${invoiceId}/disconnection-notice?noticeType=${noticeType}`,
     { method: 'POST' }
   )
+}
+
+export async function getUnallocatedCredits(
+  unitId: string,
+  categoryCode = 'WS'
+): Promise<InvoicePayment[]> {
+  return apiFetch<InvoicePayment[]>(`/invoices/unallocated?unitId=${unitId}&categoryCode=${categoryCode}`)
+}
+
+export async function getAllCreditNotes(): Promise<InvoicePayment[]> {
+  return apiFetch<InvoicePayment[]>('/invoices/unallocated?paymentMethod=credit_note')
+}
+
+export async function applyCredit(invoiceId: string, paymentId: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${invoiceId}/apply-credit`, {
+    method: 'POST',
+    body: JSON.stringify({ paymentId }),
+  })
 }
 
 export async function getWaterLossReport(period: string): Promise<{
