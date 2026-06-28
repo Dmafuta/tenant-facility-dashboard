@@ -11,19 +11,14 @@ export function Sidebar() {
   const { collapsed, mobileOpen, toggleCollapsed, closeMobile } = useSidebar()
   const { subject } = useAbac()
 
-  // Filter nav to only items this role can see; propagate children; drop empty groups
+  // Filter nav to only items this role can see; drop empty groups
   const visibleNav = NAV
     .map(group => ({
       ...group,
-      items: group.items
-        .map(item => ({
-          ...item,
-          children: item.children?.filter(c => !c.roles || c.roles.includes(subject.role)),
-        }))
-        .filter(item =>
-          (!item.roles || item.roles.includes(subject.role)) ||
-          (item.children && item.children.length > 0)
-        ),
+      items: group.items.filter(item =>
+        (!item.roles || item.roles.includes(subject.role)) ||
+        item.children?.some(c => !c.roles || c.roles.includes(subject.role))
+      ),
     }))
     .filter(group => group.items.length > 0)
 
@@ -60,14 +55,15 @@ export function Sidebar() {
             )}
             {collapsed && <div className="h-px bg-surface-border dark:bg-dark-border mx-1 mb-2" />}
             {items.map(item => {
+              const visibleChildren = item.children?.filter(c => !c.roles || c.roles.includes(subject.role)) ?? []
               const active = pathname === item.href || pathname.startsWith(item.href + '/')
-              const hasVisibleChildren = item.children && item.children.length > 0
-              const childActive = hasVisibleChildren && item.children!.some(
+              const hasVisibleChildren = visibleChildren.length > 0
+              const childActive = hasVisibleChildren && visibleChildren.some(
                 c => pathname === c.href || pathname.startsWith(c.href + '/')
               )
               const canAccessParent = !item.roles || item.roles.includes(subject.role)
               // If user can't access the parent page but can access a child, link to first child
-              const linkHref = canAccessParent ? item.href : (hasVisibleChildren ? item.children![0].href : item.href)
+              const linkHref = canAccessParent ? item.href : (hasVisibleChildren ? visibleChildren[0].href : item.href)
               return (
                 <div key={item.href}>
                   <Link
@@ -106,7 +102,7 @@ export function Sidebar() {
                   {/* Sub-items: accordion — only shown when parent or a child is active */}
                   {!collapsed && hasVisibleChildren && (active || childActive) && (
                     <div className="ml-4 pl-2 border-l border-surface-border dark:border-dark-border space-y-0.5 mb-1">
-                      {item.children!.map(child => {
+                      {visibleChildren.map(child => {
                         const childIsActive = pathname === child.href || pathname.startsWith(child.href + '/')
                         return (
                           <Link
