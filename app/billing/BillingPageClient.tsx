@@ -164,6 +164,9 @@ export function BillingPageClient() {
     }).catch(() => {})
   }, [showRunModal])
 
+  // Bulk email modal (declared here so the useEffect below can reference it)
+  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false)
+
   // Load SC settings when bulk email modal opens on SC tab
   useEffect(() => {
     if (!showBulkEmailModal || activeTab !== 'SC') return
@@ -214,8 +217,7 @@ export function BillingPageClient() {
   const [rejectingWriteOff, setRejectingWriteOff]       = useState(false)
   const [approvingWriteOff, setApprovingWriteOff]       = useState<string | null>(null)
 
-  // Bulk email modal
-  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false)
+  // Bulk email modal (continued)
   const [bulkEmailPeriod, setBulkEmailPeriod]       = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
