@@ -23,7 +23,7 @@ import type { WaterSupplierData, ReserveTankData, WaterZoneData, WaterBalancePer
 import { getUnitsFromApi } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
 import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice } from '@/lib/api/disconnection'
-import { getWaterLossReport, getUnreadMeters } from '@/lib/api/invoices'
+import { getWaterLossReport, getUnreadMeters, getInvoices, type InvoiceData } from '@/lib/api/invoices'
 import type { DisconnectionNoticeData } from '@/lib/api/disconnection'
 import type { ChargeData } from '@/lib/api/charges'
 import { getSettings } from '@/lib/api/settings'
@@ -3153,6 +3153,7 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
   const [showRead, setShowRead]         = useState(false)
   const [estimating, setEstimating]     = useState(false)
   const [toast, setToast]               = useState<{ msg: string; ok: boolean } | null>(null)
+  const [wsInvoices, setWsInvoices]     = useState<InvoiceData[]>([])
 
   // Active consumer meters only
   const consumerMeters = useMemo(
@@ -3185,10 +3186,29 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
   const anomalies = read.filter(r => r.reading?.anomaly)
   const pct       = rows.length > 0 ? Math.round((read.length / rows.length) * 100) : 0
 
+  // Units that already have a billed WS invoice for a period later than selected — back-billing guard
+  const billedLaterUnitIds = useMemo(() => {
+    const laterBilled = wsInvoices.filter(inv =>
+      ['issued', 'partial', 'paid'].includes(inv.status) &&
+      inv.period != null && inv.period > period,
+    )
+    return new Set(laterBilled.map(inv => inv.unit_id))
+  }, [wsInvoices, period])
+
+  const backPeriodCount = useMemo(
+    () => rows.filter(r => r.unit_id != null && billedLaterUnitIds.has(r.unit_id)).length,
+    [rows, billedLaterUnitIds],
+  )
+
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 4000)
   }
+
+  // Fetch WS invoices once on mount to power the back-billing warning
+  useEffect(() => {
+    getInvoices({ categoryCode: 'WS' }).then(setWsInvoices).catch(() => {})
+  }, [])
 
   useEffect(() => { fetchReadings() }, [period]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3268,6 +3288,20 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
             : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300',
         )}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* ── Back-period warning ───────────────────────────────────────────── */}
+      {backPeriodCount > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm">
+          <span className="text-lg leading-none mt-0.5">⚠</span>
+          <div>
+            <span className="font-semibold">Back-period warning — </span>
+            {backPeriodCount} meter{backPeriodCount !== 1 ? 's' : ''} in this view belong{backPeriodCount === 1 ? 's' : ''} to{' '}
+            unit{backPeriodCount !== 1 ? 's' : ''} that already {backPeriodCount === 1 ? 'has' : 'have'} a billed WS invoice for a later period.{' '}
+            Readings can still be recorded for audit purposes, but <span className="font-semibold">they cannot be billed</span>.
+            If a correction is needed, void the later invoice first.
+          </div>
         </div>
       )}
 
@@ -3381,7 +3415,9 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
               </thead>
               <tbody>
                 {/* Pending rows — amber tint, float to top */}
-                {pending.map((m, i) => (
+                {pending.map((m, i) => {
+                  const isBackPeriod = m.unit_id != null && billedLaterUnitIds.has(m.unit_id)
+                  return (
                   <tr
                     key={m.id}
                     className={cn(
@@ -3391,7 +3427,14 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
                         : 'bg-amber-50/40 dark:bg-amber-900/5',
                     )}
                   >
-                    <td className="px-4 py-3 font-semibold text-text">{m.unit_label ?? <span className="text-text-muted italic">Unassigned</span>}</td>
+                    <td className="px-4 py-3 font-semibold text-text">
+                      {m.unit_label ?? <span className="text-text-muted italic">Unassigned</span>}
+                      {isBackPeriod && (
+                        <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 align-middle">
+                          record only
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs text-text-muted">{m.meter_number}</td>
                     <td className="px-4 py-3">
                       <span className="text-base mr-1">{utilityIcon(m.utility_type)}</span>
@@ -3412,13 +3455,20 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => { setReadTarget(m); setShowRead(true) }}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors shadow-sm"
+                        className={cn(
+                          'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm',
+                          isBackPeriod
+                            ? 'bg-surface-border dark:bg-dark-border text-text-muted cursor-default'
+                            : 'bg-primary-600 hover:bg-primary-700 text-white',
+                        )}
+                        title={isBackPeriod ? 'This unit is already billed for a later period — reading will be recorded but cannot be billed' : undefined}
                       >
                         Record
                       </button>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
 
                 {/* Read rows */}
                 {read.map((m, i) => {
