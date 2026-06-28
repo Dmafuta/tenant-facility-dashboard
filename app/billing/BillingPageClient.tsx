@@ -1066,9 +1066,18 @@ export function BillingPageClient() {
                 <h3 className="font-semibold text-text">Opening Balances</h3>
                 <p className="text-xs text-text-muted mt-0.5">Carry-forward balances applied once on the next issued invoice. Cannot be edited once applied.</p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => { setShowAddOb(true); setObError(null); setObUnitLabel(''); setObUnitId(''); setObAmount(''); setObNotes(''); setObCategory('WS') }}>
-                + Add Balance
-              </Button>
+              <div className="flex gap-2">
+                <a
+                  href="/api/backend/opening-balances/template"
+                  download="opening-balances-template.xlsx"
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:text-text hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors"
+                >
+                  ↓ Template
+                </a>
+                <Button size="sm" variant="outline" onClick={() => { setShowAddOb(true); setObError(null); setObUnitLabel(''); setObUnitId(''); setObAmount(''); setObNotes(''); setObCategory('WS') }}>
+                  + Add Balance
+                </Button>
+              </div>
             </div>
             <Card className="overflow-hidden p-0">
               {obLoading ? (
