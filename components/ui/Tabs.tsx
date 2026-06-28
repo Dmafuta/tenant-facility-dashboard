@@ -4,9 +4,10 @@ import { createContext, useContext, useState } from 'react'
 
 const TabsCtx = createContext<{ active: string; set: (v: string) => void } | null>(null)
 
-export function Tabs({ defaultValue, children, className }: { defaultValue: string; children: React.ReactNode; className?: string }) {
+export function Tabs({ defaultValue, children, className, onValueChange }: { defaultValue: string; children: React.ReactNode; className?: string; onValueChange?: (v: string) => void }) {
   const [active, set] = useState(defaultValue)
-  return <TabsCtx.Provider value={{ active, set }}><div className={className}>{children}</div></TabsCtx.Provider>
+  function change(v: string) { set(v); onValueChange?.(v) }
+  return <TabsCtx.Provider value={{ active, set: change }}><div className={className}>{children}</div></TabsCtx.Provider>
 }
 export function TabsList({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn('flex gap-1 border-b border-surface-border dark:border-dark-border', className)}>{children}</div>

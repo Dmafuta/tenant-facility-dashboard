@@ -2192,6 +2192,44 @@ function ReadingsTab({
   const [statusFilter, setStatus]   = useState('all')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
+  const [photoUrl, setPhotoUrl]     = useState<string | null>(null)
+
+  // Bulk import
+  const [showBulkModal, setShowBulkModal]   = useState(false)
+  const [bulkPeriod, setBulkPeriod]         = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [bulkRows, setBulkRows]             = useState<{ meterId: string; meterLabel: string; currentValue: string }[]>([])
+  const [bulkLoading, setBulkLoading]       = useState(false)
+  const [bulkResult, setBulkResult]         = useState<{ created: number; errors: number; errorDetails: string[] } | null>(null)
+  const [bulkError, setBulkError]           = useState<string | null>(null)
+
+  function openBulkModal() {
+    const rows = readings
+      .filter((r, idx, arr) => arr.findIndex(x => x.meter_id === r.meter_id) === idx)
+      .map(r => ({ meterId: r.meter_id, meterLabel: `${r.unit_label ?? '—'} · ${r.meter_number}`, currentValue: '' }))
+    setBulkRows(rows.length ? rows : [{ meterId: '', meterLabel: '', currentValue: '' }])
+    setBulkResult(null); setBulkError(null)
+    setShowBulkModal(true)
+  }
+
+  async function handleBulkSubmit() {
+    const items = bulkRows
+      .filter(r => r.meterId && r.currentValue !== '')
+      .map(r => ({ meter_id: r.meterId, current_value: parseFloat(r.currentValue), billing_period: bulkPeriod }))
+    if (!items.length) { setBulkError('Enter at least one reading.'); return }
+    setBulkLoading(true); setBulkError(null)
+    try {
+      const result = await bulkCreateReadings(items)
+      setBulkResult(result)
+      onRefresh()
+    } catch (e: unknown) {
+      setBulkError(e instanceof Error ? e.message : 'Bulk import failed')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
 
   // Estimated readings
   const [showEstModal, setShowEstModal] = useState(false)
@@ -2324,6 +2362,11 @@ function ReadingsTab({
             </CanDo>
           )}
           <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="ghost" onClick={openBulkModal}>
+              Bulk Import
+            </Button>
+          </CanDo>
+          <CanDo action="write" resource={{ type: 'unit' }}>
             <Button size="sm" variant="ghost" onClick={() => { setShowEstModal(true); setEstResult(null); setEstError(null) }}>
               Generate Estimated
             </Button>
@@ -2369,6 +2412,69 @@ function ReadingsTab({
           )}
         </div>
       </Modal>
+
+      {/* Bulk Import Modal */}
+      <Modal open={showBulkModal} onClose={() => setShowBulkModal(false)} title="Bulk Import Readings" size="lg">
+        <div className="p-5 space-y-4">
+          {bulkResult ? (
+            <div className="space-y-3">
+              <div className={cn('rounded-lg p-4 text-sm', bulkResult.errors > 0 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success')}>
+                <p className="font-semibold mb-1">{bulkResult.created} reading(s) created{bulkResult.errors > 0 ? `, ${bulkResult.errors} error(s)` : ''}</p>
+                {bulkResult.errorDetails.map((e, i) => <p key={i} className="text-xs">{e}</p>)}
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => setShowBulkModal(false)}>Done</Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium text-text-muted whitespace-nowrap">Billing Period</label>
+                <input type="month" value={bulkPeriod} onChange={e => setBulkPeriod(e.target.value)}
+                  className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div className="max-h-96 overflow-y-auto border border-surface-border dark:border-dark-border rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-surface-muted dark:bg-dark-card">
+                    <tr className="border-b border-surface-border dark:border-dark-border">
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-text-muted uppercase">Meter</th>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-text-muted uppercase w-40">Current Reading</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkRows.map((row, i) => (
+                      <tr key={i} className="border-b border-surface-border dark:border-dark-border last:border-0">
+                        <td className="px-4 py-2 text-text-muted">{row.meterLabel || row.meterId}</td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="number" step="0.001" placeholder="—"
+                            value={row.currentValue}
+                            onChange={e => setBulkRows(rows => rows.map((r, j) => j === i ? { ...r, currentValue: e.target.value } : r))}
+                            className="w-full h-8 px-2 text-sm border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {bulkError && <p className="text-sm text-danger">{bulkError}</p>}
+              <p className="text-xs text-text-muted">Leave a row blank to skip that meter.</p>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowBulkModal(false)}>Cancel</Button>
+                <Button variant="primary" className="flex-1" disabled={bulkLoading} onClick={handleBulkSubmit}>
+                  {bulkLoading ? 'Importing…' : `Import ${bulkRows.filter(r => r.currentValue !== '').length} Reading(s)`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Photo lightbox */}
+      {photoUrl && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPhotoUrl(null)}>
+          <img src={photoUrl} alt="Meter photo" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+        </div>
+      )}
 
       {/* Table */}
       <Card className="overflow-hidden">
@@ -2426,11 +2532,26 @@ function ReadingsTab({
                     </div>
                   </td>
                   <td className="px-4 py-2">
-                    {r.anomaly && (
-                      <span title="Consumption is >2× the meter's rolling average" className="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning font-medium whitespace-nowrap">
-                        ⚠ Anomaly
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {r.anomaly && (
+                        <span title="Consumption is >2× the meter's rolling average" className="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning font-medium whitespace-nowrap">
+                          ⚠ Anomaly
+                        </span>
+                      )}
+                      {r.photo_base64 && (
+                        <button
+                          onClick={() => setPhotoUrl(r.photo_base64)}
+                          title="View meter photo"
+                          className="text-text-muted hover:text-primary-600 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                              d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -3043,6 +3164,18 @@ export function UtilitiesPageClient() {
   const [reportLoading, setReportLoading]   = useState(false)
   const [reportError, setReportError]       = useState<string | null>(null)
 
+  const loadReports = useCallback(async (period: string) => {
+    setReportLoading(true); setReportError(null)
+    try {
+      const [wl, um] = await Promise.all([getWaterLossReport(period), getUnreadMeters(period)])
+      setWaterLossData(wl); setUnreadMetersData(um)
+    } catch (e: unknown) {
+      setReportError(e instanceof Error ? e.message : 'Failed to load reports')
+    } finally {
+      setReportLoading(false)
+    }
+  }, [])
+
   const fetchMeters = useCallback(async () => {
     try {
       const data = await getAllMeters()
@@ -3138,7 +3271,7 @@ export function UtilitiesPageClient() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="meters">
+      <Tabs defaultValue="meters" onValueChange={v => { if (v === 'reports') loadReports(reportPeriod) }}>
         <TabsList>
           <TabsTrigger value="meters">Meters</TabsTrigger>
           <TabsTrigger value="inventory">
@@ -3214,35 +3347,37 @@ export function UtilitiesPageClient() {
         <TabsContent value="reports" className="pt-5">
           <div className="space-y-6">
             {/* Period selector */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <label className="text-sm font-medium text-text-muted">Period</label>
               <input
                 type="month"
                 value={reportPeriod}
-                onChange={e => setReportPeriod(e.target.value)}
+                onChange={e => { setReportPeriod(e.target.value); loadReports(e.target.value) }}
                 className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
-              <Button
-                variant="primary" size="sm"
-                disabled={reportLoading}
-                onClick={async () => {
-                  setReportLoading(true); setReportError(null)
-                  try {
-                    const [wl, um] = await Promise.all([
-                      getWaterLossReport(reportPeriod),
-                      getUnreadMeters(reportPeriod),
-                    ])
-                    setWaterLossData(wl)
-                    setUnreadMetersData(um)
-                  } catch (e: unknown) {
-                    setReportError(e instanceof Error ? e.message : 'Failed to load reports')
-                  } finally {
-                    setReportLoading(false)
-                  }
-                }}
-              >
-                {reportLoading ? 'Loading…' : 'Load Reports'}
+              <Button variant="outline" size="sm" disabled={reportLoading} onClick={() => loadReports(reportPeriod)}>
+                {reportLoading ? 'Loading…' : 'Refresh'}
               </Button>
+              {waterLossData && (
+                <Button size="sm" variant="ghost" onClick={() => {
+                  const rows = [
+                    ['Period', 'Supplier m³', 'Consumer m³', 'Loss m³', 'Loss %'],
+                    [waterLossData.period, waterLossData.supplier_total_m3, waterLossData.consumer_total_m3, waterLossData.water_loss_m3, waterLossData.loss_pct],
+                  ]
+                  const csv = rows.map(r => r.map(v => `"${String(v)}"`).join(',')).join('\n')
+                  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+                  a.download = `water-loss-${reportPeriod}.csv`; a.click()
+                }}>⬇ Water Loss CSV</Button>
+              )}
+              {unreadMetersData && unreadMetersData.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => {
+                  const headers = ['Unit', 'Meter No', 'Utility', 'Type', 'Last Reading', 'Last Read Date']
+                  const rows = unreadMetersData.map(m => [m.unit_label ?? '', m.meter_number, m.utility_type, m.meter_type, m.last_reading ?? '', m.last_reading_date ?? ''])
+                  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v)}"`).join(',')).join('\n')
+                  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+                  a.download = `unread-meters-${reportPeriod}.csv`; a.click()
+                }}>⬇ Unread Meters CSV</Button>
+              )}
             </div>
 
             {reportError && (

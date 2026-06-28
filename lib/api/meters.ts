@@ -79,6 +79,7 @@ export interface MeterReadingData {
   notes: string | null
   anomaly: boolean
   created_at: string | null
+  photo_base64: string | null
 }
 
 export async function getMeterReadings(params?: { period?: string; meterId?: string }): Promise<MeterReadingData[]> {
