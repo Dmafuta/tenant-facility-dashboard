@@ -45,6 +45,9 @@ jobs:
           script: |
             cd /opt/tenantportal
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+            # Ensure docker-compose.yml has image: field for frontend so pull works
+            grep -q 'ghcr.io/dmafuta/tenant-portal' docker-compose.yml || \
+              sed -i 's/^  frontend:$/  frontend:\n    image: ghcr.io\/dmafuta\/tenant-portal:latest/' docker-compose.yml
             docker compose pull frontend
             docker compose up -d --no-deps frontend
             docker image prune -f
