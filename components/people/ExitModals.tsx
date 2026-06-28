@@ -103,7 +103,7 @@ const HANDBACK_CONDITIONS = [
   { value: 'major', label: 'Significant damage — major deduction' },
 ]
 
-const EXIT_REASONS = [
+const MOVE_OUT_REASONS = [
   'End of lease',
   'Early termination',
   'Upgrading / Downgrading unit',
@@ -195,7 +195,7 @@ export function TenantExitModal({ open, onClose, onComplete, personId, personNam
 
   // Initiation form
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState({ move_out_date: TODAY, reason: EXIT_REASONS[0], notes: '' })
+  const [form, setForm] = useState({ move_out_date: TODAY, reason: MOVE_OUT_REASONS[0], notes: '' })
   const setF = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm(f => ({ ...f, [k]: e.target.value }))
@@ -328,7 +328,7 @@ export function TenantExitModal({ open, onClose, onComplete, personId, personNam
 
                 <Field label="Reason for Moving Out" required>
                   <select className={INPUT} value={form.reason} onChange={setF('reason')}>
-                    {EXIT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                    {MOVE_OUT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </Field>
 
@@ -363,7 +363,7 @@ export function TenantExitModal({ open, onClose, onComplete, personId, personNam
                 personId={personId}
                 unitId={unitId}
                 onBack={() => setStep(0)}
-                onNext={(balance) => { setStep(2) }}
+                onNext={() => { setStep(2) }}
               />
             )}
 
@@ -594,7 +594,7 @@ function BillCheckStep({ personId, unitId, onBack, onNext }: {
   personId: string
   unitId: string
   onBack: () => void
-  onNext: (balance: number) => void
+  onNext: () => void
 }) {
   const [loading, setLoading] = useState(true)
   const [balance, setBalance] = useState(0)
@@ -635,7 +635,7 @@ function BillCheckStep({ personId, unitId, onBack, onNext }: {
 
       <FooterNav>
         <Button variant="ghost" onClick={onBack}>← Back</Button>
-        <Button onClick={() => onNext(balance)} disabled={loading}>
+        <Button onClick={() => onNext()} disabled={loading}>
           Next: Confirm →
         </Button>
       </FooterNav>
