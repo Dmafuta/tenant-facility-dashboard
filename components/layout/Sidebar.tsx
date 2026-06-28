@@ -50,7 +50,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 space-y-4 px-2">
+      <nav className="flex-1 overflow-y-auto py-2 space-y-3 px-2">
         {visibleNav.map(({ group, items }) => (
           <div key={group}>
             {!collapsed && (
@@ -76,7 +76,7 @@ export function Sidebar() {
                     title={collapsed ? item.label : undefined}
                     className={cn(
                       'flex items-center gap-2.5 rounded-md text-sm transition-colors mb-0.5 group relative',
-                      collapsed ? 'px-0 py-2 justify-center' : 'px-2 py-1.5',
+                      collapsed ? 'px-0 py-1.5 justify-center' : 'px-2 py-1',
                       (active || childActive)
                         ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
                         : 'text-text-muted hover:bg-surface-hover hover:text-text dark:hover:bg-dark-hover'
@@ -114,7 +114,7 @@ export function Sidebar() {
                             href={child.href}
                             onClick={closeMobile}
                             className={cn(
-                              'flex items-center gap-2 rounded-md text-xs transition-colors px-2 py-1.5 group relative',
+                              'flex items-center gap-2 rounded-md text-xs transition-colors px-2 py-1 group relative',
                               childIsActive
                                 ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-medium'
                                 : 'text-text-muted hover:bg-surface-hover hover:text-text dark:hover:bg-dark-hover'
