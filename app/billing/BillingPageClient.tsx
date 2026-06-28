@@ -1036,6 +1036,12 @@ export function BillingPageClient() {
                 <span className="font-medium">{fmtDate(selected.due_date)}</span>
                 <span className="text-text-muted">Account No</span>
                 <span className="font-medium">{selected.account_no ?? '—'}</span>
+                {selected.meter_reading_id && (
+                  <>
+                    <span className="text-text-muted">Source</span>
+                    <span className="font-medium text-primary-600">From meter reading</span>
+                  </>
+                )}
               </div>
 
               {/* Void audit info */}

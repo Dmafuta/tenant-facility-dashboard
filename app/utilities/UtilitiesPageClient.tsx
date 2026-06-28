@@ -2482,21 +2482,22 @@ function ReadingsTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card">
-                {['Unit', 'Utility', 'Period', 'Consumed', 'Amount Due', 'Mgmt Fee', 'Source', 'Status', ''].map(h => (
+                {['Unit', 'Utility', 'Period', 'Consumed', 'Amount Due', 'Mgmt Fee', 'Source', 'Read By', 'Status', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-text-muted">No readings match filters.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-text-muted">No readings match filters.</td></tr>
               ) : filtered.map((r, i) => (
                 <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === filtered.length - 1 && 'border-b-0', r.anomaly && 'bg-warning/5')}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-text">{r.unit_label ?? '—'}</p>
                     <p className="text-xs text-text-muted font-mono">{r.meter_number}</p>
+                    {r.notes && <p className="text-xs text-warning mt-0.5 truncate max-w-[160px]" title={r.notes}>{r.notes}</p>}
                   </td>
                   <td className="px-4 py-3 text-text-muted">{utilityIcon(r.utility_type)} {utilityLabel(r.utility_type)}</td>
                   <td className="px-4 py-3 text-text-muted">{r.billing_period ?? r.reading_date ?? '—'}</td>
@@ -2513,6 +2514,7 @@ function ReadingsTab({
                       {r.source === 'smart_iot' ? '⚡ IoT' : r.source === 'vending_issue' ? '🏧 Vending' : r.source === 'estimated' ? '~ Est.' : r.source ?? 'manual'}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-xs text-text-muted whitespace-nowrap">{r.read_by ?? '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className={cn('text-xs px-2 py-0.5 rounded font-medium', r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
