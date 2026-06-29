@@ -3809,9 +3809,10 @@ export function UtilitiesPageClient() {
 
   useEffect(() => { fetchDisconn() }, [fetchDisconn])
 
+  const supplyRoles      = ['supplier', 'tank_inflow', 'tank_outflow', 'distribution']
   const consumerMeters   = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
-  const inventoryMeters  = meters.filter(m => !m.unit_id)
-  const deployedMeters   = meters.filter(m => m.unit_id || (m.meter_role && m.meter_role !== 'consumer'))
+  const inventoryMeters  = meters.filter(m => !m.unit_id && !supplyRoles.includes(m.meter_role ?? ''))
+  const deployedMeters   = meters.filter(m => m.unit_id || supplyRoles.includes(m.meter_role ?? ''))
   const latestBalance  = periods[periods.length - 1]
   const lossFlag       = latestBalance?.flagged
 
