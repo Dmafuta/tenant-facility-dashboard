@@ -1873,7 +1873,7 @@ export function SettingsPageClient() {
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="documents">Documents</TabsTrigger>
               <TabsTrigger value="data-setup">Data Setup</TabsTrigger>
-              <TabsTrigger value="danger-zone" className="text-danger">⚠ Danger Zone</TabsTrigger>
+              <TabsTrigger value="danger-zone">⚠ Danger Zone</TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="general"       className="flex-1 overflow-y-auto mt-0"><GeneralSettings /></TabsContent>
