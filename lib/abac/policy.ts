@@ -44,6 +44,16 @@ const POLICY: PolicyRule[] = [
     actions: ['read','document.upload'],
     resources: ['unit','person','lease','charge','booking','document'],
   },
+  {
+    roles: ['meter_reader'],
+    actions: ['read','write'],
+    resources: ['utility'],
+  },
+  {
+    roles: ['bulk_meter_reader'],
+    actions: ['read','write'],
+    resources: ['utility'],
+  },
 ]
 
 export function evaluate(
