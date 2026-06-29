@@ -21,7 +21,9 @@ import {
   getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
   getRulesDocumentInfo, uploadRulesDocument, deleteRulesDocument,
+  resetTestData,
   type FacilitySettings, type SystemUser, type AppRole, type RolePermission, type DocumentInfo,
+  type ResetTestDataResult,
 } from '@/lib/api/settings'
 
 // ── General Settings ──────────────────────────────────────────────────────────
@@ -1729,6 +1731,129 @@ function DataSetupSettings() {
   )
 }
 
+// ── TEMPORARY: Danger Zone ────────────────────────────────────────────────────
+// Remove this component and its tab content before production go-live.
+function DangerZone() {
+  const [confirmText, setConfirmText]   = useState('')
+  const [running, setRunning]           = useState(false)
+  const [result, setResult]             = useState<ResetTestDataResult | null>(null)
+  const [error, setError]               = useState<string | null>(null)
+  const [showModal, setShowModal]       = useState(false)
+
+  async function handleReset() {
+    setRunning(true); setError(null); setResult(null)
+    try {
+      const res = await resetTestData()
+      setResult(res)
+      setShowModal(false)
+      setConfirmText('')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Reset failed')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-2xl space-y-6">
+      {/* Warning banner */}
+      <div className="rounded-lg border-2 border-danger/40 bg-danger/5 p-4 flex gap-3">
+        <span className="text-danger text-xl mt-0.5">⚠️</span>
+        <div>
+          <p className="font-semibold text-danger">Danger Zone — Temporary</p>
+          <p className="text-sm text-text-muted mt-1">
+            This section is for test-data cleanup only. Remove it before go-live.
+          </p>
+        </div>
+      </div>
+
+      {/* Reset card */}
+      <div className="rounded-lg border border-danger/30 bg-surface dark:bg-dark-card p-5 space-y-3">
+        <div>
+          <p className="font-medium text-text">Clear All Test Data</p>
+          <p className="text-sm text-text-muted mt-1">
+            Permanently deletes all meter readings, invoices, charges, payments and
+            disconnection notices, then resets all meter baselines to zero.
+            Meters, units, persons, leases and opening balances are <strong>kept</strong>.
+          </p>
+        </div>
+        <ul className="text-xs text-text-muted space-y-0.5 list-disc list-inside">
+          <li>invoice_payments</li>
+          <li>disconnection_notices</li>
+          <li>charges</li>
+          <li>invoices</li>
+          <li>meter_readings</li>
+          <li>meter_type_history</li>
+          <li>meters → last_reading &amp; last_reading_date reset to NULL</li>
+        </ul>
+        <button
+          onClick={() => { setShowModal(true); setConfirmText(''); setError(null); setResult(null) }}
+          className="px-4 py-2 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 transition-colors"
+        >
+          Clear Test Data…
+        </button>
+      </div>
+
+      {/* Result */}
+      {result && (
+        <div className="rounded-lg border border-success/30 bg-success/5 p-4 text-sm space-y-1">
+          <p className="font-medium text-success">Reset complete — all test data removed.</p>
+          <ul className="text-text-muted text-xs space-y-0.5 list-disc list-inside mt-2">
+            <li>{result.invoice_payments_deleted} payments deleted</li>
+            <li>{result.disconnection_notices_deleted} disconnection notices deleted</li>
+            <li>{result.charges_deleted} charges deleted</li>
+            <li>{result.invoices_deleted} invoices deleted</li>
+            <li>{result.meter_readings_deleted} meter readings deleted</li>
+            <li>{result.meter_type_history_deleted} type history records deleted</li>
+            <li>{result.meters_baseline_reset} meter baselines reset</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Confirm modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-surface dark:bg-dark-card rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <p className="font-semibold text-text text-lg">Confirm Data Reset</p>
+            </div>
+            <p className="text-sm text-text-muted">
+              This will permanently delete <strong>all</strong> billing and meter reading data. This cannot be undone.
+            </p>
+            <p className="text-sm text-text">
+              Type <strong className="text-danger">RESET</strong> to confirm:
+            </p>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={e => setConfirmText(e.target.value)}
+              placeholder="RESET"
+              className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-danger"
+            />
+            {error && <p className="text-sm text-danger">{error}</p>}
+            <div className="flex justify-end gap-3 pt-1">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 rounded-lg border border-surface-border dark:border-dark-border text-sm text-text hover:bg-surface-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={confirmText !== 'RESET' || running}
+                className="px-4 py-2 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 disabled:opacity-40 transition-colors"
+              >
+                {running ? 'Resetting…' : 'Yes, Delete Everything'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // -- Page -----------------------------------------------------------------------
 export function SettingsPageClient() {
   return (
@@ -1748,6 +1873,7 @@ export function SettingsPageClient() {
               <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="documents">Documents</TabsTrigger>
               <TabsTrigger value="data-setup">Data Setup</TabsTrigger>
+              <TabsTrigger value="danger-zone" className="text-danger">⚠ Danger Zone</TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="general"       className="flex-1 overflow-y-auto mt-0"><GeneralSettings /></TabsContent>
@@ -1759,7 +1885,8 @@ export function SettingsPageClient() {
           <TabsContent value="branding"      className="flex-1 overflow-y-auto mt-0"><BrandingSettings /></TabsContent>
           <TabsContent value="integrations"  className="flex-1 overflow-y-auto mt-0"><IntegrationsPageClient /></TabsContent>
           <TabsContent value="documents"     className="flex-1 overflow-y-auto mt-0"><DocumentsSettings /></TabsContent>
-          <TabsContent value="data-setup"   className="flex-1 overflow-y-auto mt-0"><DataSetupSettings /></TabsContent>
+          <TabsContent value="data-setup"    className="flex-1 overflow-y-auto mt-0"><DataSetupSettings /></TabsContent>
+          <TabsContent value="danger-zone"  className="flex-1 overflow-y-auto mt-0"><DangerZone /></TabsContent>
         </Tabs>
       </main>
     </DashboardLayout>

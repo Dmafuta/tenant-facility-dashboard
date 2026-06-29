@@ -304,3 +304,18 @@ export function registerC2bUrls(payload: {
 }): Promise<string> {
   return apiFetch('/mpesa/register-c2b-urls', { method: 'POST', body: JSON.stringify(payload) })
 }
+
+// ── TEMPORARY: test-data reset (remove before go-live) ────────────────────
+export interface ResetTestDataResult {
+  invoice_payments_deleted: number
+  disconnection_notices_deleted: number
+  charges_deleted: number
+  invoices_deleted: number
+  meter_readings_deleted: number
+  meter_type_history_deleted: number
+  meters_baseline_reset: number
+}
+
+export function resetTestData(): Promise<ResetTestDataResult> {
+  return apiFetch<ResetTestDataResult>('/admin/reset-test-data', { method: 'DELETE' })
+}
