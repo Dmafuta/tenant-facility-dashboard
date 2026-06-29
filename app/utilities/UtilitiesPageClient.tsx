@@ -850,7 +850,7 @@ function ImportMetersModal({ open, onClose, onImported }: { open: boolean; onClo
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Import Meters" size="xl">
+    <Modal open={open} onClose={onClose} title="Import Meters" size="lg">
       <div className="space-y-4">
         {/* Step 1: Template + Upload */}
         <div className="flex items-center gap-3">
