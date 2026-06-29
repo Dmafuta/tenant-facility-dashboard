@@ -11,8 +11,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading } from '@/lib/api/meters'
-import type { MeterData, MeterReadingData, MeterTypeHistoryData } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters } from '@/lib/api/meters'
+import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
   getReserveTanks, createReserveTank, updateReserveTank, updateTankLevel,
@@ -796,14 +796,150 @@ const ROLE_FILTERS = [
 const TH = 'px-4 py-3 text-left text-xs font-medium text-text-muted whitespace-nowrap'
 const TD = 'px-4 py-3.5 text-sm text-text whitespace-nowrap'
 
+// ── Import Meters Modal ────────────────────────────────────────────────────
+
+function ImportMetersModal({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: () => void }) {
+  const [file, setFile]           = useState<File | null>(null)
+  const [rows, setRows]           = useState<ImportRowPreview[]>([])
+  const [parsing, setParsing]     = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult]       = useState<{ created: number; updated: number; skipped: number } | null>(null)
+  const [error, setError]         = useState<string | null>(null)
+
+  function reset() {
+    setFile(null); setRows([]); setParsing(false); setImporting(false); setResult(null); setError(null)
+  }
+
+  useEffect(() => { if (!open) reset() }, [open])
+
+  async function handleParse(f: File) {
+    setFile(f); setRows([]); setResult(null); setError(null); setParsing(true)
+    try {
+      const preview = await parseMeterImport(f)
+      setRows(preview)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to parse file')
+    } finally {
+      setParsing(false)
+    }
+  }
+
+  async function handleImport() {
+    const toImport = rows.filter(r => r.status !== 'error')
+    if (!toImport.length) return
+    setImporting(true); setError(null)
+    try {
+      const res = await bulkImportMeters(toImport)
+      setResult(res)
+      onImported()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const okCount    = rows.filter(r => r.status === 'ok').length
+  const warnCount  = rows.filter(r => r.status === 'warning').length
+  const errCount   = rows.filter(r => r.status === 'error').length
+
+  const statusBadge = (s: string) => {
+    if (s === 'ok')      return <span className="inline-flex px-1.5 py-0.5 rounded text-xs bg-success/10 text-success font-medium">New</span>
+    if (s === 'warning') return <span className="inline-flex px-1.5 py-0.5 rounded text-xs bg-warning/10 text-warning font-medium">Update</span>
+    return <span className="inline-flex px-1.5 py-0.5 rounded text-xs bg-danger/10 text-danger font-medium">Error</span>
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Import Meters" size="xl">
+      <div className="space-y-4">
+        {/* Step 1: Template + Upload */}
+        <div className="flex items-center gap-3">
+          <a
+            href="/api/backend/meters/import-template"
+            download="meter-import-template.xlsx"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-surface-border text-sm text-text-muted hover:bg-surface-muted transition-colors"
+          >
+            ↓ Download Template
+          </a>
+          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 text-sm cursor-pointer hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors">
+            📂 {file ? file.name : 'Choose Excel File (.xlsx)'}
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleParse(f) }} />
+          </label>
+          {parsing && <span className="text-sm text-text-muted">Parsing…</span>}
+        </div>
+
+        {error && (
+          <div className="p-3 rounded-lg bg-danger/10 border border-danger/20 text-sm text-danger">{error}</div>
+        )}
+
+        {/* Step 2: Preview */}
+        {rows.length > 0 && !result && (
+          <>
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-success font-medium">{okCount} new</span>
+              {warnCount > 0 && <span className="text-warning font-medium">{warnCount} update</span>}
+              {errCount  > 0 && <span className="text-danger  font-medium">{errCount} error{errCount > 1 ? 's' : ''}</span>}
+              <span className="text-text-muted ml-auto">Review rows below, then click Import</span>
+            </div>
+            <div className="max-h-72 overflow-auto rounded-lg border border-surface-border">
+              <table className="w-full text-sm min-w-[700px]">
+                <thead className="bg-surface-muted sticky top-0">
+                  <tr>
+                    {['#','Status','Meter No.','Unit','Utility','Type','Role','Last Reading','Message'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left text-xs font-medium text-text-muted whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.rowNum} className={cn('border-t border-surface-border', row.status === 'error' ? 'opacity-50' : '')}>
+                      <td className="px-3 py-2 text-text-muted">{row.rowNum}</td>
+                      <td className="px-3 py-2">{statusBadge(row.status)}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{row.meterNumber}</td>
+                      <td className="px-3 py-2">{row.unitLabel || <span className="text-text-muted">—</span>}</td>
+                      <td className="px-3 py-2">{row.utilityType}</td>
+                      <td className="px-3 py-2">{row.meterType}</td>
+                      <td className="px-3 py-2">{row.meterRole}</td>
+                      <td className="px-3 py-2">{row.lastReading ?? '—'}</td>
+                      <td className="px-3 py-2 text-xs text-text-muted">{row.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-3 pt-1">
+              <Button variant="ghost" size="sm" onClick={reset}>Clear</Button>
+              <Button size="sm" onClick={handleImport} disabled={importing || (okCount + warnCount) === 0}>
+                {importing ? 'Importing…' : `Import ${okCount + warnCount} Meter${(okCount + warnCount) !== 1 ? 's' : ''}`}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* Step 3: Result */}
+        {result && (
+          <div className="p-4 rounded-lg bg-success/10 border border-success/20 space-y-1">
+            <p className="font-medium text-success">Import complete</p>
+            <p className="text-sm text-text">{result.created} meter{result.created !== 1 ? 's' : ''} created, {result.updated} updated{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.</p>
+            <div className="flex justify-end pt-2">
+              <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 function MetersTab({
-  meters, loading, onRead, onView, onAddMeter, onRefresh,
+  meters, loading, onRead, onView, onAddMeter, onImportMeters, onRefresh,
 }: {
   meters: MeterData[]
   loading: boolean
   onRead: (m: MeterData) => void
   onView: (m: MeterData) => void
   onAddMeter: () => void
+  onImportMeters: () => void
   onRefresh: () => void
 }) {
   const [search, setSearch]   = useState('')
@@ -847,8 +983,9 @@ function MetersTab({
         <Select value={utility} onChange={setUtility} options={UTILITY_FILTERS} className="w-44" />
         <Select value={type}    onChange={setType}    options={METER_TYPE_FILTERS} className="w-36" />
         <Select value={role}    onChange={setRole}    options={ROLE_FILTERS} className="w-44" />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="ghost" onClick={onImportMeters}>↑ Import</Button>
             <Button size="sm" onClick={onAddMeter}>+ Add Meter</Button>
           </CanDo>
         </div>
@@ -3567,6 +3704,7 @@ export function UtilitiesPageClient() {
   const [viewTarget, setViewTarget]       = useState<MeterData | null>(null)
   const [showView, setShowView]           = useState(false)
   const [showAddMeter, setShowAddMeter]   = useState(false)
+  const [showImportMeters, setShowImportMeters] = useState(false)
   const [assignTarget, setAssignTarget]   = useState<MeterData | null>(null)
   const [showAssign, setShowAssign]       = useState(false)
 
@@ -3751,6 +3889,7 @@ export function UtilitiesPageClient() {
             onRead={m => { setReadTarget(m); setShowRead(true) }}
             onView={m => { setViewTarget(m); setShowView(true) }}
             onAddMeter={() => setShowAddMeter(true)}
+            onImportMeters={() => setShowImportMeters(true)}
             onRefresh={fetchMeters}
           />
         </TabsContent>
@@ -3930,6 +4069,7 @@ export function UtilitiesPageClient() {
       />
       <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} onMeterUpdated={fetchMeters} />
       <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} onSaved={fetchMeters} />
+      <ImportMetersModal open={showImportMeters} onClose={() => setShowImportMeters(false)} onImported={fetchMeters} />
       <AssignMeterModal
         meter={assignTarget}
         open={showAssign}

@@ -189,3 +189,43 @@ export async function generateEstimatedReadings(period: string): Promise<{ gener
     { method: 'POST' }
   )
 }
+
+// ── Meter Bulk Import ──────────────────────────────────────────────────────
+
+export interface ImportRowPreview {
+  rowNum: number
+  meterNumber: string
+  unitLabel: string
+  utilityType: string
+  meterType: string
+  meterRole: string
+  lastReading: number | null
+  lastReadingDate: string | null
+  accountNumber: string
+  notes: string
+  resolvedUnitId: string | null
+  status: 'ok' | 'warning' | 'error'
+  message: string
+}
+
+export interface BulkImportResult {
+  created: number
+  updated: number
+  skipped: number
+}
+
+export async function parseMeterImport(file: File): Promise<ImportRowPreview[]> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch('/api/backend/meters/parse-import', { method: 'POST', body: form })
+  const json = await res.json()
+  if (!json.success) throw new Error(json.message ?? 'Parse failed')
+  return json.data as ImportRowPreview[]
+}
+
+export async function bulkImportMeters(rows: ImportRowPreview[]): Promise<BulkImportResult> {
+  return apiFetch<BulkImportResult>('/meters/bulk-import', {
+    method: 'POST',
+    body: JSON.stringify(rows),
+  })
+}
