@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getAllowedPaths, ROLE_HOME, NAV } from '@/lib/nav-config'
 
 const BACKEND      = process.env.BACKEND_URL ?? 'http://localhost:8081'
-const PUBLIC_PATHS = ['/login', '/verify', '/auth/magic', '/accept-invite', '/reset-password', '/api/backend/auth', '/api/auth', '/api/backend/settings/brand']
+const PUBLIC_PATHS = ['/login', '/verify', '/auth/magic', '/accept-invite', '/reset-password', '/pwa-only', '/api/backend/auth', '/api/auth', '/api/backend/settings/brand']
 
 // All first-level nav paths (used to decide whether to apply the role guard)
 const NAV_PATHS = NAV.flatMap(g => g.items).map(i => i.href)
@@ -34,9 +34,13 @@ function applyRouteGuard(request: NextRequest, token: string): NextResponse {
 
   const role    = (decodeJwtPayload(token).role as string) ?? 'facility_manager'
   const allowed = getAllowedPaths(role)
-  // Custom app roles not in nav-config have no allowed paths — let them through.
-  // The backend enforces actual access; we just prevent the redirect loop here.
-  if (allowed.length === 0) return NextResponse.next()
+  if (allowed.length === 0) {
+    // Role has a designated home (e.g. PWA-only roles) → redirect there
+    const home = ROLE_HOME[role]
+    if (home) return NextResponse.redirect(new URL(home, request.url))
+    // True custom dynamic role — let through; backend enforces access
+    return NextResponse.next()
+  }
   const canAccess = allowed.some(p => pathname === p || pathname.startsWith(p + '/'))
   if (canAccess) return NextResponse.next()
 

@@ -12,6 +12,9 @@ export const ROLE_HOME: Record<string, string> = {
   receptionist:           '/people',
   owner:                  '/property',
   payroll_officer:        '/payroll',
+  // PWA-only roles — blocked from the dashboard
+  meter_reader:           '/pwa-only',
+  bulk_meter_reader:      '/pwa-only',
 }
 
 const FM     = 'facility_manager'
