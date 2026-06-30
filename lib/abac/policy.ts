@@ -47,12 +47,12 @@ const POLICY: PolicyRule[] = [
   {
     roles: ['meter_reader'],
     actions: ['read','write'],
-    resources: ['utility'],
+    resources: ['utility','unit'],
   },
   {
     roles: ['bulk_meter_reader'],
     actions: ['read','write'],
-    resources: ['utility'],
+    resources: ['utility','unit'],
   },
 ]
 

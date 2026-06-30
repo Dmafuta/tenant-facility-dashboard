@@ -657,16 +657,18 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
-  const [meterNumber, setMeterNumber] = useState('')
-  const [accountNo, setAccountNo]     = useState('')
-  const [meterRole, setMeterRole]     = useState('consumer')
-  const [billingArr, setBillingArr]   = useState('billed_to_occupant')
-  const [mgmtFee, setMgmtFee]         = useState('')
-  const [ratePerUnit, setRatePerUnit] = useState('')
-  const [status, setStatus]           = useState('active')
-  const [notes, setNotes]             = useState('')
-  const [saving, setSaving]           = useState(false)
-  const [error, setError]             = useState<string | null>(null)
+  const [meterNumber, setMeterNumber]   = useState('')
+  const [accountNo, setAccountNo]       = useState('')
+  const [meterRole, setMeterRole]       = useState('consumer')
+  const [billingArr, setBillingArr]     = useState('billed_to_occupant')
+  const [mgmtFee, setMgmtFee]           = useState('')
+  const [ratePerUnit, setRatePerUnit]   = useState('')
+  const [status, setStatus]             = useState('active')
+  const [lastReading, setLastReading]   = useState('')
+  const [lastReadingDate, setLastReadingDate] = useState('')
+  const [notes, setNotes]               = useState('')
+  const [saving, setSaving]             = useState(false)
+  const [error, setError]               = useState<string | null>(null)
 
   useEffect(() => {
     if (open && meter) {
@@ -677,6 +679,8 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
       setMgmtFee(meter.management_fee_pct?.toString() ?? '')
       setRatePerUnit(meter.rate_per_unit?.toString() ?? '')
       setStatus(meter.status)
+      setLastReading(meter.last_reading?.toString() ?? '')
+      setLastReadingDate(meter.last_reading_date ?? '')
       setNotes(meter.notes ?? '')
       setError(null)
     }
@@ -697,6 +701,8 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
         managementFeePct: mgmtFee ? Number(mgmtFee) : null,
         ratePerUnit: ratePerUnit ? Number(ratePerUnit) : null,
         status,
+        lastReading: lastReading !== '' ? Number(lastReading) : null,
+        lastReadingDate: lastReadingDate || null,
         notes: notes || null,
       })
       onSaved()
@@ -750,6 +756,14 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
           <div>
             <label className={LABEL}>Rate Per Unit (KES)</label>
             <input type="number" className={INPUT} value={ratePerUnit} onChange={e => setRatePerUnit(e.target.value)} placeholder="e.g. 80" min="0" step="0.01" />
+          </div>
+          <div>
+            <label className={LABEL}>Opening / Last Reading</label>
+            <input type="number" className={INPUT} value={lastReading} onChange={e => setLastReading(e.target.value)} placeholder="e.g. 1250.000" min="0" step="0.001" />
+          </div>
+          <div>
+            <label className={LABEL}>Reading Date</label>
+            <input type="date" className={INPUT} value={lastReadingDate} onChange={e => setLastReadingDate(e.target.value)} />
           </div>
           <div className="col-span-2">
             <label className={LABEL}>Notes</label>
@@ -1075,6 +1089,16 @@ function MetersTab({
                             </button>
                           </CanDo>
                         </>
+                      ) : m.last_reading === null ? (
+                        <CanDo action="write" resource={{ type: 'unit' }}>
+                          <button
+                            onClick={() => { setEditTarget(m); setShowEdit(true) }}
+                            className="text-xs font-medium text-warning hover:underline whitespace-nowrap"
+                            title="Set the opening baseline reading — no charge generated"
+                          >
+                            Set Opening Reading
+                          </button>
+                        </CanDo>
                       ) : (
                         <CanDo action="write" resource={{ type: 'unit' }}>
                           <button
