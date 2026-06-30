@@ -19,6 +19,7 @@ async function proxy(
   const headers: Record<string, string> = {}
   if (!isMultipart) headers['Content-Type'] = 'application/json'
   else headers['Content-Type'] = contentType  // preserve multipart boundary
+  headers['Accept'] = 'application/json'
   const incoming = request.headers.get('cookie')
   if (incoming) headers['Cookie'] = incoming
 

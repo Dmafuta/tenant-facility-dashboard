@@ -22,10 +22,15 @@ export default function ResidentVerifyPage() {
     try {
       const res = await fetch('/api/backend/public/tenant-verify', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body:    JSON.stringify({ nationalId: nationalId.trim(), phone: phone.trim() }),
       })
-      const json = await res.json() as { success: boolean; data?: { name: string; unitLabel: string }; message?: string }
+      let json: { success: boolean; data?: { name: string; unitLabel: string }; message?: string }
+      try {
+        json = await res.json()
+      } catch {
+        throw new Error(`Server error (${res.status})`)
+      }
 
       if (res.ok && json.success && json.data) {
         setResult(json.data)
@@ -39,8 +44,10 @@ export default function ResidentVerifyPage() {
         setMessage(json.message ?? 'Something went wrong. Please try again.')
         setState('error')
       }
-    } catch {
-      setMessage('Unable to reach the server. Please check your connection.')
+    } catch (err) {
+      setMessage(err instanceof Error && err.message.startsWith('Server error')
+        ? 'The server returned an unexpected response. Please try again or contact support.'
+        : 'Unable to reach the server. Please check your connection.')
       setState('error')
     }
   }
