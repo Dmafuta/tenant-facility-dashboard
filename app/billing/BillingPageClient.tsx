@@ -25,7 +25,7 @@ import {
   getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
   type OpeningBalance,
 } from '@/lib/api/opening-balances'
-import { createPaymentPlan, type PaymentPlanData } from '@/lib/api/payment-plans'
+import { getPaymentPlans, createPaymentPlan, payInstallment, cancelPaymentPlan, type PaymentPlanData, type PaymentPlanInstallment } from '@/lib/api/payment-plans'
 import { apiFetch } from '@/lib/api/fetch'
 import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
@@ -128,11 +128,337 @@ function PeriodPicker({ cycle, value, onChange }: {
   )
 }
 
+// ── Payment Plans Tab ──────────────────────────────────────────────────────
+
+const PLAN_STATUS_CFG: Record<string, { label: string; variant: 'success' | 'blue' | 'danger' | 'default' | 'warning' }> = {
+  active:    { label: 'Active',    variant: 'blue' },
+  completed: { label: 'Completed', variant: 'success' },
+  defaulted: { label: 'Defaulted', variant: 'danger' },
+  cancelled: { label: 'Cancelled', variant: 'default' },
+}
+
+const INST_STATUS_CFG: Record<string, { label: string; cls: string }> = {
+  pending:   { label: 'Pending',   cls: 'bg-surface-border text-text-muted' },
+  partial:   { label: 'Partial',   cls: 'bg-warning/10 text-warning' },
+  paid:      { label: 'Paid',      cls: 'bg-success/10 text-success' },
+  overdue:   { label: 'Overdue',   cls: 'bg-danger/10 text-danger' },
+  cancelled: { label: 'Cancelled', cls: 'bg-surface-border text-text-muted' },
+}
+
+function PlansTab({ categoryCode }: { categoryCode: string }) {
+  const [plans, setPlans]               = useState<PaymentPlanData[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [statusFilter, setStatusFilter] = useState('active')
+  const [expandedId, setExpandedId]     = useState<string | null>(null)
+  const [error, setError]               = useState<string | null>(null)
+  const [cancelling, setCancelling]     = useState<string | null>(null)
+
+  // Pay installment modal
+  const [payTarget, setPayTarget] = useState<{ plan: PaymentPlanData; inst: PaymentPlanInstallment } | null>(null)
+  const [payAmount, setPayAmount] = useState('')
+  const [payNotes, setPayNotes]   = useState('')
+  const [paying, setPaying]       = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await getPaymentPlans({
+        categoryCode,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      })
+      setPlans(data)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load payment plans')
+    } finally {
+      setLoading(false)
+    }
+  }, [categoryCode, statusFilter])
+
+  useEffect(() => { load() }, [load])
+
+  async function handlePayInstallment() {
+    if (!payTarget || !payAmount || parseFloat(payAmount) <= 0) return
+    setPaying(true)
+    try {
+      const updated = await payInstallment(
+        payTarget.plan.id,
+        payTarget.inst.id,
+        parseFloat(payAmount),
+        payNotes || undefined
+      )
+      setPlans(prev => prev.map(p => p.id === payTarget.plan.id ? updated : p))
+      setPayTarget(null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to record payment')
+    } finally {
+      setPaying(false)
+    }
+  }
+
+  async function handleCancel(planId: string) {
+    if (!confirm('Cancel this payment plan? This cannot be undone.')) return
+    setCancelling(planId)
+    try {
+      const updated = await cancelPaymentPlan(planId)
+      setPlans(prev => prev.map(p => p.id === planId ? updated : p))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to cancel plan')
+    } finally {
+      setCancelling(null)
+    }
+  }
+
+  // Summary stats
+  const stats = {
+    active:    plans.filter(p => p.status === 'active').length,
+    total:     plans.reduce((s, p) => s + p.total_amount, 0),
+    collected: plans.reduce((s, p) => s + p.paid_amount, 0),
+    remaining: plans.reduce((s, p) => s + (p.total_amount - p.paid_amount), 0),
+  }
+
+  return (
+    <div className="space-y-5">
+      {error && (
+        <div className="bg-danger/10 text-danger text-sm px-4 py-2 rounded-lg flex items-center justify-between">
+          {error}
+          <button onClick={() => setError(null)} className="ml-4 font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* Stats */}
+      {plans.length > 0 && (
+        <div className="grid grid-cols-4 gap-4">
+          <Card className="p-4">
+            <p className="text-xs text-text-muted mb-1">Active Plans</p>
+            <p className="text-lg font-semibold text-primary-600">{stats.active}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-text-muted mb-1">Total Planned</p>
+            <p className="text-lg font-semibold text-text">{fmt(stats.total)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-text-muted mb-1">Collected</p>
+            <p className="text-lg font-semibold text-success">{fmt(stats.collected)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-text-muted mb-1">Remaining</p>
+            <p className="text-lg font-semibold text-danger">{fmt(stats.remaining)}</p>
+          </Card>
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div className="flex gap-2 items-center">
+        <Select
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: 'all',       label: 'All statuses' },
+            { value: 'active',    label: 'Active' },
+            { value: 'completed', label: 'Completed' },
+            { value: 'defaulted', label: 'Defaulted' },
+            { value: 'cancelled', label: 'Cancelled' },
+          ]}
+        />
+        <Button variant="ghost" size="sm" onClick={load} className="ml-auto">Refresh</Button>
+      </div>
+
+      {/* Plan list */}
+      {loading ? (
+        <div className="py-20 text-center text-text-muted text-sm">Loading plans…</div>
+      ) : plans.length === 0 ? (
+        <Card className="p-12 text-center space-y-2">
+          <p className="text-text-muted text-sm">No {statusFilter !== 'all' ? statusFilter : ''} payment plans found.</p>
+          <p className="text-xs text-text-muted">Create a plan from an invoice using the <strong>Payment Plan</strong> button in the invoice detail panel.</p>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {plans.map(plan => {
+            const remaining = plan.total_amount - plan.paid_amount
+            const isExpanded = expandedId === plan.id
+            const pct = plan.total_amount > 0 ? Math.round((plan.paid_amount / plan.total_amount) * 100) : 0
+            const statusCfg = PLAN_STATUS_CFG[plan.status] ?? { label: plan.status, variant: 'default' as const }
+            const paidCount = plan.installments.filter(i => i.status === 'paid').length
+            const overdueCount = plan.installments.filter(i => i.status === 'overdue').length
+
+            return (
+              <Card key={plan.id} className="overflow-hidden">
+                {/* Plan header row */}
+                <div
+                  className="flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors"
+                  onClick={() => setExpandedId(isExpanded ? null : plan.id)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{plan.unit_label ?? '—'}</span>
+                      <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+                      {overdueCount > 0 && (
+                        <span className="text-xs font-medium text-danger bg-danger/10 px-2 py-0.5 rounded">
+                          {overdueCount} overdue
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-text-muted mt-0.5">{plan.person_name ?? '—'}</p>
+                    {plan.notes && <p className="text-xs text-text-muted italic mt-0.5 truncate max-w-xs">{plan.notes}</p>}
+                  </div>
+
+                  {/* Progress mini-bar */}
+                  <div className="w-32 hidden sm:block">
+                    <div className="flex justify-between text-xs text-text-muted mb-1">
+                      <span>{paidCount}/{plan.installments.length}</span>
+                      <span>{pct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-surface dark:bg-dark-surface rounded-full overflow-hidden">
+                      <div className="h-full bg-success rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="text-right text-xs space-y-0.5 min-w-[120px]">
+                    <p className="text-text-muted">Total <span className="font-semibold text-text">{fmt(plan.total_amount)}</span></p>
+                    <p className="text-text-muted">Paid <span className="font-semibold text-success">{fmt(plan.paid_amount)}</span></p>
+                    {remaining > 0 && <p className="text-text-muted">Left <span className="font-semibold text-danger">{fmt(remaining)}</span></p>}
+                  </div>
+                  <span className="text-text-muted text-xs">{isExpanded ? '▲' : '▼'}</span>
+                </div>
+
+                {/* Expanded installments */}
+                {isExpanded && (
+                  <div className="border-t border-surface-border dark:border-dark-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-text-muted uppercase tracking-wide bg-surface/50 dark:bg-dark-surface/50">
+                          <th className="px-4 py-2.5 text-left">#</th>
+                          <th className="px-4 py-2.5 text-left">Due Date</th>
+                          <th className="px-4 py-2.5 text-right">Amount</th>
+                          <th className="px-4 py-2.5 text-right">Paid</th>
+                          <th className="px-4 py-2.5 text-right">Balance</th>
+                          <th className="px-4 py-2.5 text-center">Status</th>
+                          <th className="px-4 py-2.5 text-right">Paid On</th>
+                          <th className="px-4 py-2.5" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {plan.installments.map(inst => {
+                          const instBalance = inst.amount - inst.paid_amount
+                          const s = INST_STATUS_CFG[inst.status] ?? { label: inst.status, cls: 'bg-surface-border text-text-muted' }
+                          const canPay = ['pending', 'partial', 'overdue'].includes(inst.status) && plan.status === 'active'
+                          return (
+                            <tr key={inst.id} className="border-t border-surface-border dark:border-dark-border">
+                              <td className="px-4 py-2.5 text-text-muted font-mono text-xs">{inst.installment_no}</td>
+                              <td className={cn('px-4 py-2.5', inst.status === 'overdue' ? 'text-danger font-medium' : '')}>{fmtDate(inst.due_date)}</td>
+                              <td className="px-4 py-2.5 text-right font-medium">{fmt(inst.amount)}</td>
+                              <td className="px-4 py-2.5 text-right text-success">{inst.paid_amount > 0 ? fmt(inst.paid_amount) : '—'}</td>
+                              <td className={cn('px-4 py-2.5 text-right', instBalance > 0 ? 'text-danger font-medium' : 'text-text-muted')}>
+                                {instBalance > 0 ? fmt(instBalance) : '—'}
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', s.cls)}>{s.label}</span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-xs text-text-muted">{inst.paid_date ? fmtDate(inst.paid_date) : '—'}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                {canPay && (
+                                  <Button size="sm" variant="primary"
+                                    onClick={() => {
+                                      setPayTarget({ plan, inst })
+                                      setPayAmount(instBalance > 0 ? String(instBalance) : String(inst.amount))
+                                      setPayNotes('')
+                                    }}>
+                                    Pay
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Footer actions */}
+                    {plan.status === 'active' && (
+                      <div className="px-4 py-3 border-t border-surface-border dark:border-dark-border flex justify-end">
+                        <Button size="sm" variant="danger"
+                          disabled={cancelling === plan.id}
+                          onClick={() => handleCancel(plan.id)}>
+                          {cancelling === plan.id ? 'Cancelling…' : 'Cancel Plan'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Pay installment modal */}
+      <Modal
+        open={!!payTarget}
+        onClose={() => setPayTarget(null)}
+        title={`Record Payment — Installment #${payTarget?.inst.installment_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {payTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Unit</span>
+                <span className="font-medium">{payTarget.plan.unit_label ?? '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Installment amount</span>
+                <span className="font-medium">{fmt(payTarget.inst.amount)}</span>
+              </div>
+              {payTarget.inst.paid_amount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-text-muted">Already paid</span>
+                  <span className="text-success font-medium">{fmt(payTarget.inst.paid_amount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-surface-border dark:border-dark-border pt-1.5">
+                <span className="text-text-muted">Balance due</span>
+                <span className="font-semibold text-danger">{fmt(payTarget.inst.amount - payTarget.inst.paid_amount)}</span>
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Amount (KES) *</label>
+            <input
+              type="number" min="1" step="1"
+              value={payAmount}
+              onChange={e => setPayAmount(e.target.value)}
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Reference / Notes (optional)</label>
+            <input
+              type="text"
+              value={payNotes}
+              onChange={e => setPayNotes(e.target.value)}
+              placeholder="M-Pesa code, bank reference…"
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setPayTarget(null)}>Cancel</Button>
+            <Button variant="primary" className="flex-1"
+              disabled={paying || !payAmount || parseFloat(payAmount) <= 0}
+              onClick={handlePayInstallment}>
+              {paying ? 'Saving…' : 'Record Payment'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function BillingPageClient() {
   const { subject } = useAbac()
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments' | 'Plans'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
   const [loading, setLoading]         = useState(true)
@@ -651,6 +977,7 @@ export function BillingPageClient() {
         person_email:           planTarget.person_email ?? undefined,
         person_phone:           planTarget.person_phone ?? undefined,
         invoice_id:             planTarget.id,
+        category_code:          planTarget.category_code,
         total_amount:           planTarget.balance,
         number_of_installments: parseInt(planInstallments),
         start_date:             planStart,
@@ -733,10 +1060,11 @@ export function BillingPageClient() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments'; label: string }[] = [
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments' | 'Plans'; label: string }[] = [
     { code: 'WS',          label: 'Water & Sewerage' },
     { code: 'SC',          label: 'Service Charge' },
     { code: 'OT',          label: 'Other Charges' },
+    { code: 'Plans',       label: 'Payment Plans' },
     { code: 'Adjustments', label: 'Adjustments' },
     { code: 'Reports',     label: 'Reports' },
   ]
@@ -777,8 +1105,13 @@ export function BillingPageClient() {
         ))}
       </div>
 
+      {/* Payment Plans tab */}
+      {activeTab === 'Plans' && (
+        <PlansTab categoryCode="WS" />
+      )}
+
       {/* Stats row */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && (
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted mb-1">Outstanding</p>
@@ -796,7 +1129,7 @@ export function BillingPageClient() {
       )}
 
       {/* Toolbar */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && (
       <div className="flex flex-wrap gap-2 items-center">
         <SearchInput
           value={search}
@@ -1266,7 +1599,7 @@ export function BillingPageClient() {
       )}
 
       {/* Main area: list + detail panel */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && (
       <div className={cn('flex gap-4', selected ? 'items-start' : '')}>
 
         {/* Invoice list */}
