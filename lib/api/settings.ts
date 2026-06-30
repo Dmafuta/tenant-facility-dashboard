@@ -174,9 +174,18 @@ export interface PremblConfig {
   configured: boolean
 }
 
+export interface AfrinetConfig {
+  apiKey: string     // "***" if set, "" if not
+  partnerId: string
+  shortcode: string
+  baseUrl: string
+  configured: boolean
+}
+
 export interface IntegrationSettings {
   email: EmailConfig
   africastalking: AfricasTalkingConfig
+  afrinet: AfrinetConfig
   mpesa: MpesaConfig
   telegram: TelegramConfig
   prembly: PremblConfig
@@ -196,6 +205,10 @@ export function saveAfricasTalkingIntegration(payload: Record<string, string>): 
 
 export function saveMpesaIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
   return apiFetch('/settings/integrations/mpesa', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export function saveAfrinetIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
+  return apiFetch('/settings/integrations/afrinet', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
 export function saveTelegramIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   getIntegrations, saveEmailIntegration, saveAfricasTalkingIntegration,
+  saveAfrinetIntegration,
   saveMpesaIntegration, saveTelegramIntegration, savePremblyIntegration,
   testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
   listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
@@ -272,6 +273,86 @@ function AfricasTalkingCard({ initial, onSave }: { initial: IntegrationSettings[
             type="button"
             onClick={handleTest}
             disabled={testing || !testPhone}
+            className="rounded-lg border border-teal-200 px-3 py-1.5 text-sm text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+          >
+            {testing ? 'Sending…' : 'Send Test SMS'}
+          </button>
+        </div>
+        <TestResult result={result} onClear={() => setResult(null)} />
+      </div>
+    </Card>
+  )
+}
+
+// ── Afrinet card ─────────────────────────────────────────────────────────────
+
+function AfrinetCard({ initial, onSave }: { initial: IntegrationSettings['afrinet']; onSave: (s: IntegrationSettings) => void }) {
+  const [form, setForm] = useState({
+    apiKey: '', partnerId: initial.partnerId, shortcode: initial.shortcode, baseUrl: initial.baseUrl,
+    provider: 'afrinet',
+  })
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testPhone, setTestPhone] = useState('')
+  const [result, setResult]   = useState<string | null>(null)
+
+  const f = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = {
+        partnerId: form.partnerId, shortcode: form.shortcode,
+        baseUrl: form.baseUrl, provider: 'afrinet',
+      }
+      if (form.apiKey) payload.apiKey = form.apiKey
+      const updated = await saveAfrinetIntegration(payload)
+      onSave(updated)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  const handleTest = async () => {
+    if (!testPhone) return
+    setTesting(true)
+    setResult(null)
+    try {
+      const msg = await testSmsIntegration(testPhone)
+      setResult(typeof msg === 'string' ? msg : 'SMS sent!')
+    } catch (e: any) {
+      setResult('Failed: ' + (e?.message ?? 'Unknown error'))
+    } finally { setTesting(false) }
+  }
+
+  return (
+    <Card icon="📡" title={`Afrinet Bulk SMS — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">Send SMS notifications via Afrinet Telecom (Kenya). Saving this card sets Afrinet as the active SMS provider.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <Field label="API Key" value={form.apiKey} onChange={f('apiKey')} sensitive alreadySet={initial.apiKey === '***'} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Partner ID" value={form.partnerId} onChange={f('partnerId')} placeholder="Your partner ID" />
+          <Field label="Shortcode / Sender ID" value={form.shortcode} onChange={f('shortcode')} placeholder="e.g. FacilityOS" />
+        </div>
+        <Field label="Base URL" value={form.baseUrl} onChange={f('baseUrl')} placeholder="https://sms.imarabiz.com/api/services"
+          hint="Leave blank to use the default Afrinet endpoint" />
+        <div className="flex justify-end pt-2">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+      <div className="mt-5 border-t border-gray-100 pt-4 space-y-2">
+        <p className="text-xs font-medium text-gray-500 mb-2">Send a test SMS via Afrinet</p>
+        <div className="flex gap-2">
+          <PhoneInput value={testPhone} onChange={setTestPhone} className="flex-1" />
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing || !testPhone || !initial.configured}
             className="rounded-lg border border-teal-200 px-3 py-1.5 text-sm text-teal-700 hover:bg-teal-50 disabled:opacity-50"
           >
             {testing ? 'Sending…' : 'Send Test SMS'}
@@ -942,6 +1023,7 @@ export function IntegrationsPageClient() {
   const configured = [
     settings.email.configured,
     settings.africastalking.configured,
+    settings.afrinet.configured,
     settings.mpesa.configured,
     settings.telegram.configured,
     settings.prembly.configured,
@@ -963,7 +1045,8 @@ export function IntegrationsPageClient() {
         <div className="ml-auto flex gap-3">
           {[
             { icon: '📧', label: 'Email',    ok: settings.email.configured },
-            { icon: '💬', label: 'SMS',      ok: settings.africastalking.configured },
+            { icon: '💬', label: 'SMS (AT)',    ok: settings.africastalking.configured },
+            { icon: '📡', label: 'SMS (Afrinet)', ok: settings.afrinet.configured },
             { icon: '💚', label: 'M-Pesa',   ok: settings.mpesa.configured },
             { icon: '✈️',  label: 'Telegram', ok: settings.telegram.configured },
             { icon: '🪪',  label: 'KYC',      ok: settings.prembly.configured },
@@ -980,6 +1063,7 @@ export function IntegrationsPageClient() {
       {/* Cards */}
       <EmailCard          initial={settings.email}          onSave={handleSave} />
       <AfricasTalkingCard initial={settings.africastalking} onSave={handleSave} />
+      <AfrinetCard        initial={settings.afrinet}        onSave={handleSave} />
       <MpesaCard          initial={settings.mpesa}          onSave={handleSave} />
       <TelegramCard       initial={settings.telegram}       onSave={handleSave} />
       <PremblCard         initial={settings.prembly}        onSave={handleSave} />
