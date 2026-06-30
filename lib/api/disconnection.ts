@@ -18,6 +18,10 @@ export interface DisconnectionNoticeData {
   sent_by: string | null
   sent_at: string
   notes: string | null
+  status: 'active' | 'reconnected'
+  reconnected_at: string | null
+  reconnected_by: string | null
+  reconnection_fee_charged: number | null
 }
 
 export interface SendNoticePayload {
@@ -48,4 +52,8 @@ export async function sendDisconnectionNotice(payload: SendNoticePayload): Promi
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export async function reconnectNotice(id: string): Promise<DisconnectionNoticeData> {
+  return apiFetch<DisconnectionNoticeData>(`/disconnection-notices/${id}/reconnect`, { method: 'PATCH' })
 }

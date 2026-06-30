@@ -15,6 +15,7 @@ import {
   requestVoidInvoice, approveVoidInvoice, rejectVoidInvoice,
   requestWriteOffInvoice, approveWriteOffInvoice, rejectWriteOffInvoice,
   createCreditNote, getCollectionSummary, getUnallocatedCredits, getAllCreditNotes, applyCredit,
+  disputeInvoice, resolveDispute,
   type InvoiceData, type InvoiceCategory, type InvoicePayment, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
   type CollectionSummary, type CollectionSummaryRow,
@@ -24,6 +25,7 @@ import {
   getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
   type OpeningBalance,
 } from '@/lib/api/opening-balances'
+import { createPaymentPlan, type PaymentPlanData } from '@/lib/api/payment-plans'
 import { apiFetch } from '@/lib/api/fetch'
 import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
@@ -251,6 +253,20 @@ export function BillingPageClient() {
   // Credit notes ledger (Adjustments tab)
   const [allCreditNotes, setAllCreditNotes]   = useState<InvoicePayment[]>([])
   const [cnLoading, setCnLoading]             = useState(false)
+
+  // Dispute
+  const [disputeTarget, setDisputeTarget]       = useState<InvoiceData | null>(null)
+  const [disputeReason, setDisputeReason]       = useState('')
+  const [disputing, setDisputing]               = useState(false)
+  const [resolvingDispute, setResolvingDispute] = useState<string | null>(null)
+
+  // Payment plan
+  const [planTarget, setPlanTarget]         = useState<InvoiceData | null>(null)
+  const [planInstallments, setPlanInstallments] = useState('3')
+  const [planStart, setPlanStart]           = useState('')
+  const [planNotes, setPlanNotes]           = useState('')
+  const [creatingPlan, setCreatingPlan]     = useState(false)
+  const [planResult, setPlanResult]         = useState<PaymentPlanData | null>(null)
 
   // Opening balances (Adjustments tab)
   const [openingBals, setOpeningBals]         = useState<OpeningBalance[]>([])
@@ -584,6 +600,67 @@ export function BillingPageClient() {
       setError(e instanceof Error ? e.message : 'Failed to reject write-off')
     } finally {
       setRejectingWriteOff(false)
+    }
+  }
+
+  // ── Dispute ───────────────────────────────────────────────────────────────
+
+  async function handleDisputeInvoice() {
+    if (!disputeTarget || !disputeReason.trim()) return
+    setDisputing(true)
+    setError(null)
+    try {
+      const updated = await disputeInvoice(disputeTarget.id, disputeReason)
+      setInvoices(prev => prev.map(i => i.id === disputeTarget.id ? updated : i))
+      if (selected?.id === disputeTarget.id) setSelected(updated)
+      setDisputeTarget(null)
+      setDisputeReason('')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to flag dispute')
+    } finally {
+      setDisputing(false)
+    }
+  }
+
+  async function handleResolveDispute(inv: InvoiceData) {
+    setResolvingDispute(inv.id)
+    setError(null)
+    try {
+      const updated = await resolveDispute(inv.id)
+      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      if (selected?.id === inv.id) setSelected(updated)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to resolve dispute')
+    } finally {
+      setResolvingDispute(null)
+    }
+  }
+
+  // ── Payment plan ─────────────────────────────────────────────────────────
+
+  async function handleCreatePlan() {
+    if (!planTarget || parseInt(planInstallments) < 2 || !planStart) return
+    setCreatingPlan(true)
+    setError(null)
+    try {
+      const plan = await createPaymentPlan({
+        unit_id:                planTarget.unit_id,
+        unit_label:             planTarget.unit_label ?? undefined,
+        person_id:              planTarget.person_id ?? undefined,
+        person_name:            planTarget.person_name ?? undefined,
+        person_email:           planTarget.person_email ?? undefined,
+        person_phone:           planTarget.person_phone ?? undefined,
+        invoice_id:             planTarget.id,
+        total_amount:           planTarget.balance,
+        number_of_installments: parseInt(planInstallments),
+        start_date:             planStart,
+        notes:                  planNotes || undefined,
+      })
+      setPlanResult(plan)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create payment plan')
+    } finally {
+      setCreatingPlan(false)
     }
   }
 
@@ -1241,7 +1318,12 @@ export function BillingPageClient() {
                       {fmt(inv.balance)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <StatusBadge status={inv.status} />
+                      <div className="flex items-center justify-center gap-1 flex-wrap">
+                        <StatusBadge status={inv.status} />
+                        {inv.disputed && !inv.dispute_resolved && (
+                          <Badge variant="warning">Disputed</Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
@@ -1444,6 +1526,46 @@ export function BillingPageClient() {
                   </div>
                 )
               })()}
+
+              {/* Dispute info */}
+              {selected.disputed && (
+                <div className={cn(
+                  'border rounded-lg p-3 space-y-2 text-xs',
+                  selected.dispute_resolved
+                    ? 'border-success/30 bg-success/5'
+                    : 'border-warning/40 bg-warning/5'
+                )}>
+                  <p className={cn(
+                    'font-semibold uppercase tracking-wide text-[10px]',
+                    selected.dispute_resolved ? 'text-success' : 'text-warning'
+                  )}>
+                    {selected.dispute_resolved ? 'Dispute Resolved' : 'Invoice Disputed'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <span className="text-text-muted">Reason</span>
+                    <span className="font-medium">{selected.dispute_reason ?? '—'}</span>
+                    <span className="text-text-muted">Flagged By</span>
+                    <span className="font-medium">{selected.disputed_by ?? '—'}</span>
+                    <span className="text-text-muted">Flagged At</span>
+                    <span className="font-medium">{selected.disputed_at ? fmtDate(selected.disputed_at) : '—'}</span>
+                    {selected.dispute_resolved && (
+                      <>
+                        <span className="text-text-muted">Resolved By</span>
+                        <span className="font-medium">{selected.dispute_resolved_by ?? '—'}</span>
+                        <span className="text-text-muted">Resolved At</span>
+                        <span className="font-medium">{selected.dispute_resolved_at ? fmtDate(selected.dispute_resolved_at) : '—'}</span>
+                      </>
+                    )}
+                  </div>
+                  {!selected.dispute_resolved && (
+                    <Button size="sm" variant="ghost" className="w-full"
+                      disabled={resolvingDispute === selected.id}
+                      onClick={() => handleResolveDispute(selected)}>
+                      {resolvingDispute === selected.id ? 'Resolving…' : 'Mark Resolved'}
+                    </Button>
+                  )}
+                </div>
+              )}
 
               {/* Category tagline */}
               {activeCategory?.tagline && (
@@ -1651,6 +1773,28 @@ export function BillingPageClient() {
                     onClick={() => { setCreditNoteTarget(selected); setCreditNoteAmount(''); setCreditNoteReason(''); setCreditSuccess(null) }}
                   >
                     Credit Note
+                  </Button>
+                )}
+                {['issued', 'partial'].includes(selected.status) && !selected.disputed && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => { setDisputeTarget(selected); setDisputeReason('') }}
+                  >
+                    Flag Dispute
+                  </Button>
+                )}
+                {['issued', 'partial'].includes(selected.status) && selected.balance > 0 && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => {
+                      setPlanTarget(selected)
+                      setPlanInstallments('3')
+                      setPlanStart(new Date().toISOString().slice(0, 10))
+                      setPlanNotes('')
+                      setPlanResult(null)
+                    }}
+                  >
+                    Payment Plan
                   </Button>
                 )}
               </div>
@@ -2275,6 +2419,142 @@ export function BillingPageClient() {
                   }}
                 >
                   {issuingCredit ? 'Issuing…' : 'Issue Credit Note'}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Dispute modal */}
+      <Modal
+        open={!!disputeTarget}
+        onClose={() => { setDisputeTarget(null); setDisputeReason('') }}
+        title={`Flag Dispute — ${disputeTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-text-muted">
+            Marking this invoice as disputed will pause late fees until the dispute is resolved.
+          </p>
+          {disputeTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Invoice</span>
+                <span className="font-mono text-xs">{disputeTarget.statement_no}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Balance</span>
+                <span className="font-semibold text-danger">{fmt(disputeTarget.balance)}</span>
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Dispute Reason *</label>
+            <textarea
+              value={disputeReason}
+              onChange={e => setDisputeReason(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              placeholder="Describe the dispute (e.g. reading appears incorrect, charges not agreed…)"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => { setDisputeTarget(null); setDisputeReason('') }}>Cancel</Button>
+            <Button
+              variant="outline" className="flex-1 border-warning text-warning hover:bg-warning/5"
+              disabled={disputing || !disputeReason.trim()}
+              onClick={handleDisputeInvoice}
+            >
+              {disputing ? 'Flagging…' : 'Flag as Disputed'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Payment Plan modal */}
+      <Modal
+        open={!!planTarget}
+        onClose={() => { setPlanTarget(null); setPlanResult(null) }}
+        title={`Payment Plan — ${planTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {planResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Payment Plan Created</p>
+                <p>{planResult.installments.length} installments starting {fmtDate(planResult.installments[0]?.due_date ?? null)}.</p>
+              </div>
+              <div className="divide-y divide-surface-border dark:divide-dark-border">
+                {planResult.installments.map(inst => (
+                  <div key={inst.id} className="flex justify-between text-sm py-2">
+                    <span className="text-text-muted">#{inst.installment_no} · {fmtDate(inst.due_date)}</span>
+                    <span className="font-medium">{fmt(inst.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => { setPlanTarget(null); setPlanResult(null) }}>
+                Done
+              </Button>
+            </div>
+          ) : (
+            <>
+              {planTarget && (
+                <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Total outstanding</span>
+                    <span className="font-semibold text-danger">{fmt(planTarget.balance)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Tenant</span>
+                    <span>{planTarget.person_name ?? '—'}</span>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Installments *</label>
+                  <input
+                    type="number" min="2" max="24" step="1"
+                    value={planInstallments}
+                    onChange={e => setPlanInstallments(e.target.value)}
+                    className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">First Due Date *</label>
+                  <input
+                    type="date"
+                    value={planStart}
+                    onChange={e => setPlanStart(e.target.value)}
+                    className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+              {planTarget && parseInt(planInstallments) >= 2 && planTarget.balance > 0 && (
+                <p className="text-xs text-text-muted bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg px-3 py-2">
+                  ≈ {fmt(Math.ceil(planTarget.balance / parseInt(planInstallments)))} per installment (last may differ slightly)
+                </p>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
+                <textarea
+                  value={planNotes}
+                  onChange={e => setPlanNotes(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  placeholder="e.g. Agreed with tenant on 25 Jun 2026"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setPlanTarget(null)}>Cancel</Button>
+                <Button
+                  variant="primary" className="flex-1"
+                  disabled={creatingPlan || !planStart || parseInt(planInstallments) < 2}
+                  onClick={handleCreatePlan}
+                >
+                  {creatingPlan ? 'Creating…' : `Create ${planInstallments}-Part Plan`}
                 </Button>
               </div>
             </>

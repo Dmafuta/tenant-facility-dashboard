@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { Card } from '@/components/ui/Card'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Button } from '@/components/ui/Button'
@@ -22,7 +22,7 @@ import {
 import type { WaterSupplierData, ReserveTankData, WaterZoneData, WaterBalancePeriodData } from '@/lib/api/water'
 import { getUnitsFromApi } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
-import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice } from '@/lib/api/disconnection'
+import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice, reconnectNotice } from '@/lib/api/disconnection'
 import { getWaterLossReport, getUnreadMeters, getInvoices, type InvoiceData } from '@/lib/api/invoices'
 import type { DisconnectionNoticeData } from '@/lib/api/disconnection'
 import type { ChargeData } from '@/lib/api/charges'
@@ -2417,6 +2417,37 @@ function ReadingsTab({
     }
   }
 
+  // CSV readings import
+  const csvInputRef = useRef<HTMLInputElement>(null)
+  const [csvImporting, setCsvImporting] = useState(false)
+  const [csvResult, setCsvResult]       = useState<{ imported: number; skipped: number; errors: string[] } | null>(null)
+  const [showCsvModal, setShowCsvModal] = useState(false)
+
+  async function handleCsvImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setCsvImporting(true)
+    setCsvResult(null)
+    setShowCsvModal(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/backend/meter-readings/import-csv', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error ?? data?.message ?? 'Import failed')
+      setCsvResult(data)
+      onRefresh()
+    } catch (err: unknown) {
+      setCsvResult({ imported: 0, skipped: 0, errors: [err instanceof Error ? err.message : 'Import failed'] })
+    } finally {
+      setCsvImporting(false)
+    }
+  }
+
   // Collect unique billing periods for the dropdown
   const periods = useMemo(() => {
     const set = new Set<string>()
@@ -2537,8 +2568,49 @@ function ReadingsTab({
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
             ⬇ Export CSV
           </Button>
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleCsvImport}
+              />
+              <Button size="sm" variant="ghost" onClick={() => csvInputRef.current?.click()} disabled={csvImporting}>
+                {csvImporting ? 'Importing…' : '⬆ Import Readings CSV'}
+              </Button>
+            </>
+          </CanDo>
         </div>
       </div>
+
+      {/* CSV Import Result Modal */}
+      <Modal open={showCsvModal} onClose={() => { setShowCsvModal(false); setCsvResult(null) }} title="Import Readings CSV" size="sm">
+        <div className="p-5 space-y-4">
+          {csvImporting ? (
+            <div className="py-6 text-center text-text-muted text-sm">Importing readings…</div>
+          ) : csvResult ? (
+            <div className="space-y-3">
+              <div className={cn('rounded-lg p-4 text-sm', csvResult.imported > 0 ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning')}>
+                <p className="font-semibold mb-1">{csvResult.imported > 0 ? 'Import Complete' : 'No Rows Imported'}</p>
+                <p>{csvResult.imported} reading(s) imported, {csvResult.skipped} skipped.</p>
+              </div>
+              {csvResult.errors.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-danger">Errors:</p>
+                  <div className="bg-danger/5 border border-danger/20 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    {csvResult.errors.map((e, i) => (
+                      <p key={i} className="text-xs text-danger">{e}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <Button variant="primary" className="w-full" onClick={() => { setShowCsvModal(false); setCsvResult(null) }}>Close</Button>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
 
       {/* Estimated Readings Modal */}
       <Modal open={showEstModal} onClose={() => setShowEstModal(false)} title="Generate Estimated Readings" size="sm">
@@ -2756,6 +2828,7 @@ function DisconnectionTab({
   const formalDays   = settings?.disconnection_formal_days   ?? 14
 
   const [sending, setSending] = useState<string | null>(null)
+  const [reconnecting, setReconnecting] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
   const showToast = (msg: string) => {
@@ -2794,6 +2867,19 @@ function DisconnectionTab({
   const formalDue    = candidates.filter(c => c.stage === 'formal_due')
   const reminderDue  = candidates.filter(c => c.stage === 'reminder_due')
   const overdueClear = candidates.filter(c => c.stage === 'overdue')
+
+  async function handleReconnect(noticeId: string) {
+    setReconnecting(noticeId)
+    try {
+      await reconnectNotice(noticeId)
+      showToast('✅ Reconnection recorded')
+      onRefresh()
+    } catch {
+      showToast('❌ Failed to record reconnection')
+    } finally {
+      setReconnecting(null)
+    }
+  }
 
   function noticeSent(meterId: string, type: 'reminder' | 'formal') {
     return sentNotices.some(n => n.meter_id === meterId && n.notice_type === type)
@@ -3013,6 +3099,7 @@ function DisconnectionTab({
                 <th className="px-4 py-3 text-right font-medium">Outstanding</th>
                 <th className="px-4 py-3 font-medium">Sent By</th>
                 <th className="px-4 py-3 font-medium">Sent At</th>
+                <th className="px-4 py-3 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -3036,6 +3123,19 @@ function DisconnectionTab({
                   <td className="px-4 py-3 text-xs text-gray-600">{n.sent_by ?? '—'}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">
                     {n.sent_at ? new Date(n.sent_at).toLocaleString() : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {n.status === 'reconnected' ? (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">Reconnected</span>
+                    ) : (
+                      <button
+                        disabled={reconnecting === n.id}
+                        onClick={() => handleReconnect(n.id)}
+                        className="rounded px-2 py-0.5 text-xs font-semibold border border-green-600 text-green-700 hover:bg-green-50 disabled:opacity-50"
+                      >
+                        {reconnecting === n.id ? '…' : 'Reconnect'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

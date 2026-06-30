@@ -54,6 +54,13 @@ export interface InvoiceData {
   write_off_requested_by_name: string | null
   write_off_requested_at: string | null
   write_off_request_notes: string | null
+  disputed: boolean
+  dispute_reason: string | null
+  disputed_at: string | null
+  disputed_by: string | null
+  dispute_resolved: boolean
+  dispute_resolved_at: string | null
+  dispute_resolved_by: string | null
   created_at: string
   updated_at: string
   line_items: InvoiceLineItem[] | null
@@ -389,6 +396,33 @@ export async function getUnreadMeters(period: string): Promise<{
   last_reading_date: string | null
 }[]> {
   return apiFetch(`/reports/unread-meters?period=${encodeURIComponent(period)}`)
+}
+
+export async function disputeInvoice(id: string, reason: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/dispute`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export async function resolveDispute(id: string): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/resolve-dispute`, { method: 'POST' })
+}
+
+export interface ConsumptionTrendRow {
+  period: string
+  units_consumed: number
+  amount_due: number
+}
+
+export async function getConsumptionTrend(
+  params: { meterId?: string; unitId?: string; months?: number }
+): Promise<ConsumptionTrendRow[]> {
+  const qs = new URLSearchParams()
+  if (params.meterId) qs.set('meterId', params.meterId)
+  if (params.unitId)  qs.set('unitId', params.unitId)
+  if (params.months)  qs.set('months', String(params.months))
+  return apiFetch<ConsumptionTrendRow[]>(`/reports/consumption-trend?${qs}`)
 }
 
 export async function updateInvoiceCategory(
