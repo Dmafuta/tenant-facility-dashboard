@@ -37,8 +37,8 @@ export const NAV: NavGroup[] = [
   {
     group: 'Facility',
     items: [
-      { label: 'Property',    href: '/property',    icon: '🏢', roles: [FM, FIN, MAINT, RECEP, OWNER] },
-      { label: 'People',      href: '/people',      icon: '👥', roles: [FM, FIN, SEC, RECEP] },
+      { label: 'Property',    href: '/property',    icon: '🏢', roles: [FM, MAINT, RECEP, OWNER] },
+      { label: 'People',      href: '/people',      icon: '👥', roles: [FM, SEC, RECEP] },
       { label: 'Utilities',   href: '/utilities',   icon: '💧', roles: [FM, MAINT] },
       { label: 'Consumables', href: '/consumables', icon: '📦', roles: [FM, MAINT, RECEP] },
     ],
@@ -46,8 +46,8 @@ export const NAV: NavGroup[] = [
   {
     group: 'Leasing',
     items: [
-      { label: 'Leases',      href: '/leases',      icon: '📑', roles: [FM, FIN, OWNER] },
-      { label: 'Onboarding',  href: '/onboarding',  icon: '🎉', roles: [FM, FIN] },
+      { label: 'Leases',      href: '/leases',      icon: '📑', roles: [FM, OWNER] },
+      { label: 'Onboarding',  href: '/onboarding',  icon: '🎉', roles: [FM] },
       { label: 'Inspections', href: '/inspections', icon: '🔍', roles: [FM, MAINT] },
       { label: 'Visitors',    href: '/visitors',    icon: '🚪', roles: [FM, SEC, RECEP] },
     ],
