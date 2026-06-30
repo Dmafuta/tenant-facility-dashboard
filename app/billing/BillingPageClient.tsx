@@ -1359,7 +1359,7 @@ export function BillingPageClient() {
                   <Button variant="primary" onClick={() => loadReport('outstanding')}>Load Outstanding Balances</Button>
                 </div>
               ) : (
-                {(() => {
+                (() => {
                   const oDir = outSortDir === 'asc' ? 1 : -1
                   const oSorted = [...outstandingData].sort((a, b) => {
                     switch (outSortCol) {
@@ -1412,7 +1412,7 @@ export function BillingPageClient() {
                       <Pager page={outPage} total={oSorted.length} onPage={setOutPage} />
                     </Card>
                   )
-                })()}
+                })()
               )}
             </div>
           )}
