@@ -10,7 +10,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # BACKEND_URL is only needed at runtime (server-side fetch), not build time.
-# NEXT_PUBLIC_* vars that are baked in at build time go here if added later.
+# NEXT_PUBLIC_* vars are baked into the client bundle at build time.
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
 RUN npm run build
 
 # ── Stage 3: production runner ────────────────────────────────────────────────

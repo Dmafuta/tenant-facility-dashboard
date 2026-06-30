@@ -1,19 +1,30 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
+
+const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''
 
 type State = 'idle' | 'loading' | 'verified' | 'failed' | 'error'
 
 export default function ResidentVerifyPage() {
-  const [nationalId, setNationalId] = useState('')
-  const [phone,      setPhone]      = useState('')
-  const [state,      setState]      = useState<State>('idle')
-  const [result,     setResult]     = useState<{ name: string; unitLabel: string } | null>(null)
-  const [message,    setMessage]    = useState('')
+  const [nationalId,     setNationalId]     = useState('')
+  const [phone,          setPhone]          = useState('')
+  const [state,          setState]          = useState<State>('idle')
+  const [result,         setResult]         = useState<{ name: string; unitLabel: string } | null>(null)
+  const [message,        setMessage]        = useState('')
+  const [turnstileToken, setTurnstileToken] = useState('')
+
+  const turnstileRef = useRef<TurnstileInstance>(null)
+
+  const canSubmit = state !== 'loading'
+    && !!nationalId.trim()
+    && !!phone.trim()
+    && (!!turnstileToken || !SITE_KEY)   // skip check if site key not configured (dev)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!nationalId.trim() || !phone.trim()) return
+    if (!canSubmit) return
 
     setState('loading')
     setResult(null)
@@ -23,8 +34,13 @@ export default function ResidentVerifyPage() {
       const res = await fetch('/api/backend/public/tenant-verify', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body:    JSON.stringify({ nationalId: nationalId.trim(), phone: phone.trim() }),
+        body:    JSON.stringify({
+          nationalId:     nationalId.trim(),
+          phone:          phone.trim(),
+          turnstileToken: turnstileToken,
+        }),
       })
+
       let json: { success: boolean; data?: { name: string; unitLabel: string }; message?: string }
       try {
         json = await res.json()
@@ -49,6 +65,10 @@ export default function ResidentVerifyPage() {
         ? 'The server returned an unexpected response. Please try again or contact support.'
         : 'Unable to reach the server. Please check your connection.')
       setState('error')
+    } finally {
+      // Reset Turnstile after each attempt so it can't be replayed
+      turnstileRef.current?.reset()
+      setTurnstileToken('')
     }
   }
 
@@ -58,6 +78,8 @@ export default function ResidentVerifyPage() {
     setState('idle')
     setResult(null)
     setMessage('')
+    setTurnstileToken('')
+    turnstileRef.current?.reset()
   }
 
   return (
@@ -151,13 +173,27 @@ export default function ResidentVerifyPage() {
               />
             </div>
 
+            {/* Cloudflare Turnstile */}
+            {SITE_KEY && (
+              <div className="flex justify-center">
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey={SITE_KEY}
+                  onSuccess={token => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken('')}
+                  onError={() => setTurnstileToken('')}
+                  options={{ theme: 'light', size: 'normal' }}
+                />
+              </div>
+            )}
+
             {message && (
               <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{message}</p>
             )}
 
             <button
               type="submit"
-              disabled={state === 'loading' || !nationalId.trim() || !phone.trim()}
+              disabled={!canSubmit}
               className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold text-sm transition-colors disabled:opacity-50"
             >
               {state === 'loading' ? (
