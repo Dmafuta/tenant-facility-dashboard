@@ -52,6 +52,27 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'warni
   written_off:     { label: 'Written Off',     variant: 'purple' },
 }
 
+function Pager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
+  const pages = Math.ceil(total / 15)
+  if (pages <= 1) return null
+  const nums = Array.from({ length: pages }, (_, i) => i + 1).filter(p => Math.abs(p - page) <= 2 || p === 1 || p === pages)
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-t border-surface-border dark:border-dark-border text-sm text-text-muted">
+      <span>{(page - 1) * 15 + 1}–{Math.min(page * 15, total)} of {total}</span>
+      <div className="flex gap-1">
+        <button onClick={() => onPage(page - 1)} disabled={page === 1} className="px-2 py-1 rounded hover:bg-surface-hover dark:hover:bg-dark-hover disabled:opacity-40">‹</button>
+        {nums.map((p, i) => (
+          <span key={p}>
+            {i > 0 && nums[i - 1] !== p - 1 && <span className="px-1">…</span>}
+            <button onClick={() => onPage(p)} className={cn('px-2.5 py-1 rounded text-xs', p === page ? 'bg-primary-500 text-white' : 'hover:bg-surface-hover dark:hover:bg-dark-hover')}>{p}</button>
+          </span>
+        ))}
+        <button onClick={() => onPage(page + 1)} disabled={page === pages} className="px-2 py-1 rounded hover:bg-surface-hover dark:hover:bg-dark-hover disabled:opacity-40">›</button>
+      </div>
+    </div>
+  )
+}
+
 function StatusBadge({ status }: { status: string }) {
   const { label, variant } = STATUS_CONFIG[status] ?? { label: status, variant: 'default' as const }
   return <Badge variant={variant}>{label}</Badge>
@@ -465,8 +486,18 @@ export function BillingPageClient() {
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [periodFilter, setPeriodFilter] = useState('')
-  const [sortCol, setSortCol] = useState<'statement_no' | 'unit_label' | 'person_name' | 'period' | 'current_charges' | 'balance' | 'status'>('statement_no')
+  const [sortCol, setSortCol] = useState<'statement_no' | 'unit_label' | 'person_name' | 'period' | 'due_date' | 'current_charges' | 'balance' | 'status'>('statement_no')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
+  const [agedSortCol, setAgedSortCol] = useState<'statement_no'|'unit_label'|'person_name'|'due_date'|'days_overdue'|'balance'|'bucket'>('days_overdue')
+  const [agedSortDir, setAgedSortDir] = useState<'asc'|'desc'>('desc')
+  const [agedPage, setAgedPage]       = useState(1)
+  const [outSortCol, setOutSortCol]   = useState<'unit_label'|'person_name'|'ws_balance'|'sc_balance'|'ot_balance'|'total_balance'|'earliest_due'>('total_balance')
+  const [outSortDir, setOutSortDir]   = useState<'asc'|'desc'>('desc')
+  const [outPage, setOutPage]         = useState(1)
+  const [colSortCol, setColSortCol]   = useState<'unit_label'|'person_name'|'statement_no'|'billed'|'collected'|'outstanding'|'status'>('outstanding')
+  const [colSortDir, setColSortDir]   = useState<'asc'|'desc'>('desc')
+  const [colPage, setColPage]         = useState(1)
 
   // Detail panel
   const [selected, setSelected]       = useState<InvoiceData | null>(null)
@@ -683,11 +714,16 @@ export function BillingPageClient() {
         case 'period':          return dir * (a.period ?? '').localeCompare(b.period ?? '')
         case 'current_charges': return dir * (a.current_charges - b.current_charges)
         case 'balance':         return dir * (a.balance - b.balance)
+        case 'due_date':        return dir * (a.due_date ?? '').localeCompare(b.due_date ?? '')
         case 'status':          return dir * (a.status ?? '').localeCompare(b.status ?? '')
         default:                return 0
       }
     })
   }, [filtered, sortCol, sortDir])
+
+  const paginated = useMemo(() => sorted.slice((page - 1) * 15, page * 15), [sorted, page])
+
+  useEffect(() => { setPage(1) }, [activeTab, statusFilter, periodFilter, search, sortCol, sortDir])
 
   function handleSort(col: typeof sortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -1251,43 +1287,62 @@ export function BillingPageClient() {
                       </Card>
                     ))}
                   </div>
-                  <Card className="overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
-                          <th className="px-4 py-3 text-left">Statement</th>
-                          <th className="px-4 py-3 text-left">Unit</th>
-                          <th className="px-4 py-3 text-left">Person</th>
-                          <th className="px-4 py-3 text-left">Due Date</th>
-                          <th className="px-4 py-3 text-right">Days Overdue</th>
-                          <th className="px-4 py-3 text-right">Balance</th>
-                          <th className="px-4 py-3 text-center">Bucket</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {agedData.rows.map(row => (
-                          <tr key={row.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
-                            <td className="px-4 py-3 font-mono text-xs">{row.statement_no}</td>
-                            <td className="px-4 py-3">{row.unit_label ?? '—'}</td>
-                            <td className="px-4 py-3 text-text-muted">{row.person_name ?? '—'}</td>
-                            <td className="px-4 py-3 text-text-muted">{fmtDate(row.due_date)}</td>
-                            <td className={cn('px-4 py-3 text-right font-medium', row.days_overdue > 60 ? 'text-danger' : row.days_overdue > 30 ? 'text-orange-500' : 'text-warning')}>
-                              {row.days_overdue}
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-danger">{fmt(row.balance)}</td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', row.bucket === '90+' ? 'bg-danger/10 text-danger' : row.bucket === '61-90' ? 'bg-orange-100 text-orange-700' : row.bucket === '31-60' ? 'bg-warning/10 text-warning' : 'bg-blue-50 text-blue-700')}>
-                                {row.bucket}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {agedData.rows.length === 0 && (
-                          <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No outstanding invoices.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </Card>
+                  {(() => {
+                    const aDir = agedSortDir === 'asc' ? 1 : -1
+                    const aSorted = [...agedData.rows].sort((a, b) => {
+                      switch (agedSortCol) {
+                        case 'statement_no': return aDir * (a.statement_no ?? '').localeCompare(b.statement_no ?? '')
+                        case 'unit_label':   return aDir * (a.unit_label ?? '').localeCompare(b.unit_label ?? '')
+                        case 'person_name':  return aDir * (a.person_name ?? '').localeCompare(b.person_name ?? '')
+                        case 'due_date':     return aDir * (a.due_date ?? '').localeCompare(b.due_date ?? '')
+                        case 'days_overdue': return aDir * (a.days_overdue - b.days_overdue)
+                        case 'balance':      return aDir * (a.balance - b.balance)
+                        case 'bucket':       return aDir * (a.bucket ?? '').localeCompare(b.bucket ?? '')
+                        default:             return 0
+                      }
+                    })
+                    const aSlice = aSorted.slice((agedPage - 1) * 15, agedPage * 15)
+                    const aHdr = (col: typeof agedSortCol, label: string, align = 'left') => (
+                      <th key={col} onClick={() => { if (agedSortCol === col) setAgedSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setAgedSortCol(col); setAgedSortDir('asc'); setAgedPage(1) } }}
+                        className={cn('px-4 py-3 cursor-pointer select-none hover:text-text whitespace-nowrap', align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left')}>
+                        {label}{agedSortCol === col ? (agedSortDir === 'asc' ? ' ↑' : ' ↓') : <span className="opacity-30"> ↕</span>}
+                      </th>
+                    )
+                    return (
+                      <Card className="overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                              {aHdr('statement_no', 'Statement')}
+                              {aHdr('unit_label', 'Unit')}
+                              {aHdr('person_name', 'Person')}
+                              {aHdr('due_date', 'Due Date')}
+                              {aHdr('days_overdue', 'Days Overdue', 'right')}
+                              {aHdr('balance', 'Balance', 'right')}
+                              {aHdr('bucket', 'Bucket', 'center')}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {aSlice.map(row => (
+                              <tr key={row.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                                <td className="px-4 py-3 font-mono text-xs">{row.statement_no}</td>
+                                <td className="px-4 py-3">{row.unit_label ?? '—'}</td>
+                                <td className="px-4 py-3 text-text-muted">{row.person_name ?? '—'}</td>
+                                <td className="px-4 py-3 text-text-muted">{fmtDate(row.due_date)}</td>
+                                <td className={cn('px-4 py-3 text-right font-medium', row.days_overdue > 60 ? 'text-danger' : row.days_overdue > 30 ? 'text-orange-500' : 'text-warning')}>{row.days_overdue}</td>
+                                <td className="px-4 py-3 text-right font-semibold text-danger">{fmt(row.balance)}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', row.bucket === '90+' ? 'bg-danger/10 text-danger' : row.bucket === '61-90' ? 'bg-orange-100 text-orange-700' : row.bucket === '31-60' ? 'bg-warning/10 text-warning' : 'bg-blue-50 text-blue-700')}>{row.bucket}</span>
+                                </td>
+                              </tr>
+                            ))}
+                            {agedData.rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No outstanding invoices.</td></tr>}
+                          </tbody>
+                        </table>
+                        <Pager page={agedPage} total={aSorted.length} onPage={setAgedPage} />
+                      </Card>
+                    )
+                  })()}
                   <div className="text-right text-sm font-semibold">
                     Grand Total Outstanding: <span className="text-danger">{fmt(agedData.summary.grand_total)}</span>
                   </div>
@@ -1304,37 +1359,60 @@ export function BillingPageClient() {
                   <Button variant="primary" onClick={() => loadReport('outstanding')}>Load Outstanding Balances</Button>
                 </div>
               ) : (
-                <Card className="overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
-                        <th className="px-4 py-3 text-left">Unit</th>
-                        <th className="px-4 py-3 text-left">Person</th>
-                        <th className="px-4 py-3 text-right">Water & Sewerage</th>
-                        <th className="px-4 py-3 text-right">Service Charge</th>
-                        <th className="px-4 py-3 text-right">Other</th>
-                        <th className="px-4 py-3 text-right">Total</th>
-                        <th className="px-4 py-3 text-left">Earliest Due</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {outstandingData.map(row => (
-                        <tr key={row.unit_id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
-                          <td className="px-4 py-3 font-medium">{row.unit_label ?? '—'}</td>
-                          <td className="px-4 py-3 text-text-muted">{row.person_name ?? '—'}</td>
-                          <td className="px-4 py-3 text-right">{row.ws_balance > 0 ? fmt(row.ws_balance) : '—'}</td>
-                          <td className="px-4 py-3 text-right">{row.sc_balance > 0 ? fmt(row.sc_balance) : '—'}</td>
-                          <td className="px-4 py-3 text-right">{row.ot_balance > 0 ? fmt(row.ot_balance) : '—'}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-danger">{fmt(row.total_balance)}</td>
-                          <td className="px-4 py-3 text-text-muted">{fmtDate(row.earliest_due)}</td>
-                        </tr>
-                      ))}
-                      {outstandingData.length === 0 && (
-                        <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No outstanding balances.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </Card>
+                {(() => {
+                  const oDir = outSortDir === 'asc' ? 1 : -1
+                  const oSorted = [...outstandingData].sort((a, b) => {
+                    switch (outSortCol) {
+                      case 'unit_label':    return oDir * (a.unit_label ?? '').localeCompare(b.unit_label ?? '')
+                      case 'person_name':   return oDir * (a.person_name ?? '').localeCompare(b.person_name ?? '')
+                      case 'ws_balance':    return oDir * (a.ws_balance - b.ws_balance)
+                      case 'sc_balance':    return oDir * (a.sc_balance - b.sc_balance)
+                      case 'ot_balance':    return oDir * (a.ot_balance - b.ot_balance)
+                      case 'total_balance': return oDir * (a.total_balance - b.total_balance)
+                      case 'earliest_due':  return oDir * (a.earliest_due ?? '').localeCompare(b.earliest_due ?? '')
+                      default:              return 0
+                    }
+                  })
+                  const oSlice = oSorted.slice((outPage - 1) * 15, outPage * 15)
+                  const oHdr = (col: typeof outSortCol, label: string, align = 'left') => (
+                    <th key={col} onClick={() => { if (outSortCol === col) setOutSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setOutSortCol(col); setOutSortDir('asc'); setOutPage(1) } }}
+                      className={cn('px-4 py-3 cursor-pointer select-none hover:text-text whitespace-nowrap', align === 'right' ? 'text-right' : 'text-left')}>
+                      {label}{outSortCol === col ? (outSortDir === 'asc' ? ' ↑' : ' ↓') : <span className="opacity-30"> ↕</span>}
+                    </th>
+                  )
+                  return (
+                    <Card className="overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                            {oHdr('unit_label', 'Unit')}
+                            {oHdr('person_name', 'Person')}
+                            {oHdr('ws_balance', 'Water & Sewerage', 'right')}
+                            {oHdr('sc_balance', 'Service Charge', 'right')}
+                            {oHdr('ot_balance', 'Other', 'right')}
+                            {oHdr('total_balance', 'Total', 'right')}
+                            {oHdr('earliest_due', 'Earliest Due')}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {oSlice.map(row => (
+                            <tr key={row.unit_id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                              <td className="px-4 py-3 font-medium">{row.unit_label ?? '—'}</td>
+                              <td className="px-4 py-3 text-text-muted">{row.person_name ?? '—'}</td>
+                              <td className="px-4 py-3 text-right">{row.ws_balance > 0 ? fmt(row.ws_balance) : '—'}</td>
+                              <td className="px-4 py-3 text-right">{row.sc_balance > 0 ? fmt(row.sc_balance) : '—'}</td>
+                              <td className="px-4 py-3 text-right">{row.ot_balance > 0 ? fmt(row.ot_balance) : '—'}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-danger">{fmt(row.total_balance)}</td>
+                              <td className="px-4 py-3 text-text-muted">{fmtDate(row.earliest_due)}</td>
+                            </tr>
+                          ))}
+                          {outstandingData.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No outstanding balances.</td></tr>}
+                        </tbody>
+                      </table>
+                      <Pager page={outPage} total={oSorted.length} onPage={setOutPage} />
+                    </Card>
+                  )
+                })()}
               )}
             </div>
           )}
@@ -1450,37 +1528,60 @@ export function BillingPageClient() {
                     <span>({collectionData.summary.total_invoices} total)</span>
                   </div>
                   {/* Per-unit table */}
-                  <Card className="overflow-hidden p-0">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide bg-slate-50 dark:bg-dark-card">
-                          <th className="px-4 py-3 text-left">Unit</th>
-                          <th className="px-4 py-3 text-left">Person</th>
-                          <th className="px-4 py-3 text-left">Statement</th>
-                          <th className="px-4 py-3 text-right">Billed</th>
-                          <th className="px-4 py-3 text-right">Collected</th>
-                          <th className="px-4 py-3 text-right">Outstanding</th>
-                          <th className="px-4 py-3 text-left">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {collectionData.rows.map((r, i) => (
-                          <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
-                            <td className="px-4 py-2.5 font-medium text-text">{r.unit_label ?? '—'}</td>
-                            <td className="px-4 py-2.5 text-text-muted">{r.person_name ?? '—'}</td>
-                            <td className="px-4 py-2.5 font-mono text-xs text-text-muted">{r.statement_no}</td>
-                            <td className="px-4 py-2.5 text-right">{fmt(r.billed)}</td>
-                            <td className="px-4 py-2.5 text-right text-success">{fmt(r.collected)}</td>
-                            <td className={cn('px-4 py-2.5 text-right font-semibold', r.outstanding > 0 ? 'text-danger' : 'text-success')}>{fmt(r.outstanding)}</td>
-                            <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
-                          </tr>
-                        ))}
-                        {collectionData.rows.length === 0 && (
-                          <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No invoices for this period and category.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </Card>
+                  {(() => {
+                    const cDir = colSortDir === 'asc' ? 1 : -1
+                    const cSorted = [...collectionData.rows].sort((a, b) => {
+                      switch (colSortCol) {
+                        case 'unit_label':   return cDir * (a.unit_label ?? '').localeCompare(b.unit_label ?? '')
+                        case 'person_name':  return cDir * (a.person_name ?? '').localeCompare(b.person_name ?? '')
+                        case 'statement_no': return cDir * (a.statement_no ?? '').localeCompare(b.statement_no ?? '')
+                        case 'billed':       return cDir * (a.billed - b.billed)
+                        case 'collected':    return cDir * (a.collected - b.collected)
+                        case 'outstanding':  return cDir * (a.outstanding - b.outstanding)
+                        case 'status':       return cDir * (a.status ?? '').localeCompare(b.status ?? '')
+                        default:             return 0
+                      }
+                    })
+                    const cSlice = cSorted.slice((colPage - 1) * 15, colPage * 15)
+                    const cHdr = (col: typeof colSortCol, label: string, align = 'left') => (
+                      <th key={col} onClick={() => { if (colSortCol === col) setColSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setColSortCol(col); setColSortDir('asc'); setColPage(1) } }}
+                        className={cn('px-4 py-3 cursor-pointer select-none hover:text-text whitespace-nowrap bg-slate-50 dark:bg-dark-card', align === 'right' ? 'text-right' : 'text-left')}>
+                        {label}{colSortCol === col ? (colSortDir === 'asc' ? ' ↑' : ' ↓') : <span className="opacity-30"> ↕</span>}
+                      </th>
+                    )
+                    return (
+                      <Card className="overflow-hidden p-0">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                              {cHdr('unit_label', 'Unit')}
+                              {cHdr('person_name', 'Person')}
+                              {cHdr('statement_no', 'Statement')}
+                              {cHdr('billed', 'Billed', 'right')}
+                              {cHdr('collected', 'Collected', 'right')}
+                              {cHdr('outstanding', 'Outstanding', 'right')}
+                              {cHdr('status', 'Status')}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cSlice.map((r, i) => (
+                              <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
+                                <td className="px-4 py-2.5 font-medium text-text">{r.unit_label ?? '—'}</td>
+                                <td className="px-4 py-2.5 text-text-muted">{r.person_name ?? '—'}</td>
+                                <td className="px-4 py-2.5 font-mono text-xs text-text-muted">{r.statement_no}</td>
+                                <td className="px-4 py-2.5 text-right">{fmt(r.billed)}</td>
+                                <td className="px-4 py-2.5 text-right text-success">{fmt(r.collected)}</td>
+                                <td className={cn('px-4 py-2.5 text-right font-semibold', r.outstanding > 0 ? 'text-danger' : 'text-success')}>{fmt(r.outstanding)}</td>
+                                <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                              </tr>
+                            ))}
+                            {collectionData.rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-text-muted">No invoices for this period and category.</td></tr>}
+                          </tbody>
+                        </table>
+                        <Pager page={colPage} total={cSorted.length} onPage={setColPage} />
+                      </Card>
+                    )
+                  })()}
                 </>
               )}
             </div>
@@ -1637,8 +1738,8 @@ export function BillingPageClient() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
-                  {(['statement_no','unit_label','person_name','period','current_charges','balance','status'] as const).map((col, i) => {
-                    const labels: Record<string, string> = { statement_no: 'Statement', unit_label: 'Unit / Account', person_name: 'Person', period: 'Period', current_charges: 'Charges', balance: 'Balance', status: 'Status' }
+                  {(['statement_no','unit_label','person_name','period','due_date','current_charges','balance','status'] as const).map((col, i) => {
+                    const labels: Record<string, string> = { statement_no: 'Statement', unit_label: 'Unit / Account', person_name: 'Person', period: 'Period', due_date: 'Due Date', current_charges: 'Charges', balance: 'Balance', status: 'Status' }
                     const isRight = col === 'current_charges' || col === 'balance'
                     const isCenter = col === 'status'
                     return (
@@ -1651,7 +1752,7 @@ export function BillingPageClient() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(inv => (
+                {paginated.map(inv => (
                   <tr
                     key={inv.id}
                     onClick={() => openDetail(inv)}
@@ -1669,6 +1770,7 @@ export function BillingPageClient() {
                     </td>
                     <td className="px-4 py-3 text-text-muted">{inv.person_name ?? '—'}</td>
                     <td className="px-4 py-3 text-text-muted">{inv.period ?? '—'}</td>
+                    <td className="px-4 py-3 text-text-muted">{fmtDate(inv.due_date ?? null)}</td>
                     <td className="px-4 py-3 text-right">{fmt(inv.current_charges)}</td>
                     <td className={cn(
                       'px-4 py-3 text-right font-semibold',
@@ -1729,6 +1831,7 @@ export function BillingPageClient() {
               </tbody>
             </table>
           )}
+          <Pager page={page} total={sorted.length} onPage={setPage} />
         </Card>
 
         {/* Detail panel */}
