@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@marsidev/react-turnstile": "^1.5.3",
     "autoprefixer": "^10.5.0",
     "clsx": "^2.1.1",
     "docxtemplater": "^3.68.7",
