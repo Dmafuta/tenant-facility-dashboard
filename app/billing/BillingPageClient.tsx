@@ -465,6 +465,8 @@ export function BillingPageClient() {
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [periodFilter, setPeriodFilter] = useState('')
+  const [sortCol, setSortCol] = useState<'statement_no' | 'unit_label' | 'person_name' | 'period' | 'current_charges' | 'balance' | 'status'>('statement_no')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   // Detail panel
   const [selected, setSelected]       = useState<InvoiceData | null>(null)
@@ -670,6 +672,27 @@ export function BillingPageClient() {
       return true
     })
   }, [invoices, activeTab, statusFilter, periodFilter, search])
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      switch (sortCol) {
+        case 'statement_no':    return dir * (a.statement_no ?? '').localeCompare(b.statement_no ?? '')
+        case 'unit_label':      return dir * (a.unit_label ?? '').localeCompare(b.unit_label ?? '')
+        case 'person_name':     return dir * (a.person_name ?? '').localeCompare(b.person_name ?? '')
+        case 'period':          return dir * (a.period ?? '').localeCompare(b.period ?? '')
+        case 'current_charges': return dir * (a.current_charges - b.current_charges)
+        case 'balance':         return dir * (a.balance - b.balance)
+        case 'status':          return dir * (a.status ?? '').localeCompare(b.status ?? '')
+        default:                return 0
+      }
+    })
+  }, [filtered, sortCol, sortDir])
+
+  function handleSort(col: typeof sortCol) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
 
   // Stats for active tab
   const tabStats = useMemo(() => {
@@ -1614,18 +1637,21 @@ export function BillingPageClient() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
-                  <th className="px-4 py-3 text-left">Statement</th>
-                  <th className="px-4 py-3 text-left">Unit / Account</th>
-                  <th className="px-4 py-3 text-left">Person</th>
-                  <th className="px-4 py-3 text-left">Period</th>
-                  <th className="px-4 py-3 text-right">Charges</th>
-                  <th className="px-4 py-3 text-right">Balance</th>
-                  <th className="px-4 py-3 text-center">Status</th>
+                  {(['statement_no','unit_label','person_name','period','current_charges','balance','status'] as const).map((col, i) => {
+                    const labels: Record<string, string> = { statement_no: 'Statement', unit_label: 'Unit / Account', person_name: 'Person', period: 'Period', current_charges: 'Charges', balance: 'Balance', status: 'Status' }
+                    const isRight = col === 'current_charges' || col === 'balance'
+                    const isCenter = col === 'status'
+                    return (
+                      <th key={col} onClick={() => handleSort(col)} className={cn('px-4 py-3 cursor-pointer select-none hover:text-text whitespace-nowrap', isRight ? 'text-right' : isCenter ? 'text-center' : 'text-left')}>
+                        {labels[col]}{sortCol === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : <span className="opacity-30"> ↕</span>}
+                      </th>
+                    )
+                  })}
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(inv => (
+                {sorted.map(inv => (
                   <tr
                     key={inv.id}
                     onClick={() => openDetail(inv)}
