@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 type State = 'idle' | 'loading' | 'verified' | 'failed' | 'error'
 
-export default function VerifyPage() {
+export default function ResidentVerifyPage() {
   const [nationalId, setNationalId] = useState('')
   const [phone,      setPhone]      = useState('')
   const [state,      setState]      = useState<State>('idle')

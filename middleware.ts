@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getAllowedPaths, ROLE_HOME, NAV } from '@/lib/nav-config'
 
 const BACKEND      = process.env.BACKEND_URL ?? 'http://localhost:8081'
-const PUBLIC_PATHS = ['/login', '/verify', '/auth/magic', '/accept-invite', '/reset-password', '/pwa-only', '/api/backend/auth', '/api/auth', '/api/backend/settings/brand']
+const PUBLIC_PATHS = ['/login', '/verify', '/resident-verify', '/auth/magic', '/accept-invite', '/reset-password', '/pwa-only', '/api/backend/auth', '/api/auth', '/api/backend/settings/brand']
 
 // All first-level nav paths (used to decide whether to apply the role guard)
 const NAV_PATHS = NAV.flatMap(g => g.items).map(i => i.href)
