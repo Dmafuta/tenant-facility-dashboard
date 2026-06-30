@@ -54,6 +54,11 @@ const POLICY: PolicyRule[] = [
     actions: ['read','write'],
     resources: ['utility','unit'],
   },
+  {
+    roles: ['field_technician'],
+    actions: ['read','write'],
+    resources: ['utility','unit'],
+  },
 ]
 
 export function evaluate(
