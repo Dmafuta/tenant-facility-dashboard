@@ -396,8 +396,34 @@ function NotificationSettings() {
     ]},
   ]
 
+  const paused = !!form.notifications_paused
+
   return (
     <div className="p-6 space-y-6 overflow-y-auto">
+      {/* ── Master pause banner ── */}
+      <div className={`rounded-xl border-2 px-5 py-4 flex items-center justify-between gap-4 ${paused ? 'border-warning bg-warning/10' : 'border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface'}`}>
+        <div>
+          <p className={`text-sm font-semibold ${paused ? 'text-warning' : 'text-text'}`}>
+            {paused ? '⚠ All notifications are paused' : 'Notifications active'}
+          </p>
+          <p className="text-xs text-text-muted mt-0.5">
+            {paused
+              ? 'No billing emails, payment receipts, or alerts will be sent. Auth emails (OTP, invites) are unaffected.'
+              : 'Billing emails, payment receipts, and alerts send normally. Toggle to pause all outgoing notifications.'}
+          </p>
+        </div>
+        <button
+          onClick={async () => {
+            const updated = { ...form, notifications_paused: !paused }
+            setForm(updated)
+            await updateSettings({ notifications_paused: !paused })
+          }}
+          className={`flex-shrink-0 w-12 h-6 rounded-full relative cursor-pointer transition-colors ${paused ? 'bg-warning' : 'bg-success'}`}
+        >
+          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow transition-all ${paused ? 'left-0.5' : 'right-0.5'}`} />
+        </button>
+      </div>
+
       {sections.map(section => (
         <div key={section.category}>
           <h3 className="text-sm font-semibold text-text mb-3">{section.category}</h3>
