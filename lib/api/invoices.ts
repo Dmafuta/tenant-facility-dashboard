@@ -416,7 +416,7 @@ export async function getWaterLossReport(period: string): Promise<{
   return apiFetch(`/reports/water-loss?period=${encodeURIComponent(period)}`)
 }
 
-export async function getUnreadMeters(period: string): Promise<{
+export interface UnreadMeterRow {
   id: string
   meter_number: string
   unit_id: string | null
@@ -426,8 +426,23 @@ export async function getUnreadMeters(period: string): Promise<{
   meter_role: string | null
   last_reading: number | null
   last_reading_date: string | null
-}[]> {
-  return apiFetch(`/reports/unread-meters?period=${encodeURIComponent(period)}`)
+}
+
+export interface UnreadMetersPage {
+  content: UnreadMeterRow[]
+  totalElements: number
+  totalPages: number
+}
+
+export async function getUnreadMeters(
+  period: string,
+  params?: { search?: string; page?: number; size?: number }
+): Promise<UnreadMetersPage> {
+  const qs = new URLSearchParams({ period })
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page   != null) qs.set('page', String(params.page))
+  if (params?.size   != null) qs.set('size', String(params.size))
+  return apiFetch(`/reports/unread-meters?${qs}`)
 }
 
 export async function disputeInvoice(id: string, reason: string): Promise<InvoiceData> {

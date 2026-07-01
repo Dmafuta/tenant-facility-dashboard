@@ -3928,18 +3928,20 @@ export function UtilitiesPageClient() {
     water_loss_m3: number; loss_pct: number; supplier_count: number; consumer_count: number
     supplier_readings: Record<string, unknown>[]; consumer_readings: Record<string, unknown>[]
   } | null>(null)
-  const [unreadMetersData, setUnreadMetersData] = useState<{
-    id: string; meter_number: string; unit_id: string | null; unit_label: string | null
-    utility_type: string; meter_type: string; meter_role: string | null
-    last_reading: number | null; last_reading_date: string | null
-  }[] | null>(null)
+  const [unreadMetersData, setUnreadMetersData] = useState<import('@/lib/api/invoices').UnreadMetersPage | null>(null)
   const [reportLoading, setReportLoading]   = useState(false)
   const [reportError, setReportError]       = useState<string | null>(null)
+  const [unreadSearch, setUnreadSearch]     = useState('')
+  const [unreadPage, setUnreadPage]         = useState(0)
+  const UNREAD_PAGE_SIZE = 20
 
-  const loadReports = useCallback(async (period: string) => {
+  const loadReports = useCallback(async (period: string, search = '', pg = 0) => {
     setReportLoading(true); setReportError(null)
     try {
-      const [wl, um] = await Promise.all([getWaterLossReport(period), getUnreadMeters(period)])
+      const [wl, um] = await Promise.all([
+        getWaterLossReport(period),
+        getUnreadMeters(period, { search: search || undefined, page: pg, size: UNREAD_PAGE_SIZE }),
+      ])
       setWaterLossData(wl); setUnreadMetersData(um)
     } catch (e: unknown) {
       setReportError(e instanceof Error ? e.message : 'Failed to load reports')
@@ -4120,10 +4122,14 @@ export function UtilitiesPageClient() {
               <input
                 type="month"
                 value={reportPeriod}
-                onChange={e => { setReportPeriod(e.target.value); loadReports(e.target.value) }}
+                onChange={e => {
+                  setReportPeriod(e.target.value)
+                  setUnreadSearch(''); setUnreadPage(0)
+                  loadReports(e.target.value, '', 0)
+                }}
                 className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
-              <Button variant="outline" size="sm" disabled={reportLoading} onClick={() => loadReports(reportPeriod)}>
+              <Button variant="outline" size="sm" disabled={reportLoading} onClick={() => { setUnreadPage(0); loadReports(reportPeriod, unreadSearch, 0) }}>
                 {reportLoading ? 'Loading…' : 'Refresh'}
               </Button>
               {waterLossData && (
@@ -4137,10 +4143,10 @@ export function UtilitiesPageClient() {
                   a.download = `water-loss-${reportPeriod}.csv`; a.click()
                 }}>⬇ Water Loss CSV</Button>
               )}
-              {unreadMetersData && unreadMetersData.length > 0 && (
+              {unreadMetersData && unreadMetersData.totalElements > 0 && (
                 <Button size="sm" variant="ghost" onClick={() => {
                   const headers = ['Unit', 'Meter No', 'Utility', 'Type', 'Last Reading', 'Last Read Date']
-                  const rows = unreadMetersData.map(m => [m.unit_label ?? '', m.meter_number, m.utility_type, m.meter_type, m.last_reading ?? '', m.last_reading_date ?? ''])
+                  const rows = unreadMetersData.content.map(m => [m.unit_label ?? '', m.meter_number, m.utility_type, m.meter_type, m.last_reading ?? '', m.last_reading_date ?? ''])
                   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v)}"`).join(',')).join('\n')
                   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
                   a.download = `unread-meters-${reportPeriod}.csv`; a.click()
@@ -4188,49 +4194,86 @@ export function UtilitiesPageClient() {
             {/* Unread Meters Report */}
             {unreadMetersData && (
               <Card className="overflow-hidden">
-                <div className="px-5 py-4 border-b border-surface-border dark:border-dark-border flex items-center justify-between">
-                  <h3 className="font-semibold text-text">Unread Meters — {reportPeriod}</h3>
-                  <span className={cn(
-                    'inline-flex px-2 py-0.5 rounded text-xs font-medium',
-                    unreadMetersData.length > 0 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'
-                  )}>
-                    {unreadMetersData.length} unread
-                  </span>
+                <div className="px-5 py-4 border-b border-surface-border dark:border-dark-border flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-semibold text-text">Unread Meters — {reportPeriod}</h3>
+                    <span className={cn(
+                      'inline-flex px-2 py-0.5 rounded text-xs font-medium',
+                      unreadMetersData.totalElements > 0 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'
+                    )}>
+                      {unreadMetersData.totalElements} unread
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search unit, meter no, utility…"
+                    value={unreadSearch}
+                    onChange={e => {
+                      setUnreadSearch(e.target.value)
+                      setUnreadPage(0)
+                      loadReports(reportPeriod, e.target.value, 0)
+                    }}
+                    className="h-8 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 w-56"
+                  />
                 </div>
-                {unreadMetersData.length === 0 ? (
-                  <p className="p-5 text-sm text-text-muted text-center">All active meters have readings for {reportPeriod}. ✅</p>
+                {unreadMetersData.totalElements === 0 ? (
+                  <p className="p-5 text-sm text-text-muted text-center">
+                    {unreadSearch ? 'No unread meters match your search.' : `All active meters have readings for ${reportPeriod}. ✅`}
+                  </p>
                 ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
-                        <th className="px-4 py-3 text-left">Unit</th>
-                        <th className="px-4 py-3 text-left">Meter No.</th>
-                        <th className="px-4 py-3 text-left">Utility</th>
-                        <th className="px-4 py-3 text-left">Type</th>
-                        <th className="px-4 py-3 text-right">Last Reading</th>
-                        <th className="px-4 py-3 text-left">Last Read Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {unreadMetersData.map(m => (
-                        <tr key={m.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
-                          <td className="px-4 py-3 font-medium">{m.unit_label ?? '—'}</td>
-                          <td className="px-4 py-3 font-mono text-xs">{m.meter_number}</td>
-                          <td className="px-4 py-3">{utilityLabel(m.utility_type)}</td>
-                          <td className="px-4 py-3">{meterTypeBadge(m.meter_type)}</td>
-                          <td className="px-4 py-3 text-right text-text-muted">{m.last_reading != null ? m.last_reading.toLocaleString() : '—'}</td>
-                          <td className="px-4 py-3 text-text-muted text-xs">{m.last_reading_date ?? '—'}</td>
+                  <>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide">
+                          <th className="px-4 py-3 text-left">Unit</th>
+                          <th className="px-4 py-3 text-left">Meter No.</th>
+                          <th className="px-4 py-3 text-left">Utility</th>
+                          <th className="px-4 py-3 text-left">Type</th>
+                          <th className="px-4 py-3 text-right">Last Reading</th>
+                          <th className="px-4 py-3 text-left">Last Read Date</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {unreadMetersData.content.map(m => (
+                          <tr key={m.id} className="border-b border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                            <td className="px-4 py-3 font-medium">{m.unit_label ?? '—'}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{m.meter_number}</td>
+                            <td className="px-4 py-3">{utilityLabel(m.utility_type)}</td>
+                            <td className="px-4 py-3">{meterTypeBadge(m.meter_type)}</td>
+                            <td className="px-4 py-3 text-right text-text-muted">{m.last_reading != null ? m.last_reading.toLocaleString() : '—'}</td>
+                            <td className="px-4 py-3 text-text-muted text-xs">{m.last_reading_date ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {unreadMetersData.totalPages > 1 && (
+                      <div className="px-4 py-3 border-t border-surface-border dark:border-dark-border flex items-center justify-between text-sm text-text-muted">
+                        <span>
+                          {unreadPage * UNREAD_PAGE_SIZE + 1}–{Math.min((unreadPage + 1) * UNREAD_PAGE_SIZE, unreadMetersData.totalElements)} of {unreadMetersData.totalElements}
+                        </span>
+                        <div className="flex gap-1">
+                          <button
+                            disabled={unreadPage === 0 || reportLoading}
+                            onClick={() => { const p = unreadPage - 1; setUnreadPage(p); loadReports(reportPeriod, unreadSearch, p) }}
+                            className="px-2 py-1 rounded border border-surface-border dark:border-dark-border disabled:opacity-40 hover:bg-surface-hover dark:hover:bg-dark-hover"
+                          >‹</button>
+                          <span className="px-3 py-1">Page {unreadPage + 1} of {unreadMetersData.totalPages}</span>
+                          <button
+                            disabled={unreadPage >= unreadMetersData.totalPages - 1 || reportLoading}
+                            onClick={() => { const p = unreadPage + 1; setUnreadPage(p); loadReports(reportPeriod, unreadSearch, p) }}
+                            className="px-2 py-1 rounded border border-surface-border dark:border-dark-border disabled:opacity-40 hover:bg-surface-hover dark:hover:bg-dark-hover"
+                          >›</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </Card>
             )}
 
-            {!waterLossData && !unreadMetersData && !reportLoading && (
+            {!waterLossData && !unreadMetersData && !reportLoading && !reportError && (
               <p className="text-center text-text-muted text-sm py-8">
-                Select a period and click <strong>Load Reports</strong> to view the water loss and unread meters reports.
+                Select a period and click <strong>Refresh</strong> to view the water loss and unread meters reports.
               </p>
             )}
           </div>
