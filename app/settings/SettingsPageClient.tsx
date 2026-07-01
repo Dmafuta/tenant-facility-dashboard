@@ -18,7 +18,7 @@ import {
 } from '@/lib/api/opening-balances'
 import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 import {
-  getSettings, updateSettings, listSystemUsers, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
+  getSettings, updateSettings, listSystemUsers, listSystemUsersPaged, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
   getRulesDocumentInfo, uploadRulesDocument, deleteRulesDocument,
   resetTestData,
@@ -714,19 +714,27 @@ function BrandingSettings() {
 // ── Users & Permissions ───────────────────────────────────────────────────────
 type UserSortKey = 'fullName' | 'email' | 'role' | 'status'
 
-function UsersSettings() {
-  const [users, setUsers]         = useState<SystemUser[]>([])
-  const [roles, setRoles]         = useState<AppRole[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [showInvite, setShowInvite] = useState(false)
-  const [editUser, setEditUser]   = useState<SystemUser | null>(null)
-  const [saving, setSaving]       = useState(false)
-  const [error, setError]         = useState('')
+const USER_PAGE_SIZE = 20
 
-  // Search + sort
-  const [search, setSearch]       = useState('')
-  const [sortKey, setSortKey]     = useState<UserSortKey>('fullName')
-  const [sortAsc, setSortAsc]     = useState(true)
+function UsersSettings() {
+  const [users, setUsers]           = useState<SystemUser[]>([])
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalElements, setTotalElements] = useState(0)
+  const [page, setPage]             = useState(0)
+  const [roles, setRoles]           = useState<AppRole[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [showInvite, setShowInvite] = useState(false)
+  const [editUser, setEditUser]     = useState<SystemUser | null>(null)
+  const [saving, setSaving]         = useState(false)
+  const [error, setError]           = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // Search + sort + status filter
+  const [search, setSearch]           = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [sortKey, setSortKey]         = useState<UserSortKey>('fullName')
+  const [sortAsc, setSortAsc]         = useState(true)
 
   // Invite form
   const [invEmail,      setInvEmail]      = useState('')
@@ -738,19 +746,40 @@ function UsersSettings() {
   const [editRole,   setEditRole]   = useState('')
   const [editStatus, setEditStatus] = useState('')
 
+  // Debounce search
   useEffect(() => {
-    Promise.all([listSystemUsers(), listRoles()])
-      .then(([u, r]) => { setUsers(u); setRoles(r) })
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(0) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Fetch users (server-side)
+  useEffect(() => {
+    setLoading(true)
+    listSystemUsersPaged({
+      search:  debouncedSearch || undefined,
+      status:  statusFilter    || undefined,
+      sortBy:  sortKey,
+      sortDir: sortAsc ? 'asc' : 'desc',
+      page,
+      size: USER_PAGE_SIZE,
+    })
+      .then(d => { setUsers(d.content); setTotalPages(d.totalPages); setTotalElements(d.totalElements) })
+      .catch(() => {})
       .finally(() => setLoading(false))
+  }, [debouncedSearch, statusFilter, sortKey, sortAsc, page, refreshKey])
+
+  // Fetch roles once
+  useEffect(() => {
+    listRoles().then(setRoles).catch(() => {})
   }, [])
 
   async function handleInvite() {
     if (!invEmail.trim() || !invRole) { setError('Email and role are required.'); return }
     setSaving(true); setError('')
     try {
-      const user = await inviteUser({ email: invEmail.trim(), full_name: invName.trim(), role_id: invRole, person_type: invPersonType })
-      setUsers(prev => [...prev, user])
+      await inviteUser({ email: invEmail.trim(), full_name: invName.trim(), role_id: invRole, person_type: invPersonType })
       setShowInvite(false); setInvEmail(''); setInvName(''); setInvRole(''); setInvPersonType('permanent_staff')
+      setRefreshKey(k => k + 1)
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to invite user.') }
     finally { setSaving(false) }
   }
@@ -759,12 +788,12 @@ function UsersSettings() {
     if (!editUser) return
     setSaving(true); setError('')
     try {
-      const updated = await updateSystemUser(editUser.id, {
-        ...(editRole   ? { role_id: editRole }         : {}),
-        ...(editStatus ? { status:  editStatus.toLowerCase() } : {}),
+      await updateSystemUser(editUser.id, {
+        ...(editRole   ? { role_id: editRole }                  : {}),
+        ...(editStatus ? { status:  editStatus.toLowerCase() }  : {}),
       })
-      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u))
       setEditUser(null)
+      setRefreshKey(k => k + 1)
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update user.') }
     finally { setSaving(false) }
   }
@@ -773,7 +802,7 @@ function UsersSettings() {
     if (!confirm(`Deactivate ${user.fullName}? They will lose portal access.`)) return
     try {
       await deactivateSystemUser(user.id)
-      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'inactive' } : u))
+      setRefreshKey(k => k + 1)
     } catch (e) { alert(e instanceof Error ? e.message : 'Failed to deactivate user.') }
   }
 
@@ -786,19 +815,8 @@ function UsersSettings() {
 
   function toggleSort(key: UserSortKey) {
     if (sortKey === key) setSortAsc(a => !a)
-    else { setSortKey(key); setSortAsc(true) }
+    else { setSortKey(key); setSortAsc(true); setPage(0) }
   }
-
-  const filteredUsers = users
-    .filter(u => {
-      const q = search.toLowerCase()
-      return !q || u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q)
-    })
-    .sort((a, b) => {
-      const va = (a[sortKey] ?? '').toLowerCase()
-      const vb = (b[sortKey] ?? '').toLowerCase()
-      return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va)
-    })
 
   const SortIcon = ({ col }: { col: UserSortKey }) => (
     <span className="ml-1 text-[10px] text-text-muted">
@@ -808,15 +826,28 @@ function UsersSettings() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-text shrink-0">Portal Users</h3>
-        <input
-          type="search"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search users…"
-          className="flex-1 max-w-xs px-3 py-1.5 text-xs rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
-        />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h3 className="text-sm font-semibold text-text shrink-0">
+          Portal Users{!loading && totalElements > 0 && <span className="ml-1.5 text-xs font-normal text-text-muted">({totalElements})</span>}
+        </h3>
+        <div className="flex items-center gap-2 flex-1 flex-wrap">
+          <input
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search users…"
+            className="flex-1 min-w-[160px] max-w-xs px-3 py-1.5 text-xs rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <select
+            value={statusFilter}
+            onChange={e => { setStatusFilter(e.target.value); setPage(0) }}
+            className="px-2 py-1.5 text-xs rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
         <button onClick={() => { setShowInvite(true); setError('') }}
           className="px-3 py-1.5 text-xs font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700 shrink-0">
           + Invite User
@@ -825,6 +856,7 @@ function UsersSettings() {
 
       <div className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl overflow-hidden">
         {loading ? <p className="px-4 py-6 text-sm text-text-muted">Loading…</p> : (
+          <>
           <table className="w-full text-sm">
             <thead className="bg-surface-hover dark:bg-dark-hover">
               <tr>
@@ -846,10 +878,10 @@ function UsersSettings() {
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
-              {filteredUsers.length === 0 && (
+              {users.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-6 text-sm text-text-muted text-center">No users match your search.</td></tr>
               )}
-              {filteredUsers.map(u => (
+              {users.map(u => (
                 <tr key={u.id} className="hover:bg-surface-hover dark:hover:bg-dark-hover">
                   <td className="px-4 py-3 text-text font-medium">{u.fullName}</td>
                   <td className="px-4 py-3 text-text-muted">{u.email}</td>
@@ -884,8 +916,8 @@ function UsersSettings() {
                       {u.status !== 'active' && (
                         <button onClick={async () => {
                           try {
-                            const updated = await updateSystemUser(u.id, { status: 'active' })
-                            setUsers(prev => prev.map(x => x.id === updated.id ? updated : x))
+                            await updateSystemUser(u.id, { status: 'active' })
+                            setRefreshKey(k => k + 1)
                           } catch (e) { alert(e instanceof Error ? e.message : 'Failed to reactivate.') }
                         }} className="text-xs text-success hover:underline">Reactivate</button>
                       )}
@@ -895,6 +927,30 @@ function UsersSettings() {
               ))}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-surface-border dark:border-dark-border text-xs text-text-muted">
+              <span>{page * USER_PAGE_SIZE + 1}–{Math.min((page + 1) * USER_PAGE_SIZE, totalElements)} of {totalElements}</span>
+              <div className="flex gap-1">
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                  className="px-2 py-1 rounded hover:bg-surface-hover dark:hover:bg-dark-hover disabled:opacity-40">‹</button>
+                {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+                  const p = totalPages <= 7 ? i
+                    : page <= 3 ? i
+                    : page >= totalPages - 4 ? totalPages - 7 + i
+                    : page - 3 + i
+                  return (
+                    <button key={p} onClick={() => setPage(p)}
+                      className={cn('px-2 py-1 rounded', p === page ? 'bg-primary-600 text-white font-medium' : 'hover:bg-surface-hover dark:hover:bg-dark-hover')}>
+                      {p + 1}
+                    </button>
+                  )
+                })}
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                  className="px-2 py-1 rounded hover:bg-surface-hover dark:hover:bg-dark-hover disabled:opacity-40">›</button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
 

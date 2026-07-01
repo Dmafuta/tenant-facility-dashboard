@@ -89,8 +89,32 @@ export function updateSettings(payload: Partial<FacilitySettings>): Promise<Faci
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
+export interface SystemUserPageData {
+  content: SystemUser[]
+  totalElements: number
+  totalPages: number
+}
+
 export function listSystemUsers(): Promise<SystemUser[]> {
   return apiFetch('/settings/users')
+}
+
+export function listSystemUsersPaged(params: {
+  search?: string
+  status?: string
+  sortBy?: string
+  sortDir?: string
+  page?: number
+  size?: number
+}): Promise<SystemUserPageData> {
+  const qs = new URLSearchParams()
+  if (params.search) qs.set('search', params.search)
+  if (params.status) qs.set('status', params.status)
+  if (params.sortBy) qs.set('sortBy', params.sortBy)
+  if (params.sortDir) qs.set('sortDir', params.sortDir)
+  qs.set('page', String(params.page ?? 0))
+  qs.set('size', String(params.size ?? 20))
+  return apiFetch<SystemUserPageData>(`/settings/users/paged?${qs}`)
 }
 
 export function inviteUser(payload: { email: string; full_name: string; role_id: string; person_type?: string }): Promise<SystemUser> {
