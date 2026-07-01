@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/cn'
 import {
-  getInvoices, getInvoice, issueInvoice, voidInvoice, applyPayment, removePayment,
+  getInvoicesPaged, getInvoice, issueInvoice, voidInvoice, applyPayment, removePayment,
   bulkIssueInvoices, sendInvoiceEmail, applyLateFees,
   writeOffInvoice, bulkEmailInvoices, sendInvoiceDisconnectionNotice,
   getAgedDebtors, getBillingSummary, getOutstandingBalances,
@@ -499,6 +499,14 @@ export function BillingPageClient() {
   const [colSortDir, setColSortDir]   = useState<'asc'|'desc'>('desc')
   const [colPage, setColPage]         = useState(1)
 
+  // Server-side pagination state
+  const [totalElements, setTotalElements] = useState(0)
+  const [tabStats, setTabStats] = useState({ outstanding: 0, collected: 0, drafts: 0 })
+  const [periods, setPeriods]   = useState<string[]>([])
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const refresh = () => setRefreshKey(k => k + 1)
+
   // Detail panel
   const [selected, setSelected]       = useState<InvoiceData | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -658,20 +666,43 @@ export function BillingPageClient() {
   const [actioning, setActioning]     = useState<string | null>(null)
   const [error, setError]             = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [inv, cats] = await Promise.all([getInvoices(), getInvoiceCategories()])
-      setInvoices(inv)
-      setCategories(cats)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load invoices')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // Load categories once
+  useEffect(() => { getInvoiceCategories().then(setCategories).catch(() => {}) }, [])
 
-  useEffect(() => { load() }, [load])
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Main paginated fetch — reruns whenever any filter/sort/page/refresh changes
+  useEffect(() => {
+    if (!['WS', 'SC', 'OT'].includes(activeTab)) return
+    let cancelled = false
+    setLoading(true)
+    getInvoicesPaged({
+      categoryCode: activeTab,
+      status:  statusFilter !== 'all' ? statusFilter : undefined,
+      period:  periodFilter  || undefined,
+      search:  debouncedSearch || undefined,
+      page:    page - 1,
+      size:    15,
+      sortBy:  sortCol,
+      sortDir,
+    }).then(result => {
+      if (!cancelled) {
+        setInvoices(result.content)
+        setTotalElements(result.totalElements)
+        setTabStats({ outstanding: result.tabOutstanding, collected: result.tabCollected, drafts: result.tabDrafts })
+        setPeriods(result.periods)
+      }
+    }).catch(e => {
+      if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load invoices')
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [activeTab, statusFilter, periodFilter, debouncedSearch, page, sortCol, sortDir, refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch unallocated credits when an issued/partial invoice is selected
   useEffect(() => {
@@ -686,65 +717,10 @@ export function BillingPageClient() {
       .finally(() => setCreditsLoading(false))
   }, [selected?.id, selected?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Filtered list ────────────────────────────────────────────────────────
-
-  const filtered = useMemo(() => {
-    return invoices.filter(inv => {
-      if (inv.category_code !== activeTab) return false
-      if (statusFilter !== 'all' && inv.status !== statusFilter) return false
-      if (periodFilter && inv.period !== periodFilter) return false
-      if (search) {
-        const q = search.toLowerCase()
-        const unit   = (inv.unit_label   ?? '').toLowerCase()
-        const person = (inv.person_name  ?? '').toLowerCase()
-        const stmt   = (inv.statement_no ?? '').toLowerCase()
-        if (!unit.includes(q) && !person.includes(q) && !stmt.includes(q)) return false
-      }
-      return true
-    })
-  }, [invoices, activeTab, statusFilter, periodFilter, search])
-
-  const sorted = useMemo(() => {
-    const dir = sortDir === 'asc' ? 1 : -1
-    return [...filtered].sort((a, b) => {
-      switch (sortCol) {
-        case 'statement_no':    return dir * (a.statement_no ?? '').localeCompare(b.statement_no ?? '')
-        case 'unit_label':      return dir * (a.unit_label ?? '').localeCompare(b.unit_label ?? '')
-        case 'person_name':     return dir * (a.person_name ?? '').localeCompare(b.person_name ?? '')
-        case 'period':          return dir * (a.period ?? '').localeCompare(b.period ?? '')
-        case 'current_charges': return dir * (a.current_charges - b.current_charges)
-        case 'balance':         return dir * (a.balance - b.balance)
-        case 'due_date':        return dir * (a.due_date ?? '').localeCompare(b.due_date ?? '')
-        case 'status':          return dir * (a.status ?? '').localeCompare(b.status ?? '')
-        default:                return 0
-      }
-    })
-  }, [filtered, sortCol, sortDir])
-
-  const paginated = useMemo(() => sorted.slice((page - 1) * 15, page * 15), [sorted, page])
-
-  useEffect(() => { setPage(1) }, [activeTab, statusFilter, periodFilter, search, sortCol, sortDir])
-
   function handleSort(col: typeof sortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortCol(col); setSortDir('asc') }
+    else { setSortCol(col); setSortDir('asc'); setPage(1) }
   }
-
-  // Stats for active tab
-  const tabStats = useMemo(() => {
-    const tab = invoices.filter(i => i.category_code === activeTab && i.status !== 'voided')
-    const outstanding = tab.filter(i => ['issued','partial'].includes(i.status))
-      .reduce((s, i) => s + i.balance, 0)
-    const collected = tab.reduce((s, i) => s + i.paid_amount, 0)
-    const drafts = tab.filter(i => i.status === 'draft').length
-    return { outstanding, collected, drafts }
-  }, [invoices, activeTab])
-
-  // Unique periods for filter dropdown
-  const periods = useMemo(() => {
-    const ps = [...new Set(invoices.filter(i => i.period).map(i => i.period!))]
-    return ps.sort().reverse()
-  }, [invoices])
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -888,7 +864,7 @@ export function BillingPageClient() {
         '/billing-runs/service-charge', { method: 'POST', body: JSON.stringify({ period: runPeriod }) }
       )
       setRunResult(result)
-      await load()
+      refresh()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Billing run failed')
     } finally {
@@ -901,7 +877,7 @@ export function BillingPageClient() {
     try {
       const result = await bulkIssueInvoices(bulkPeriod, activeTab)
       setBulkResult(result)
-      await load()
+      refresh()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Bulk issue failed')
     } finally {
@@ -932,7 +908,7 @@ export function BillingPageClient() {
     try {
       const result = await applyLateFees(parseFloat(latePct), !['Reports','Adjustments'].includes(activeTab) ? activeTab : undefined)
       setLateFeeResult(result)
-      await load()
+      refresh()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to apply late fees')
     } finally {
@@ -1149,7 +1125,7 @@ export function BillingPageClient() {
           <button
             key={t.code}
             onClick={() => {
-              setActiveTab(t.code)
+              setActiveTab(t.code); setPage(1)
               if (t.code === 'Adjustments') { loadOpeningBalances(); loadCreditNotes() }
             }}
             className={cn(
@@ -1198,7 +1174,7 @@ export function BillingPageClient() {
         />
         <Select
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={v => { setStatusFilter(v); setPage(1) }}
           options={[
             { value: 'all',     label: 'All statuses' },
             { value: 'draft',   label: 'Draft' },
@@ -1211,13 +1187,13 @@ export function BillingPageClient() {
         />
         <Select
           value={periodFilter}
-          onChange={setPeriodFilter}
+          onChange={v => { setPeriodFilter(v); setPage(1) }}
           options={[
             { value: '', label: 'All periods' },
             ...periods.map(p => ({ value: p, label: p })),
           ]}
         />
-        <Button variant="ghost" size="sm" onClick={load} className="ml-auto">
+        <Button variant="ghost" size="sm" onClick={refresh} className="ml-auto">
           Refresh
         </Button>
         <Button variant="ghost" size="sm" onClick={() => { setShowLateModal(true); setLateFeeResult(null) }}>
@@ -1730,7 +1706,7 @@ export function BillingPageClient() {
         <Card className={cn('overflow-hidden', selected ? 'flex-1 min-w-0' : 'w-full')}>
           {loading ? (
             <div className="p-8 text-center text-text-muted text-sm">Loading invoices…</div>
-          ) : filtered.length === 0 ? (
+          ) : invoices.length === 0 ? (
             <div className="p-8 text-center text-text-muted text-sm">
               No invoices found{search || statusFilter !== 'all' || periodFilter ? ' matching filters' : ` for ${CATEGORY_LABELS[activeTab]}`}.
             </div>
@@ -1752,7 +1728,7 @@ export function BillingPageClient() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.map(inv => (
+                {invoices.map(inv => (
                   <tr
                     key={inv.id}
                     onClick={() => openDetail(inv)}
@@ -1831,7 +1807,7 @@ export function BillingPageClient() {
               </tbody>
             </table>
           )}
-          <Pager page={page} total={sorted.length} onPage={setPage} />
+          <Pager page={page} total={totalElements} onPage={setPage} />
         </Card>
 
         {/* Detail panel */}

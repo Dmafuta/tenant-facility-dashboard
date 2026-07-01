@@ -93,6 +93,38 @@ export async function getInvoices(params?: {
   return apiFetch<InvoiceData[]>(`/invoices${q ? `?${q}` : ''}`)
 }
 
+export interface InvoicePageData {
+  content: InvoiceData[]
+  totalElements: number
+  totalPages: number
+  tabOutstanding: number
+  tabCollected: number
+  tabDrafts: number
+  periods: string[]
+}
+
+export async function getInvoicesPaged(params: {
+  categoryCode: string
+  status?: string
+  period?: string
+  search?: string
+  page?: number
+  size?: number
+  sortBy?: string
+  sortDir?: string
+}): Promise<InvoicePageData> {
+  const qs = new URLSearchParams()
+  qs.set('categoryCode', params.categoryCode)
+  if (params.status)   qs.set('status', params.status)
+  if (params.period)   qs.set('period', params.period)
+  if (params.search)   qs.set('search', params.search)
+  qs.set('page',    String(params.page    ?? 0))
+  qs.set('size',    String(params.size    ?? 15))
+  qs.set('sortBy',  params.sortBy  ?? 'createdAt')
+  qs.set('sortDir', params.sortDir ?? 'desc')
+  return apiFetch<InvoicePageData>(`/invoices/paged?${qs}`)
+}
+
 export async function getInvoice(id: string): Promise<InvoiceData> {
   return apiFetch<InvoiceData>(`/invoices/${id}`)
 }
