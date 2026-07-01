@@ -11,8 +11,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters } from '@/lib/api/meters'
-import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters } from '@/lib/api/meters'
+import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
   getReserveTanks, createReserveTank, updateReserveTank, updateTankLevel,
@@ -86,6 +86,41 @@ function readingActionLabel(meterType: string): string {
   if (meterType === 'prepaid') return 'Log Vending Issue'
   if (meterType === 'smart') return 'Manual Override'
   return 'Enter Reading'
+}
+
+// ── Pager ──────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 20
+
+function Pager({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
+  if (totalPages <= 1) return null
+  return (
+    <div className="flex items-center justify-center gap-1 py-3">
+      <button
+        onClick={() => onPage(Math.max(1, page - 1))}
+        disabled={page === 1}
+        className="px-2.5 py-1 rounded text-sm text-text-muted hover:bg-surface-hover disabled:opacity-30"
+      >‹</button>
+      {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+        const p = totalPages <= 7 ? i + 1
+          : page <= 4 ? i + 1
+          : page >= totalPages - 3 ? totalPages - 6 + i
+          : page - 3 + i
+        return (
+          <button
+            key={p}
+            onClick={() => onPage(p)}
+            className={cn('min-w-[32px] px-2 py-1 rounded text-sm', p === page ? 'bg-primary-600 text-white font-medium' : 'text-text-muted hover:bg-surface-hover')}
+          >{p}</button>
+        )
+      })}
+      <button
+        onClick={() => onPage(Math.min(totalPages, page + 1))}
+        disabled={page === totalPages}
+        className="px-2.5 py-1 rounded text-sm text-text-muted hover:bg-surface-hover disabled:opacity-30"
+      >›</button>
+    </div>
+  )
 }
 
 // ── Reading Entry Modal ────────────────────────────────────────────────────
@@ -946,25 +981,54 @@ function ImportMetersModal({ open, onClose, onImported }: { open: boolean; onClo
 }
 
 function MetersTab({
-  meters, loading, onRead, onView, onAddMeter, onImportMeters, onRefresh,
+  onRead, onView, onAddMeter, onImportMeters, externalRefreshKey,
 }: {
-  meters: MeterData[]
-  loading: boolean
   onRead: (m: MeterData) => void
   onView: (m: MeterData) => void
   onAddMeter: () => void
   onImportMeters: () => void
-  onRefresh: () => void
+  externalRefreshKey?: number
 }) {
   const [search, setSearch]   = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [utility, setUtility] = useState('all')
   const [type, setType]       = useState('all')
   const [role, setRole]       = useState('all')
+  const [page, setPage]       = useState(1)
+  const [meters, setMeters]   = useState<MeterData[]>([])
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalElements, setTotalElements] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [editTarget, setEditTarget]               = useState<MeterData | null>(null)
   const [showEdit, setShowEdit]                   = useState(false)
   const [deleteTarget, setDeleteTarget]           = useState<MeterData | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting]                   = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getMetersPaged({
+      search:      debouncedSearch || undefined,
+      utilityType: utility !== 'all' ? utility : undefined,
+      meterType:   type    !== 'all' ? type    : undefined,
+      meterRole:   role    !== 'all' ? role    : undefined,
+      deployed:    true,
+      page:        page - 1,
+      size:        PAGE_SIZE,
+    }).then(r => {
+      if (!cancelled) { setMeters(r.content); setTotalPages(r.totalPages); setTotalElements(r.totalElements) }
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [debouncedSearch, utility, type, role, page, refreshKey, externalRefreshKey])
+
+  function refresh() { setRefreshKey(k => k + 1) }
 
   async function handleDeleteMeter() {
     if (!deleteTarget) return
@@ -973,31 +1037,23 @@ function MetersTab({
       await deleteGlobalMeter(deleteTarget.id)
       setShowDeleteConfirm(false)
       setDeleteTarget(null)
-      onRefresh()
+      refresh()
     } catch { /* ignore */ }
     finally { setDeleting(false) }
   }
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return meters.filter(m => {
-      const matchSearch  = !q || (m.unit_label ?? '').toLowerCase().includes(q) || m.meter_number.toLowerCase().includes(q) || (m.current_billing_person?.name ?? '').toLowerCase().includes(q)
-      const matchUtility = utility === 'all' || m.utility_type === utility
-      const matchType    = type === 'all' || m.meter_type === type
-      const matchRole    = role === 'all' || (role === 'consumer' ? !m.meter_role || m.meter_role === 'consumer' : m.meter_role === role)
-      return matchSearch && matchUtility && matchType && matchRole
-    })
-  }, [meters, search, utility, type, role])
+  const filtered = meters  // alias for template compatibility below
 
   return (
     <div className="space-y-4">
       {/* Filters row */}
       <div className="flex flex-wrap items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search unit, meter no…" containerClassName="w-60" />
-        <Select value={utility} onChange={setUtility} options={UTILITY_FILTERS} className="w-44" />
-        <Select value={type}    onChange={setType}    options={METER_TYPE_FILTERS} className="w-36" />
-        <Select value={role}    onChange={setRole}    options={ROLE_FILTERS} className="w-44" />
+        <SearchInput value={search} onChange={v => { setSearch(v); setPage(1) }} placeholder="Search unit, meter no…" containerClassName="w-60" />
+        <Select value={utility} onChange={v => { setUtility(v); setPage(1) }} options={UTILITY_FILTERS} className="w-44" />
+        <Select value={type}    onChange={v => { setType(v);    setPage(1) }} options={METER_TYPE_FILTERS} className="w-36" />
+        <Select value={role}    onChange={v => { setRole(v);    setPage(1) }} options={ROLE_FILTERS} className="w-44" />
         <div className="ml-auto flex items-center gap-2">
+          {!loading && <span className="text-xs text-text-muted">{totalElements.toLocaleString()} meters</span>}
           <CanDo action="write" resource={{ type: 'unit' }}>
             <Button size="sm" variant="ghost" onClick={onImportMeters}>↑ Import</Button>
             <Button size="sm" onClick={onAddMeter}>+ Add Meter</Button>
@@ -1016,7 +1072,7 @@ function MetersTab({
       {/* Table */}
       {loading ? (
         <p className="py-12 text-center text-text-muted text-sm">Loading meters…</p>
-      ) : filtered.length === 0 ? (
+      ) : meters.length === 0 ? (
         <p className="py-12 text-center text-text-muted text-sm">No meters match filters.</p>
       ) : (
         <div className="rounded-xl border border-surface-border dark:border-dark-border overflow-hidden bg-surface dark:bg-dark-surface">
@@ -1143,11 +1199,13 @@ function MetersTab({
         </div>
       )}
 
+      <Pager page={page} totalPages={totalPages} onPage={setPage} />
+
       <EditMeterModal
         meter={editTarget}
         open={showEdit}
         onClose={() => setShowEdit(false)}
-        onSaved={() => { setShowEdit(false); onRefresh() }}
+        onSaved={() => { setShowEdit(false); refresh() }}
       />
       {deleteTarget && (
         <Modal open={showDeleteConfirm} onClose={() => { setShowDeleteConfirm(false); setDeleteTarget(null) }} title="Delete Meter" size="sm">
@@ -2342,20 +2400,50 @@ function WaterBalanceTab({
 
 // ── ReadingsTab ────────────────────────────────────────────────────────────
 
-function ReadingsTab({
-  readings, loading, onRefresh,
-}: {
-  readings: MeterReadingData[]
-  loading: boolean
-  onRefresh: () => void
-}) {
+function ReadingsTab() {
   const [search, setSearch]         = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [periodFilter, setPeriod]   = useState('')
   const [utilityFilter, setUtility] = useState('all')
   const [statusFilter, setStatus]   = useState('all')
+  const [page, setPage]             = useState(1)
+  const [readings, setReadings]     = useState<MeterReadingData[]>([])
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalElements, setTotalElements] = useState(0)
+  const [periods, setPeriods]       = useState<string[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
   const [photoUrl, setPhotoUrl]     = useState<string | null>(null)
+
+  function onRefresh() { setRefreshKey(k => k + 1) }
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getMeterReadingsPaged({
+      search:      debouncedSearch || undefined,
+      period:      periodFilter   || undefined,
+      utilityType: utilityFilter !== 'all' ? utilityFilter : undefined,
+      status:      statusFilter  !== 'all' ? statusFilter  : undefined,
+      page:        page - 1,
+      size:        PAGE_SIZE,
+    }).then(r => {
+      if (!cancelled) {
+        setReadings(r.content)
+        setTotalPages(r.totalPages)
+        setTotalElements(r.totalElements)
+        setPeriods(r.periods)
+      }
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [debouncedSearch, periodFilter, utilityFilter, statusFilter, page, refreshKey])
 
   // Bulk import
   const [showBulkModal, setShowBulkModal]   = useState(false)
@@ -2369,10 +2457,7 @@ function ReadingsTab({
   const [bulkError, setBulkError]           = useState<string | null>(null)
 
   function openBulkModal() {
-    const rows = readings
-      .filter((r, idx, arr) => arr.findIndex(x => x.meter_id === r.meter_id) === idx)
-      .map(r => ({ meterId: r.meter_id, meterLabel: `${r.unit_label ?? '—'} · ${r.meter_number}`, currentValue: '' }))
-    setBulkRows(rows.length ? rows : [{ meterId: '', meterLabel: '', currentValue: '' }])
+    setBulkRows([{ meterId: '', meterLabel: '', currentValue: '' }])
     setBulkResult(null); setBulkError(null)
     setShowBulkModal(true)
   }
@@ -2448,25 +2533,7 @@ function ReadingsTab({
     }
   }
 
-  // Collect unique billing periods for the dropdown
-  const periods = useMemo(() => {
-    const set = new Set<string>()
-    readings.forEach(r => { if (r.billing_period) set.add(r.billing_period) })
-    return Array.from(set).sort().reverse()
-  }, [readings])
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return readings.filter(r => {
-      const matchSearch  = !q || (r.unit_label ?? '').toLowerCase().includes(q) || r.meter_number.toLowerCase().includes(q)
-      const matchPeriod  = !periodFilter || r.billing_period === periodFilter
-      const matchUtility = utilityFilter === 'all' || r.utility_type === utilityFilter
-      const matchStatus  = statusFilter === 'all' || r.status === statusFilter
-      return matchSearch && matchPeriod && matchUtility && matchStatus
-    })
-  }, [readings, search, periodFilter, utilityFilter, statusFilter])
-
-  const pendingCount = filtered.filter(r => r.status === 'pending_bill').length
+  const pendingCount = readings.filter(r => r.status === 'pending_bill').length
 
   async function handleMarkBilled(id: string) {
     setUpdatingId(id)
@@ -2476,7 +2543,7 @@ function ReadingsTab({
   }
 
   async function handleMarkAllBilled() {
-    const pending = filtered.filter(r => r.status === 'pending_bill')
+    const pending = readings.filter(r => r.status === 'pending_bill')
     setMarkingAll(true)
     for (const r of pending) {
       await updateReadingStatus(r.id, 'billed').catch(() => {})
@@ -2487,7 +2554,7 @@ function ReadingsTab({
 
   function exportCsv() {
     const headers = ['Unit', 'Meter No', 'Utility', 'Period', 'Prev', 'Current', 'Consumed', 'Unit Cost', 'Amount Due', 'Mgmt Fee', 'Source', 'Read By', 'Date', 'Status']
-    const rows = filtered.map(r => [
+    const rows = readings.map(r => [
       r.unit_label ?? '',
       r.meter_number,
       r.utility_type,
@@ -2515,10 +2582,10 @@ function ReadingsTab({
     <div className="space-y-4">
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search unit, meter no…" containerClassName="w-56" />
+        <SearchInput value={search} onChange={v => { setSearch(v); setPage(1) }} placeholder="Search unit, meter no…" containerClassName="w-56" />
         <select
           value={periodFilter}
-          onChange={e => setPeriod(e.target.value)}
+          onChange={e => { setPeriod(e.target.value); setPage(1) }}
           className="rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">All Periods</option>
@@ -2565,7 +2632,7 @@ function ReadingsTab({
               Generate Estimated
             </Button>
           </CanDo>
-          <Button size="sm" variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
+          <Button size="sm" variant="outline" onClick={exportCsv} disabled={readings.length === 0}>
             ⬇ Export CSV
           </Button>
           <CanDo action="write" resource={{ type: 'unit' }}>
@@ -2725,10 +2792,10 @@ function ReadingsTab({
             <tbody>
               {loading ? (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-text-muted">Loading readings…</td></tr>
-              ) : filtered.length === 0 ? (
+              ) : readings.length === 0 ? (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-text-muted">No readings match filters.</td></tr>
-              ) : filtered.map((r, i) => (
-                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === filtered.length - 1 && 'border-b-0', r.anomaly && 'bg-warning/5')}>
+              ) : readings.map((r, i) => (
+                <tr key={r.id} className={cn('border-b border-surface-border dark:border-dark-border hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors', i === readings.length - 1 && 'border-b-0', r.anomaly && 'bg-warning/5')}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-text">{r.unit_label ?? '—'}</p>
                     <p className="text-xs text-text-muted font-mono">{r.meter_number}</p>
@@ -2794,6 +2861,7 @@ function ReadingsTab({
               ))}
             </tbody>
           </table>
+          <Pager page={page} totalPages={totalPages} onPage={setPage} />
         </div>
       </Card>
     </div>
@@ -2830,6 +2898,8 @@ function DisconnectionTab({
   const [sending, setSending] = useState<string | null>(null)
   const [reconnecting, setReconnecting] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [candPage, setCandPage] = useState(1)
+  const CAND_PAGE_SIZE = 25
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -2867,6 +2937,8 @@ function DisconnectionTab({
   const formalDue    = candidates.filter(c => c.stage === 'formal_due')
   const reminderDue  = candidates.filter(c => c.stage === 'reminder_due')
   const overdueClear = candidates.filter(c => c.stage === 'overdue')
+  const candTotalPages = Math.max(1, Math.ceil(candidates.length / CAND_PAGE_SIZE))
+  const pagedCandidates = candidates.slice((candPage - 1) * CAND_PAGE_SIZE, candPage * CAND_PAGE_SIZE)
 
   async function handleReconnect(noticeId: string) {
     setReconnecting(noticeId)
@@ -3026,7 +3098,7 @@ function DisconnectionTab({
               </tr>
             </thead>
             <tbody>
-              {candidates.map(c => {
+              {pagedCandidates.map(c => {
                 const reminderSent = noticeSent(c.meter.id, 'reminder')
                 const formalSent   = noticeSent(c.meter.id, 'formal')
                 const isSending    = sending === `${c.meter.id}_reminder` || sending === `${c.meter.id}_formal`
@@ -3080,6 +3152,9 @@ function DisconnectionTab({
               })}
             </tbody>
           </table>
+        )}
+        {candidates.length > CAND_PAGE_SIZE && (
+          <Pager page={candPage} totalPages={candTotalPages} onPage={setCandPage} />
         )}
       </div>
 
@@ -3277,26 +3352,41 @@ function AssignMeterModal({
 // ── Inventory Tab ──────────────────────────────────────────────────────────
 
 function InventoryTab({
-  meters, loading, onAssign,
+  onAssign, externalRefreshKey,
 }: {
-  meters: MeterData[]
-  loading: boolean
   onAssign: (m: MeterData) => void
+  externalRefreshKey?: number
 }) {
   const [search, setSearch]   = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [typeFilter, setType] = useState<string>('all')
+  const [page, setPage]       = useState(1)
+  const [meters, setMeters]   = useState<MeterData[]>([])
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalElements, setTotalElements] = useState(0)
+  const [loading, setLoading] = useState(true)
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return meters.filter(m => {
-      const matchSearch = !q ||
-        m.meter_number.toLowerCase().includes(q) ||
-        (m.account_number ?? '').toLowerCase().includes(q) ||
-        m.utility_type.toLowerCase().includes(q)
-      const matchType = typeFilter === 'all' || m.utility_type === typeFilter
-      return matchSearch && matchType
-    })
-  }, [meters, search, typeFilter])
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getMetersPaged({
+      search:      debouncedSearch || undefined,
+      utilityType: typeFilter !== 'all' ? typeFilter : undefined,
+      inventory:   true,
+      page:        page - 1,
+      size:        PAGE_SIZE,
+    }).then(r => {
+      if (!cancelled) { setMeters(r.content); setTotalPages(r.totalPages); setTotalElements(r.totalElements) }
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [debouncedSearch, typeFilter, page, externalRefreshKey])
+
+  const filtered = meters  // alias
 
   if (loading) return <p className="py-12 text-center text-text-muted text-sm">Loading…</p>
 
@@ -3318,15 +3408,15 @@ function InventoryTab({
           ]}
           className="w-44"
         />
-        <p className="text-xs text-text-muted ml-auto">{filtered.length} meter{filtered.length !== 1 ? 's' : ''} in inventory</p>
+        <p className="text-xs text-text-muted ml-auto">{totalElements} meter{totalElements !== 1 ? 's' : ''} in inventory</p>
       </div>
 
-      {filtered.length === 0 ? (
+      {meters.length === 0 ? (
         <div className="py-14 text-center">
           <p className="text-2xl mb-2">📦</p>
           <p className="text-sm font-medium text-text">No unassigned meters</p>
           <p className="text-xs text-text-muted mt-1">
-            {meters.length === 0
+            {totalElements === 0
               ? 'Meters registered without a unit assignment appear here.'
               : 'All meters have been assigned to units.'}
           </p>
@@ -3376,6 +3466,8 @@ function InventoryTab({
         </div>
       )}
 
+      <Pager page={page} totalPages={totalPages} onPage={setPage} />
+
       <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-hover border border-surface-border dark:border-dark-border text-xs text-text-muted">
         <strong>Inventory</strong> holds meters registered without a unit assignment.
         Once assigned to a unit they move to the <strong>Meters</strong> tab and become active.
@@ -3404,50 +3496,52 @@ function fmtReading3(n: number) {
   return n.toLocaleString('en-KE', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 }
 
-function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRefreshMeters: () => void }) {
+function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
   const [period, setPeriod]             = useState(currentPeriodStr)
   const [utilFilter, setUtilFilter]     = useState('all')
   const [search, setSearch]             = useState('')
-  const [readings, setReadings]         = useState<MeterReadingData[]>([])
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage]                 = useState(1)
+  const [runRows, setRunRows]           = useState<ReadingRunRowData[]>([])
+  const [totalElements, setTotalElements] = useState(0)
+  const [totalPages, setTotalPages]     = useState(1)
+  const [readCount, setReadCount]       = useState(0)
+  const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading]           = useState(false)
   const [readTarget, setReadTarget]     = useState<MeterData | null>(null)
   const [showRead, setShowRead]         = useState(false)
   const [estimating, setEstimating]     = useState(false)
   const [toast, setToast]               = useState<{ msg: string; ok: boolean } | null>(null)
   const [wsInvoices, setWsInvoices]     = useState<InvoiceData[]>([])
+  const [refreshKey, setRefreshKey]     = useState(0)
 
-  // Active consumer meters only
-  const consumerMeters = useMemo(
-    () => meters.filter(m => m.status === 'active' && (!m.meter_role || m.meter_role === 'consumer')),
-    [meters],
-  )
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
 
-  const utilTypes = useMemo(
-    () => [...new Set(consumerMeters.map(m => m.utility_type))].sort(),
-    [consumerMeters],
-  )
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getMeterReadingRun({
+      period:      period || undefined,
+      utilityType: utilFilter !== 'all' ? utilFilter : undefined,
+      search:      debouncedSearch || undefined,
+      page:        page - 1,
+      size:        PAGE_SIZE,
+    }).then(r => {
+      if (!cancelled) {
+        setRunRows(r.content)
+        setTotalElements(r.totalElements)
+        setTotalPages(r.totalPages)
+        setReadCount(r.readCount)
+        setPendingCount(r.pendingCount)
+      }
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [period, utilFilter, debouncedSearch, page, refreshKey])
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return consumerMeters.filter(m =>
-      (utilFilter === 'all' || m.utility_type === utilFilter) &&
-      (!q || (m.unit_label ?? '').toLowerCase().includes(q) || m.meter_number.toLowerCase().includes(q)),
-    )
-  }, [consumerMeters, utilFilter, search])
-
-  const readingByMeter = useMemo(() => new Map(readings.map(r => [r.meter_id, r])), [readings])
-
-  const rows = useMemo(
-    () => filtered.map(m => ({ ...m, reading: readingByMeter.get(m.id) ?? null })),
-    [filtered, readingByMeter],
-  )
-
-  const pending   = rows.filter(r => !r.reading)
-  const read      = rows.filter(r =>  r.reading)
-  const anomalies = read.filter(r => r.reading?.anomaly)
-  const pct       = rows.length > 0 ? Math.round((read.length / rows.length) * 100) : 0
-
-  // Units that already have a billed WS invoice for a period later than selected — back-billing guard
+  // Back-billing guard: fetch WS invoices once per period
   const billedLaterUnitIds = useMemo(() => {
     const laterBilled = wsInvoices.filter(inv =>
       ['issued', 'partial', 'paid'].includes(inv.status) &&
@@ -3457,27 +3551,24 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
   }, [wsInvoices, period])
 
   const backPeriodCount = useMemo(
-    () => rows.filter(r => r.unit_id != null && billedLaterUnitIds.has(r.unit_id)).length,
-    [rows, billedLaterUnitIds],
+    () => runRows.filter(r => r.unitId != null && billedLaterUnitIds.has(r.unitId)).length,
+    [runRows, billedLaterUnitIds],
   )
+
+  const pct = totalElements > 0 ? Math.round((readCount / totalElements) * 100) : 0
+  const anomalies = runRows.filter(r => r.anomaly && r.readingId).length
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 4000)
   }
 
-  // Fetch WS invoices once on mount to power the back-billing warning
   useEffect(() => {
     getInvoices({ categoryCode: 'WS' }).then(setWsInvoices).catch(() => {})
   }, [])
 
-  useEffect(() => { fetchReadings() }, [period]) // eslint-disable-line react-hooks/exhaustive-deps
-
   async function fetchReadings() {
-    setLoading(true)
-    try { setReadings(await getMeterReadings({ period })) }
-    catch { /* silent */ }
-    finally { setLoading(false) }
+    setRefreshKey(k => k + 1)
   }
 
   async function handleEstimate() {
@@ -3531,11 +3622,11 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
           <span className="text-sm font-semibold text-text hidden sm:block">{fmtPeriodLabel(period)}</span>
         </div>
         <div className="flex items-center gap-2">
-          {pending.length > 0 && (
+          {pendingCount > 0 && (
             <Button variant="outline" size="sm" disabled={estimating} onClick={handleEstimate}>
               {estimating
                 ? <><span className="w-3 h-3 border-2 border-primary-400/40 border-t-primary-500 rounded-full animate-spin mr-1.5 inline-block" />Generating…</>
-                : `✦ Estimate ${pending.length} unread`}
+                : `✦ Estimate ${pendingCount} unread`}
             </Button>
           )}
           <Button variant="outline" size="sm" disabled={loading} onClick={fetchReadings}>
@@ -3574,23 +3665,23 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-5">
           <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Total Meters</p>
-          <p className="text-3xl font-bold text-text">{rows.length}</p>
+          <p className="text-3xl font-bold text-text">{totalElements}</p>
           <p className="text-xs text-text-muted mt-1.5">Active consumer meters</p>
         </Card>
         <Card className="p-5 border-l-[3px] border-green-500">
           <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Read</p>
-          <p className="text-3xl font-bold text-green-600 dark:text-green-400">{read.length}</p>
+          <p className="text-3xl font-bold text-green-600 dark:text-green-400">{readCount}</p>
           <p className="text-xs text-text-muted mt-1.5">{pct}% complete</p>
         </Card>
         <Card className="p-5 border-l-[3px] border-amber-400">
           <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Pending</p>
-          <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">{pending.length}</p>
-          <p className="text-xs text-text-muted mt-1.5">{pending.length === 0 ? 'All meters read' : 'Not yet recorded'}</p>
+          <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">{pendingCount}</p>
+          <p className="text-xs text-text-muted mt-1.5">{pendingCount === 0 ? 'All meters read' : 'Not yet recorded'}</p>
         </Card>
-        <Card className={cn('p-5 border-l-[3px]', anomalies.length > 0 ? 'border-red-500' : 'border-surface-border dark:border-dark-border')}>
+        <Card className={cn('p-5 border-l-[3px]', anomalies > 0 ? 'border-red-500' : 'border-surface-border dark:border-dark-border')}>
           <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Anomalies</p>
-          <p className={cn('text-3xl font-bold', anomalies.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-text-muted')}>{anomalies.length}</p>
-          <p className="text-xs text-text-muted mt-1.5">{anomalies.length > 0 ? 'Review flagged readings' : 'All readings normal'}</p>
+          <p className={cn('text-3xl font-bold', anomalies > 0 ? 'text-red-600 dark:text-red-400' : 'text-text-muted')}>{anomalies}</p>
+          <p className="text-xs text-text-muted mt-1.5">{anomalies > 0 ? 'Review flagged readings' : 'All readings normal'}</p>
         </Card>
       </div>
 
@@ -3615,10 +3706,10 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
           />
         </div>
         <div className="flex items-center justify-between mt-2.5">
-          <span className="text-xs text-text-muted">{read.length} of {rows.length} meters read</span>
+          <span className="text-xs text-text-muted">{readCount} of {totalElements} meters read</span>
           {pct === 100
             ? <span className="text-xs font-semibold text-green-600 dark:text-green-400">All readings complete</span>
-            : <span className="text-xs text-text-muted">{pending.length} remaining</span>}
+            : <span className="text-xs text-text-muted">{pendingCount} remaining</span>}
         </div>
       </Card>
 
@@ -3632,17 +3723,20 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
         />
         <select
           value={utilFilter}
-          onChange={e => setUtilFilter(e.target.value)}
+          onChange={e => { setUtilFilter(e.target.value); setPage(1) }}
           className="h-9 w-44 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500"
         >
           <option value="all">All utilities</option>
-          {utilTypes.map(t => (
-            <option key={t} value={t}>{utilityLabel(t)}</option>
-          ))}
+          <option value="water">💧 Water</option>
+          <option value="water_sewer">💧 Water & Sewer</option>
+          <option value="electricity">⚡ Electricity</option>
+          <option value="sewerage">🚰 Sewerage</option>
+          <option value="gas_piped">🔥 Gas (Piped)</option>
+          <option value="internet">📶 Internet</option>
         </select>
         {(search || utilFilter !== 'all') && (
           <button
-            onClick={() => { setSearch(''); setUtilFilter('all') }}
+            onClick={() => { setSearch(''); setUtilFilter('all'); setPage(1) }}
             className="text-xs text-text-muted hover:text-text transition-colors"
           >✕ Clear filters</button>
         )}
@@ -3655,7 +3749,7 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
             <span className="w-7 h-7 border-2 border-primary-400/30 border-t-primary-500 rounded-full animate-spin" />
             <span className="text-sm">Loading readings for {fmtPeriodLabel(period)}…</span>
           </div>
-        ) : rows.length === 0 ? (
+        ) : runRows.length === 0 ? (
           <div className="py-24 text-center">
             <p className="text-4xl mb-3">📊</p>
             <p className="font-semibold text-text">No active consumer meters found</p>
@@ -3679,133 +3773,108 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
                 </tr>
               </thead>
               <tbody>
-                {/* Pending rows — amber tint, float to top */}
-                {pending.map((m, i) => {
-                  const isBackPeriod = m.unit_id != null && billedLaterUnitIds.has(m.unit_id)
-                  return (
-                  <tr
-                    key={m.id}
-                    className={cn(
-                      'border-b border-surface-border dark:border-dark-border transition-colors',
-                      i % 2 === 0
-                        ? 'bg-amber-50/70 dark:bg-amber-900/10'
-                        : 'bg-amber-50/40 dark:bg-amber-900/5',
-                    )}
-                  >
-                    <td className="px-4 py-3 font-semibold text-text">
-                      {m.unit_label ?? <span className="text-text-muted italic">Unassigned</span>}
-                      {isBackPeriod && (
-                        <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 align-middle">
-                          record only
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-muted">{m.meter_number}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-base mr-1">{utilityIcon(m.utility_type)}</span>
-                      <span className="text-xs text-text-muted">{utilityLabel(m.utility_type)}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-text-muted">
-                      {m.last_reading != null ? fmtReading3(Number(m.last_reading)) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-text-muted">—</td>
-                    <td className="px-4 py-3 text-right text-text-muted">—</td>
-                    <td className="px-4 py-3 text-text-muted text-xs">—</td>
-                    <td className="px-4 py-3 text-text-muted text-xs">—</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
-                        ⏳ Pending
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => { setReadTarget(m); setShowRead(true) }}
-                        className={cn(
-                          'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm',
-                          isBackPeriod
-                            ? 'bg-surface-border dark:bg-dark-border text-text-muted cursor-default'
-                            : 'bg-primary-600 hover:bg-primary-700 text-white',
-                        )}
-                        title={isBackPeriod ? 'This unit is already billed for a later period — reading will be recorded but cannot be billed' : undefined}
-                      >
-                        Record
-                      </button>
-                    </td>
-                  </tr>
-                  )
-                })}
-
-                {/* Read rows */}
-                {read.map((m, i) => {
-                  const r = m.reading!
+                {runRows.map((r, i) => {
+                  const isPending    = r.readingId == null
+                  const isBackPeriod = r.unitId != null && billedLaterUnitIds.has(r.unitId)
+                  const meterForModal: MeterData = {
+                    id: r.meterId, unit_id: r.unitId, unit_label: r.unitLabel,
+                    utility_type: r.utilityType, meter_type: r.meterType,
+                    meter_number: r.meterNumber, account_number: null,
+                    installation_date: null, status: 'active',
+                    billing_arrangement: 'billed_to_occupant', management_fee_pct: null,
+                    last_reading: r.lastReading, last_reading_date: r.lastReadingDate,
+                    current_billing_person: null, meter_role: 'consumer',
+                    rate_per_unit: null, notes: null, created_at: null,
+                  }
                   return (
                     <tr
-                      key={m.id}
+                      key={r.meterId}
                       className={cn(
                         'border-b border-surface-border dark:border-dark-border transition-colors',
-                        r.anomaly
-                          ? 'bg-red-50/60 dark:bg-red-900/10'
-                          : (pending.length + i) % 2 === 0
-                            ? 'bg-white dark:bg-transparent'
-                            : 'bg-slate-50/60 dark:bg-dark-card/20',
+                        isPending
+                          ? i % 2 === 0 ? 'bg-amber-50/70 dark:bg-amber-900/10' : 'bg-amber-50/40 dark:bg-amber-900/5'
+                          : r.anomaly
+                            ? 'bg-red-50/60 dark:bg-red-900/10'
+                            : i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-slate-50/60 dark:bg-dark-card/20',
                       )}
                     >
-                      <td className="px-4 py-3 font-semibold text-text">{m.unit_label ?? <span className="text-text-muted italic">Unassigned</span>}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-text-muted">{m.meter_number}</td>
-                      <td className="px-4 py-3">
-                        <span className="text-base mr-1">{utilityIcon(m.utility_type)}</span>
-                        <span className="text-xs text-text-muted">{utilityLabel(m.utility_type)}</span>
+                      <td className="px-4 py-3 font-semibold text-text">
+                        {r.unitLabel ?? <span className="text-text-muted italic">Unassigned</span>}
+                        {isBackPeriod && (
+                          <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 align-middle">record only</span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-text-muted">{fmtReading3(r.previous_value)}</td>
-                      <td className="px-4 py-3 text-right font-mono font-semibold text-text">{fmtReading3(r.current_value)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-text-muted">{r.meterNumber}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-base mr-1">{utilityIcon(r.utilityType)}</span>
+                        <span className="text-xs text-text-muted">{utilityLabel(r.utilityType)}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-text-muted">
+                        {isPending
+                          ? (r.lastReading != null ? fmtReading3(Number(r.lastReading)) : '—')
+                          : fmtReading3(Number(r.previousValue ?? 0))}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-semibold text-text">
+                        {isPending ? '—' : fmtReading3(Number(r.currentValue ?? 0))}
+                      </td>
                       <td className="px-4 py-3 text-right font-mono text-text">
-                        {fmtReading3(r.units_consumed)} <span className="text-text-muted text-xs">m³</span>
-                        {r.anomaly && (
-                          <span className="ml-1.5 text-red-500" title="Anomaly: consumption significantly above average">⚠</span>
+                        {isPending ? '—' : (
+                          <>
+                            {fmtReading3(Number(r.unitsConsumed ?? 0))} <span className="text-text-muted text-xs">m³</span>
+                            {r.anomaly && <span className="ml-1.5 text-red-500" title="Anomaly">⚠</span>}
+                          </>
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-text-muted">
-                        {r.reading_date
-                          ? new Date(r.reading_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                          : '—'}
+                        {r.readingDate ? new Date(r.readingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-xs text-text-muted">{r.read_by ?? '—'}</td>
+                      <td className="px-4 py-3 text-xs text-text-muted">{r.readBy ?? '—'}</td>
                       <td className="px-4 py-3 text-center">
-                        {r.anomaly ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
-                            ⚠ Anomaly
-                          </span>
+                        {isPending ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">⏳ Pending</span>
+                        ) : r.anomaly ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">⚠ Anomaly</span>
                         ) : r.source === 'estimated' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                            ~ Estimated
-                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">~ Estimated</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                            ✓ Read
-                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">✓ Read</span>
                         )}
                       </td>
-                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3 text-right">
+                        {isPending && (
+                          <button
+                            onClick={() => { setReadTarget(meterForModal); setShowRead(true) }}
+                            className={cn(
+                              'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm',
+                              isBackPeriod
+                                ? 'bg-surface-border dark:bg-dark-border text-text-muted cursor-default'
+                                : 'bg-primary-600 hover:bg-primary-700 text-white',
+                            )}
+                            title={isBackPeriod ? 'Already billed for a later period — for audit only' : undefined}
+                          >Record</button>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
 
               {/* Summary footer */}
-              {read.length > 0 && (
+              {readCount > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-surface-border dark:border-dark-border bg-slate-100 dark:bg-dark-card font-semibold text-sm">
                     <td className="px-4 py-3 text-text-muted" colSpan={5}>
-                      {read.length} reading{read.length !== 1 ? 's' : ''} recorded
+                      {readCount} reading{readCount !== 1 ? 's' : ''} recorded (total)
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-text">
-                      {fmtReading3(read.reduce((s, m) => s + (m.reading?.units_consumed ?? 0), 0))} <span className="text-text-muted text-xs">m³</span>
+                      {fmtReading3(runRows.filter(r => r.unitsConsumed != null).reduce((s, r) => s + Number(r.unitsConsumed ?? 0), 0))} <span className="text-text-muted text-xs">m³ this page</span>
                     </td>
                     <td colSpan={4} />
                   </tr>
                 </tfoot>
               )}
             </table>
+            <Pager page={page} totalPages={totalPages} onPage={setPage} />
           </div>
         )}
       </Card>
@@ -3816,7 +3885,7 @@ function ReadingRunTab({ meters, onRefreshMeters }: { meters: MeterData[]; onRef
         open={showRead}
         defaultPeriod={period}
         onClose={() => { setShowRead(false); setReadTarget(null) }}
-        onSaved={fetchReadings}
+        onSaved={() => { fetchReadings(); onRefreshMeters() }}
       />
     </div>
   )
@@ -3833,8 +3902,8 @@ export function UtilitiesPageClient() {
   const [showAssign, setShowAssign]       = useState(false)
 
   // Live data state
-  const [meters, setMeters]       = useState<MeterData[]>([])
-  const [readings, setReadings]   = useState<MeterReadingData[]>([])
+  const [utilityStats, setUtilityStats] = useState<UtilityStats | null>(null)
+  const [supplyMeters, setSupplyMeters] = useState<MeterData[]>([])
   const [suppliers, setSuppliers] = useState<WaterSupplierData[]>([])
   const [tanks, setTanks]         = useState<ReserveTankData[]>([])
   const [zones, setZones]         = useState<WaterZoneData[]>([])
@@ -3842,10 +3911,11 @@ export function UtilitiesPageClient() {
   const [overdueCharges, setOverdueCharges]   = useState<ChargeData[]>([])
   const [sentNotices, setSentNotices]         = useState<DisconnectionNoticeData[]>([])
   const [facilitySettings, setFacilitySettings] = useState<FacilitySettings | null>(null)
-  const [loadingMeters, setLoadingMeters]     = useState(true)
-  const [loadingReadings, setLoadingReadings] = useState(true)
+  const [loadingStats, setLoadingStats]       = useState(true)
+  const [loadingSupply, setLoadingSupply]     = useState(false)
   const [loadingWater, setLoadingWater]       = useState(true)
   const [loadingBalance, setLoadingBalance]   = useState(true)
+  const [meterTabRefreshKey, setMeterTabRefreshKey] = useState(0)
   const [loadingDisconn, setLoadingDisconn]   = useState(true)
 
   // Water loss / unread meters reports
@@ -3878,26 +3948,20 @@ export function UtilitiesPageClient() {
     }
   }, [])
 
-  const fetchMeters = useCallback(async () => {
-    try {
-      const data = await getAllMeters()
-      setMeters(data)
-    } catch {
-      // keep empty
-    } finally {
-      setLoadingMeters(false)
-    }
+  const fetchStats = useCallback(async () => {
+    try { setUtilityStats(await getUtilityStats()) }
+    catch { /* keep null */ }
+    finally { setLoadingStats(false) }
   }, [])
 
-  useEffect(() => { fetchMeters() }, [fetchMeters])
+  useEffect(() => { fetchStats() }, [fetchStats])
 
-  const fetchReadings = useCallback(async () => {
-    try { const data = await getMeterReadings(); setReadings(data) }
+  const fetchSupplyMeters = useCallback(async () => {
+    setLoadingSupply(true)
+    try { setSupplyMeters(await getAllMeters()) }
     catch { /* ignore */ }
-    finally { setLoadingReadings(false) }
+    finally { setLoadingSupply(false) }
   }, [])
-
-  useEffect(() => { fetchReadings() }, [fetchReadings])
 
   const fetchWater = useCallback(async () => {
     try {
@@ -3933,10 +3997,6 @@ export function UtilitiesPageClient() {
 
   useEffect(() => { fetchDisconn() }, [fetchDisconn])
 
-  const supplyRoles      = ['supplier', 'tank_inflow', 'tank_outflow', 'distribution']
-  const consumerMeters   = meters.filter(m => !m.meter_role || m.meter_role === 'consumer')
-  const inventoryMeters  = meters.filter(m => !m.unit_id && !supplyRoles.includes(m.meter_role ?? ''))
-  const deployedMeters   = meters.filter(m => m.unit_id || supplyRoles.includes(m.meter_role ?? ''))
   const latestBalance  = periods[periods.length - 1]
   const lossFlag       = latestBalance?.flagged
 
@@ -3946,22 +4006,22 @@ export function UtilitiesPageClient() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">Consumer Meters</p>
-          <p className="text-2xl font-bold text-text">{loadingMeters ? '…' : consumerMeters.length}</p>
-          <p className="text-xs text-text-muted">{loadingMeters ? '' : `${consumerMeters.filter(m => m.status === 'active').length} active`}</p>
+          <p className="text-2xl font-bold text-text">{loadingStats ? '…' : utilityStats?.consumerMeters ?? 0}</p>
+          <p className="text-xs text-text-muted">{loadingStats ? '' : `${utilityStats?.activeConsumerMeters ?? 0} active`}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">Smart Meters</p>
-          <p className="text-2xl font-bold text-success">{loadingMeters ? '…' : meters.filter(m => m.meter_type === 'smart').length}</p>
+          <p className="text-2xl font-bold text-success">{loadingStats ? '…' : utilityStats?.smartMeters ?? 0}</p>
           <p className="text-xs text-text-muted">IoT auto-read</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">Pending Billing</p>
-          <p className="text-2xl font-bold text-warning">{loadingReadings ? '…' : readings.filter(r => r.status === 'pending_bill').length}</p>
+          <p className="text-2xl font-bold text-warning">{loadingStats ? '…' : utilityStats?.pendingBillingReadings ?? 0}</p>
           <p className="text-xs text-text-muted">Readings not billed</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-text-muted font-medium mb-1">In Inventory</p>
-          <p className="text-2xl font-bold text-text">{loadingMeters ? '…' : inventoryMeters.length}</p>
+          <p className="text-2xl font-bold text-text">{loadingStats ? '…' : utilityStats?.inventoryMeters ?? 0}</p>
           <p className="text-xs text-text-muted">Awaiting assignment</p>
         </Card>
         <Card className={cn('p-4', lossFlag ? 'border-danger/40 bg-danger/5' : '')}>
@@ -3974,14 +4034,17 @@ export function UtilitiesPageClient() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="meters" onValueChange={v => { if (v === 'reports') loadReports(reportPeriod) }}>
+      <Tabs defaultValue="meters" onValueChange={v => {
+        if (v === 'supply' || v === 'disconnections') fetchSupplyMeters()
+        if (v === 'reports') loadReports(reportPeriod)
+      }}>
         <TabsList>
           <TabsTrigger value="meters">Meters</TabsTrigger>
           <TabsTrigger value="inventory">
             Inventory
-            {inventoryMeters.length > 0 && (
+            {(utilityStats?.inventoryMeters ?? 0) > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-[10px] font-bold px-1">
-                {inventoryMeters.length}
+                {utilityStats!.inventoryMeters}
               </span>
             )}
           </TabsTrigger>
@@ -3993,35 +4056,23 @@ export function UtilitiesPageClient() {
             )}
           </TabsTrigger>
           <TabsTrigger value="readings">Readings</TabsTrigger>
-          <TabsTrigger value="reading-run">
-            Reading Run
-            {(() => {
-              const consumer = meters.filter(m => m.status === 'active' && (!m.meter_role || m.meter_role === 'consumer'))
-              const pending = consumer.filter(m => !readings.some(r => r.meter_id === m.id && r.billing_period === currentPeriodStr()))
-              return pending.length > 0
-                ? <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-[10px] font-bold px-1">{pending.length}</span>
-                : null
-            })()}
-          </TabsTrigger>
+          <TabsTrigger value="reading-run">Reading Run</TabsTrigger>
           <TabsTrigger value="disconnections">Disconnections</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="meters" className="pt-5">
           <MetersTab
-            meters={deployedMeters}
-            loading={loadingMeters}
+            externalRefreshKey={meterTabRefreshKey}
             onRead={m => { setReadTarget(m); setShowRead(true) }}
             onView={m => { setViewTarget(m); setShowView(true) }}
             onAddMeter={() => setShowAddMeter(true)}
             onImportMeters={() => setShowImportMeters(true)}
-            onRefresh={fetchMeters}
           />
         </TabsContent>
         <TabsContent value="inventory" className="pt-5">
           <InventoryTab
-            meters={inventoryMeters}
-            loading={loadingMeters}
+            externalRefreshKey={meterTabRefreshKey}
             onAssign={m => { setAssignTarget(m); setShowAssign(true) }}
           />
         </TabsContent>
@@ -4030,8 +4081,8 @@ export function UtilitiesPageClient() {
             suppliers={suppliers}
             tanks={tanks}
             zones={zones}
-            meters={meters}
-            loading={loadingWater}
+            meters={supplyMeters}
+            loading={loadingWater || loadingSupply}
             onRefresh={fetchWater}
           />
         </TabsContent>
@@ -4045,18 +4096,18 @@ export function UtilitiesPageClient() {
           />
         </TabsContent>
         <TabsContent value="readings" className="pt-5">
-          <ReadingsTab readings={readings} loading={loadingReadings} onRefresh={fetchReadings} />
+          <ReadingsTab />
         </TabsContent>
         <TabsContent value="reading-run" className="pt-5">
-          <ReadingRunTab meters={meters} onRefreshMeters={fetchMeters} />
+          <ReadingRunTab onRefreshMeters={fetchStats} />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
           <DisconnectionTab
-            meters={meters}
+            meters={supplyMeters}
             overdueCharges={overdueCharges}
             sentNotices={sentNotices}
             settings={facilitySettings}
-            loading={loadingDisconn || loadingMeters}
+            loading={loadingDisconn || loadingSupply}
             onRefresh={fetchDisconn}
           />
         </TabsContent>
@@ -4190,16 +4241,16 @@ export function UtilitiesPageClient() {
         meter={readTarget}
         open={showRead}
         onClose={() => setShowRead(false)}
-        onSaved={() => { fetchMeters(); fetchReadings() }}
+        onSaved={() => { setMeterTabRefreshKey(k => k + 1); fetchStats() }}
       />
-      <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} onMeterUpdated={fetchMeters} />
-      <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} onSaved={fetchMeters} />
-      <ImportMetersModal open={showImportMeters} onClose={() => setShowImportMeters(false)} onImported={fetchMeters} />
+      <MeterDetailDrawer meter={viewTarget} open={showView} onClose={() => setShowView(false)} onMeterUpdated={() => { setMeterTabRefreshKey(k => k + 1); fetchStats() }} />
+      <AddMeterModal open={showAddMeter} onClose={() => setShowAddMeter(false)} onSaved={() => { setMeterTabRefreshKey(k => k + 1); fetchStats() }} />
+      <ImportMetersModal open={showImportMeters} onClose={() => setShowImportMeters(false)} onImported={() => { setMeterTabRefreshKey(k => k + 1); fetchStats() }} />
       <AssignMeterModal
         meter={assignTarget}
         open={showAssign}
         onClose={() => setShowAssign(false)}
-        onAssigned={fetchMeters}
+        onAssigned={() => { setMeterTabRefreshKey(k => k + 1); fetchStats() }}
       />
     </main>
   )

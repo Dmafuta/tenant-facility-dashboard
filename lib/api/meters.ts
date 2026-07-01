@@ -229,3 +229,124 @@ export async function bulkImportMeters(rows: ImportRowPreview[]): Promise<BulkIm
     body: JSON.stringify(rows),
   })
 }
+
+// ── Server-side pagination ─────────────────────────────────────────────────
+
+export interface MeterPageData {
+  content: MeterData[]
+  totalElements: number
+  totalPages: number
+}
+
+export async function getMetersPaged(params: {
+  search?: string
+  utilityType?: string
+  meterType?: string
+  meterRole?: string
+  deployed?: boolean
+  inventory?: boolean
+  page?: number
+  size?: number
+  sortBy?: string
+  sortDir?: string
+}): Promise<MeterPageData> {
+  const qs = new URLSearchParams()
+  if (params.search)      qs.set('search',      params.search)
+  if (params.utilityType) qs.set('utilityType', params.utilityType)
+  if (params.meterType)   qs.set('meterType',   params.meterType)
+  if (params.meterRole)   qs.set('meterRole',   params.meterRole)
+  if (params.deployed  != null) qs.set('deployed',  String(params.deployed))
+  if (params.inventory != null) qs.set('inventory', String(params.inventory))
+  qs.set('page',    String(params.page    ?? 0))
+  qs.set('size',    String(params.size    ?? 20))
+  qs.set('sortBy',  params.sortBy  ?? 'unit_label')
+  qs.set('sortDir', params.sortDir ?? 'asc')
+  return apiFetch<MeterPageData>(`/meters/paged?${qs}`)
+}
+
+export interface MeterReadingPageData {
+  content: MeterReadingData[]
+  totalElements: number
+  totalPages: number
+  periods: string[]
+}
+
+export async function getMeterReadingsPaged(params: {
+  search?: string
+  period?: string
+  utilityType?: string
+  status?: string
+  page?: number
+  size?: number
+  sortBy?: string
+  sortDir?: string
+}): Promise<MeterReadingPageData> {
+  const qs = new URLSearchParams()
+  if (params.search)      qs.set('search',      params.search)
+  if (params.period)      qs.set('period',      params.period)
+  if (params.utilityType) qs.set('utilityType', params.utilityType)
+  if (params.status)      qs.set('status',      params.status)
+  qs.set('page',    String(params.page    ?? 0))
+  qs.set('size',    String(params.size    ?? 20))
+  qs.set('sortBy',  params.sortBy  ?? 'reading_date')
+  qs.set('sortDir', params.sortDir ?? 'desc')
+  return apiFetch<MeterReadingPageData>(`/meter-readings/paged?${qs}`)
+}
+
+export interface ReadingRunRow {
+  meterId: string
+  meterNumber: string
+  unitId: string | null
+  unitLabel: string | null
+  utilityType: string
+  meterType: string
+  lastReading: number | null
+  lastReadingDate: string | null
+  // reading fields (null if not yet read)
+  readingId: string | null
+  currentValue: number | null
+  previousValue: number | null
+  unitsConsumed: number | null
+  readingDate: string | null
+  amountDue: number | null
+  source: string | null
+  readBy: string | null
+  anomaly: boolean
+  readingStatus: string | null
+}
+
+export interface ReadingRunPageData {
+  content: ReadingRunRow[]
+  totalElements: number
+  totalPages: number
+  readCount: number
+  pendingCount: number
+}
+
+export async function getMeterReadingRun(params: {
+  period?: string
+  utilityType?: string
+  search?: string
+  page?: number
+  size?: number
+}): Promise<ReadingRunPageData> {
+  const qs = new URLSearchParams()
+  if (params.period)      qs.set('period',      params.period)
+  if (params.utilityType) qs.set('utilityType', params.utilityType)
+  if (params.search)      qs.set('search',      params.search)
+  qs.set('page', String(params.page ?? 0))
+  qs.set('size', String(params.size ?? 20))
+  return apiFetch<ReadingRunPageData>(`/meters/reading-run?${qs}`)
+}
+
+export interface UtilityStats {
+  consumerMeters: number
+  activeConsumerMeters: number
+  smartMeters: number
+  inventoryMeters: number
+  pendingBillingReadings: number
+}
+
+export async function getUtilityStats(): Promise<UtilityStats> {
+  return apiFetch<UtilityStats>('/meters/stats')
+}
