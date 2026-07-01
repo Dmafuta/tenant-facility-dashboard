@@ -620,6 +620,8 @@ export function BillingPageClient() {
   // Credit notes ledger (Adjustments tab)
   const [allCreditNotes, setAllCreditNotes]   = useState<InvoicePayment[]>([])
   const [cnLoading, setCnLoading]             = useState(false)
+  const [cnSortCol, setCnSortCol]             = useState<'unit_label'|'category_code'|'amount'|'payment_date'>('payment_date')
+  const [cnSortDir, setCnSortDir]             = useState<'asc'|'desc'>('desc')
 
   // Dispute
   const [disputeTarget, setDisputeTarget]       = useState<InvoiceData | null>(null)
@@ -638,6 +640,8 @@ export function BillingPageClient() {
   // Opening balances (Adjustments tab)
   const [openingBals, setOpeningBals]         = useState<OpeningBalance[]>([])
   const [obLoading, setObLoading]             = useState(false)
+  const [obSortCol, setObSortCol]             = useState<'unit_label'|'category_code'|'amount'|'as_of_date'|'status'>('unit_label')
+  const [obSortDir, setObSortDir]             = useState<'asc'|'desc'>('asc')
   const [showAddOb, setShowAddOb]             = useState(false)
   const [obCategory, setObCategory]           = useState<'WS' | 'SC'>('WS')
   const [obUnitLabel, setObUnitLabel]         = useState('')
@@ -1594,22 +1598,40 @@ export function BillingPageClient() {
                 <div className="py-10 text-center text-text-muted text-sm">Loading…</div>
               ) : openingBals.length === 0 ? (
                 <div className="py-10 text-center text-text-muted text-sm">No opening balances on file.</div>
-              ) : (
+              ) : (() => {
+                const obDir = obSortDir === 'asc' ? 1 : -1
+                const obSorted = [...openingBals].sort((a, b) => {
+                  switch (obSortCol) {
+                    case 'unit_label':    return obDir * (a.unit_label ?? '').localeCompare(b.unit_label ?? '')
+                    case 'category_code': return obDir * (a.category_code.localeCompare(b.category_code))
+                    case 'amount':        return obDir * (a.amount - b.amount)
+                    case 'as_of_date':    return obDir * (a.as_of_date ?? '').localeCompare(b.as_of_date ?? '')
+                    case 'status':        return obDir * (a.status.localeCompare(b.status))
+                    default:              return 0
+                  }
+                })
+                const obHdr = (col: typeof obSortCol, label: string, align = 'left') => (
+                  <th key={col} onClick={() => { if (obSortCol === col) setObSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setObSortCol(col); setObSortDir('asc') } }}
+                    className={cn('px-4 py-3 cursor-pointer select-none hover:text-text whitespace-nowrap', align === 'right' ? 'text-right' : 'text-left')}>
+                    {label}{obSortCol === col ? (obSortDir === 'asc' ? ' ↑' : ' ↓') : <span className="opacity-30"> ↕</span>}
+                  </th>
+                )
+                return (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide bg-slate-50 dark:bg-dark-card">
-                      <th className="px-4 py-3 text-left">Unit</th>
-                      <th className="px-4 py-3 text-left">Category</th>
-                      <th className="px-4 py-3 text-right">Amount</th>
-                      <th className="px-4 py-3 text-left">As Of</th>
-                      <th className="px-4 py-3 text-left">Status</th>
+                      {obHdr('unit_label', 'Unit')}
+                      {obHdr('category_code', 'Category')}
+                      {obHdr('amount', 'Amount', 'right')}
+                      {obHdr('as_of_date', 'As Of')}
+                      {obHdr('status', 'Status')}
                       <th className="px-4 py-3 text-left">Notes</th>
                       <th className="px-4 py-3 text-left">Created By</th>
                       <th className="px-4 py-3 w-24" />
                     </tr>
                   </thead>
                   <tbody>
-                    {openingBals.map((ob, i) => (
+                    {obSorted.map((ob, i) => (
                       <tr key={ob.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
                         <td className="px-4 py-2.5 font-medium text-text">{ob.unit_label ?? '—'}</td>
                         <td className="px-4 py-2.5 text-text-muted">{ob.category_code}</td>
@@ -1649,7 +1671,8 @@ export function BillingPageClient() {
                     ))}
                   </tbody>
                 </table>
-              )}
+                )
+              })()}
             </Card>
           </div>
 
@@ -1664,20 +1687,39 @@ export function BillingPageClient() {
                 <div className="py-10 text-center text-text-muted text-sm">Loading…</div>
               ) : allCreditNotes.length === 0 ? (
                 <div className="py-10 text-center text-text-muted text-sm">No unallocated credit notes.</div>
-              ) : (
+              ) : (() => {
+                const cnDir = cnSortDir === 'asc' ? 1 : -1
+                const cnSorted = [...allCreditNotes].sort((a, b) => {
+                  const aLabel = invoices.find(inv => inv.unit_id === a.unit_id)?.unit_label ?? a.unit_id ?? ''
+                  const bLabel = invoices.find(inv => inv.unit_id === b.unit_id)?.unit_label ?? b.unit_id ?? ''
+                  switch (cnSortCol) {
+                    case 'unit_label':    return cnDir * aLabel.localeCompare(bLabel)
+                    case 'category_code': return cnDir * (a.category_code ?? '').localeCompare(b.category_code ?? '')
+                    case 'amount':        return cnDir * (a.amount - b.amount)
+                    case 'payment_date':  return cnDir * (a.payment_date ?? '').localeCompare(b.payment_date ?? '')
+                    default:              return 0
+                  }
+                })
+                const cnHdr = (col: typeof cnSortCol, label: string, align = 'left') => (
+                  <th key={col} onClick={() => { if (cnSortCol === col) setCnSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setCnSortCol(col); setCnSortDir('asc') } }}
+                    className={cn('px-4 py-3 cursor-pointer select-none hover:text-text whitespace-nowrap', align === 'right' ? 'text-right' : 'text-left')}>
+                    {label}{cnSortCol === col ? (cnSortDir === 'asc' ? ' ↑' : ' ↓') : <span className="opacity-30"> ↕</span>}
+                  </th>
+                )
+                return (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-surface-border dark:border-dark-border text-xs text-text-muted uppercase tracking-wide bg-slate-50 dark:bg-dark-card">
-                      <th className="px-4 py-3 text-left">Unit</th>
-                      <th className="px-4 py-3 text-left">Category</th>
-                      <th className="px-4 py-3 text-right">Amount</th>
-                      <th className="px-4 py-3 text-left">Date</th>
+                      {cnHdr('unit_label', 'Unit')}
+                      {cnHdr('category_code', 'Category')}
+                      {cnHdr('amount', 'Amount', 'right')}
+                      {cnHdr('payment_date', 'Date')}
                       <th className="px-4 py-3 text-left">Notes</th>
                       <th className="px-4 py-3 text-left">Created</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {allCreditNotes.map((note, i) => {
+                    {cnSorted.map((note, i) => {
                       const unitLabel = invoices.find(inv => inv.unit_id === note.unit_id)?.unit_label ?? note.unit_id?.slice(0, 8) ?? '—'
                       return (
                         <tr key={note.id} className={cn('border-b border-surface-border dark:border-dark-border', i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-dark-card/20')}>
@@ -1692,7 +1734,8 @@ export function BillingPageClient() {
                     })}
                   </tbody>
                 </table>
-              )}
+                )
+              })()}
             </Card>
           </div>
         </div>
