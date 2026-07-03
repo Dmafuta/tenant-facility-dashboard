@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   getIntegrations, saveEmailIntegration, saveAfricasTalkingIntegration,
   saveAfrinetIntegration,
-  saveMpesaIntegration, saveTelegramIntegration, savePremblyIntegration,
+  saveMpesaIntegration, saveTelegramIntegration, savePremblyIntegration, saveAnthropicIntegration,
   testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
   listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
   setDefaultMpesaAccount, testMpesaAccount, registerC2bUrls,
@@ -997,6 +997,53 @@ function PremblCard({ initial, onSave }: { initial: IntegrationSettings['prembly
   )
 }
 
+// ── Anthropic AI card ─────────────────────────────────────────────────────────
+
+function AnthropicCard({ initial, onSave }: { initial: IntegrationSettings['anthropic']; onSave: (s: IntegrationSettings) => void }) {
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = {}
+      if (apiKey) payload.apiKey = apiKey
+      const updated = await saveAnthropicIntegration(payload)
+      onSave(updated)
+      setApiKey('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Card icon="🤖" title={`Anthropic AI — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">Powers the &ldquo;Ask AI&rdquo; natural-language query feature. Get an API key from console.anthropic.com.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <div className="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-xs text-violet-700 mb-4">
+        Sign up at <strong>console.anthropic.com</strong> → create a project → copy your <strong>API Key</strong>. The key is stored securely in the database.
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <Field
+          label="API Key"
+          value={apiKey}
+          onChange={setApiKey}
+          sensitive
+          alreadySet={initial.apiKey === '***'}
+          placeholder="sk-ant-api03-..."
+        />
+        <div className="flex justify-end pt-1">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function IntegrationsPageClient() {
@@ -1027,6 +1074,7 @@ export function IntegrationsPageClient() {
     settings.mpesa.configured,
     settings.telegram.configured,
     settings.prembly.configured,
+    settings.anthropic.configured,
   ].filter(Boolean).length
 
   return (
@@ -1039,7 +1087,7 @@ export function IntegrationsPageClient() {
           </svg>
         </div>
         <div>
-          <p className="text-sm font-semibold text-gray-900">{configured} of 5 integrations configured</p>
+          <p className="text-sm font-semibold text-gray-900">{configured} of 7 integrations configured</p>
           <p className="text-xs text-gray-500 mt-0.5">Credentials are stored securely in the database and never exposed in plaintext.</p>
         </div>
         <div className="ml-auto flex gap-3">
@@ -1050,6 +1098,7 @@ export function IntegrationsPageClient() {
             { icon: '💚', label: 'M-Pesa',   ok: settings.mpesa.configured },
             { icon: '✈️',  label: 'Telegram', ok: settings.telegram.configured },
             { icon: '🪪',  label: 'KYC',      ok: settings.prembly.configured },
+            { icon: '🤖',  label: 'AI',       ok: settings.anthropic.configured },
           ].map(({ icon, label, ok }) => (
             <div key={label} className="flex flex-col items-center gap-0.5">
               <span className="text-base">{icon}</span>
@@ -1067,6 +1116,7 @@ export function IntegrationsPageClient() {
       <MpesaCard          initial={settings.mpesa}          onSave={handleSave} />
       <TelegramCard       initial={settings.telegram}       onSave={handleSave} />
       <PremblCard         initial={settings.prembly}        onSave={handleSave} />
+      <AnthropicCard      initial={settings.anthropic}      onSave={handleSave} />
     </div>
   )
 }

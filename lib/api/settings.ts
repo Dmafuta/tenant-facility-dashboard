@@ -207,6 +207,11 @@ export interface AfrinetConfig {
   configured: boolean
 }
 
+export interface AnthropicConfig {
+  apiKey: string      // "***" if set, "" if not
+  configured: boolean
+}
+
 export interface IntegrationSettings {
   email: EmailConfig
   africastalking: AfricasTalkingConfig
@@ -214,6 +219,7 @@ export interface IntegrationSettings {
   mpesa: MpesaConfig
   telegram: TelegramConfig
   prembly: PremblConfig
+  anthropic: AnthropicConfig
 }
 
 export function getIntegrations(): Promise<IntegrationSettings> {
@@ -242,6 +248,10 @@ export function saveTelegramIntegration(payload: Record<string, string>): Promis
 
 export function savePremblyIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
   return apiFetch('/settings/integrations/prembly', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export function saveAnthropicIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
+  return apiFetch('/settings/integrations/anthropic', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
 export function testEmailIntegration(email: string): Promise<string> {
