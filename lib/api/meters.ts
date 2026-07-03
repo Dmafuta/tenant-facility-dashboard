@@ -160,6 +160,31 @@ export async function deleteGlobalMeter(meterId: string): Promise<void> {
   await apiFetch<unknown>(`/meters/${meterId}`, { method: 'DELETE' })
 }
 
+export interface MeterSwapRequest {
+  newMeterNumber: string
+  swapDate: string        // YYYY-MM-DD
+  closingReading: number
+  initialReading: number
+  billingPeriod: string   // YYYY-MM
+  reason: string
+  performedBy?: string
+  notes?: string
+}
+
+export interface MeterSwapResponse {
+  old_meter:           MeterData
+  new_meter:           MeterData
+  closing_reading_id:  string
+  consumed_on_old:     number
+}
+
+export async function swapMeter(meterId: string, payload: MeterSwapRequest): Promise<MeterSwapResponse> {
+  return apiFetch<MeterSwapResponse>(`/meters/${meterId}/swap`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export interface BulkReadingItem {
   meter_id: string
   current_value: number

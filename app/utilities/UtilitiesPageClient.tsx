@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -366,6 +366,15 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   const [correcting, setCorrecting] = useState(false)
   const [correctError, setCorrectError] = useState<string | null>(null)
 
+  // Meter swap
+  const [swapForm, setSwapForm] = useState({
+    newMeterNumber: '', swapDate: '', closingReading: '', initialReading: '0',
+    billingPeriod: '', reason: 'defective', performedBy: '', notes: '',
+  })
+  const [swapping, setSwapping]   = useState(false)
+  const [swapError, setSwapError] = useState<string | null>(null)
+  const [swapDone, setSwapDone]   = useState<{ oldNumber: string; newNumber: string } | null>(null)
+
   const fetchHistory = useCallback((meterId: string) => {
     setLoadingH(true)
     getMeterTypeHistory(meterId)
@@ -384,8 +393,47 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
       fetchHistory(meter.id)
       setShowMigForm(false)
       setMigForm({ fromType: meter.meter_type, toType: '', migrationDate: '', finalReading: '', migratedBy: '', notes: '' })
+      // Reset swap form
+      const prevMonth = new Date(); prevMonth.setDate(0)
+      const periodStr = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`
+      setSwapForm(f => ({
+        ...f,
+        newMeterNumber: '', swapDate: new Date().toISOString().slice(0, 10),
+        closingReading: meter.last_reading != null ? String(meter.last_reading) : '',
+        initialReading: '0', billingPeriod: periodStr,
+        reason: 'defective', performedBy: '', notes: '',
+      }))
+      setSwapError(null)
+      setSwapDone(null)
     }
   }, [open, meter, fetchHistory])
+
+  async function handleSwap() {
+    if (!meter) return
+    if (!swapForm.newMeterNumber.trim()) { setSwapError('New meter number is required.'); return }
+    if (!swapForm.closingReading) { setSwapError('Closing reading on old meter is required.'); return }
+    if (!swapForm.billingPeriod) { setSwapError('Billing period is required.'); return }
+    setSwapping(true)
+    setSwapError(null)
+    try {
+      const result = await swapMeter(meter.id, {
+        newMeterNumber:  swapForm.newMeterNumber.trim(),
+        swapDate:        swapForm.swapDate || new Date().toISOString().slice(0, 10),
+        closingReading:  Number(swapForm.closingReading),
+        initialReading:  Number(swapForm.initialReading || 0),
+        billingPeriod:   swapForm.billingPeriod,
+        reason:          swapForm.reason,
+        performedBy:     swapForm.performedBy || undefined,
+        notes:           swapForm.notes || undefined,
+      })
+      setSwapDone({ oldNumber: result.old_meter.meter_number, newNumber: result.new_meter.meter_number })
+      onMeterUpdated?.()
+    } catch (e: unknown) {
+      setSwapError(e instanceof Error ? e.message : 'Swap failed.')
+    } finally {
+      setSwapping(false)
+    }
+  }
 
   async function submitMigration() {
     if (!meter || !migForm.fromType || !migForm.toType) return
@@ -475,6 +523,9 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
           <TabsList className="mb-3">
             <TabsTrigger value="readings">Readings</TabsTrigger>
             <TabsTrigger value="history">Migration History{history.length > 0 ? ` (${history.length})` : ''}</TabsTrigger>
+            {meter.status === 'active' && (
+              <TabsTrigger value="swap">Swap Meter</TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="readings">
             {loadingR ? (
@@ -663,6 +714,136 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
                 </CanDo>
               )}
             </div>
+          </TabsContent>
+
+          {/* ── Swap Meter Tab ─────────────────────────────────────────────── */}
+          <TabsContent value="swap">
+            <CanDo action="write" resource={{ type: 'unit' }}>
+              {swapDone ? (
+                <div className="p-4 rounded-xl bg-success/10 border border-success/20 text-center space-y-2">
+                  <p className="text-success font-semibold text-sm">Meter swap recorded successfully</p>
+                  <p className="text-xs text-text-muted">
+                    Old meter <span className="font-mono font-medium text-text">{swapDone.oldNumber}</span> is now <span className="px-1.5 py-0.5 rounded bg-surface-border text-text-muted text-xs">replaced</span>
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    New meter <span className="font-mono font-medium text-text">{swapDone.newNumber}</span> is <span className="px-1.5 py-0.5 rounded bg-success/10 text-success text-xs">active</span>
+                  </p>
+                  <p className="text-[11px] text-text-muted mt-1">
+                    The old meter&apos;s partial consumption will be automatically included when you enter the new meter&apos;s reading at month end.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800">
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Before you proceed</p>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-0.5">
+                      Record the exact reading on the <strong>old meter</strong> at the moment of swap. This consumption will be automatically added to the new meter&apos;s end-of-month reading for correct billing.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2">
+                      <label className="text-xs text-text-muted mb-1 block">New Meter Number *</label>
+                      <input
+                        type="text"
+                        value={swapForm.newMeterNumber}
+                        onChange={e => setSwapForm(f => ({ ...f, newMeterNumber: e.target.value }))}
+                        placeholder="Barcode or serial number"
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">Closing Reading (old meter) *</label>
+                      <input
+                        type="number"
+                        value={swapForm.closingReading}
+                        onChange={e => setSwapForm(f => ({ ...f, closingReading: e.target.value }))}
+                        placeholder="e.g. 497"
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">Initial Reading (new meter)</label>
+                      <input
+                        type="number"
+                        value={swapForm.initialReading}
+                        onChange={e => setSwapForm(f => ({ ...f, initialReading: e.target.value }))}
+                        placeholder="0"
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">Swap Date *</label>
+                      <input
+                        type="date"
+                        value={swapForm.swapDate}
+                        onChange={e => setSwapForm(f => ({ ...f, swapDate: e.target.value }))}
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-muted mb-1 block">Billing Period *</label>
+                      <input
+                        type="month"
+                        value={swapForm.billingPeriod}
+                        onChange={e => setSwapForm(f => ({ ...f, billingPeriod: e.target.value }))}
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-text-muted mb-1 block">Reason</label>
+                      <select
+                        value={swapForm.reason}
+                        onChange={e => setSwapForm(f => ({ ...f, reason: e.target.value }))}
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        <option value="defective">Defective / Not working</option>
+                        <option value="accuracy">Accuracy failure</option>
+                        <option value="burnt_out">Burnt out</option>
+                        <option value="scheduled">Scheduled replacement</option>
+                        <option value="tampered">Tampered / Bypassed</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-text-muted mb-1 block">Performed By</label>
+                      <input
+                        type="text"
+                        value={swapForm.performedBy}
+                        onChange={e => setSwapForm(f => ({ ...f, performedBy: e.target.value }))}
+                        placeholder="Technician name or ID"
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-text-muted mb-1 block">Notes</label>
+                      <textarea
+                        value={swapForm.notes}
+                        onChange={e => setSwapForm(f => ({ ...f, notes: e.target.value }))}
+                        rows={2}
+                        placeholder="Optional notes…"
+                        className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2.5 py-2 text-sm bg-white dark:bg-dark-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  {swapError && (
+                    <p className="text-xs text-danger bg-danger/10 rounded-lg px-3 py-2">{swapError}</p>
+                  )}
+
+                  <div className="flex gap-2 justify-end pt-1">
+                    <Button
+                      size="sm"
+                      onClick={handleSwap}
+                      disabled={swapping || !swapForm.newMeterNumber || !swapForm.closingReading || !swapForm.billingPeriod}
+                      className="bg-amber-600 hover:bg-amber-700"
+                    >
+                      {swapping ? 'Processing…' : 'Confirm Meter Swap'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CanDo>
           </TabsContent>
         </Tabs>
       </div>
