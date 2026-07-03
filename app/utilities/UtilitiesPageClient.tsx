@@ -3482,7 +3482,9 @@ function InventoryTab({
 
 function currentPeriodStr() {
   const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  // Default to previous month — readings taken at start of month bill prior month's consumption
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 function fmtPeriodLabel(period: string) {
@@ -3519,6 +3521,12 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
     return () => clearTimeout(t)
   }, [search])
+
+  // Auto-poll every 30 s while this tab is mounted
+  useEffect(() => {
+    const id = setInterval(() => setRefreshKey(k => k + 1), 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
