@@ -390,14 +390,15 @@ export interface ZeroBaselineReading {
   amountDue: string
 }
 
-export async function fixZeroBaselines(dryRun: boolean): Promise<{
+export async function fixZeroBaselines(dryRun: boolean, batchSize = 100): Promise<{
   dryRun: boolean
   affected?: number
   readings?: ZeroBaselineReading[]
   fixed?: number
+  remaining?: number
   invoicesVoided?: number
   errors?: number
   errorDetails?: string[]
 }> {
-  return apiFetch(`/meter-readings/fix-zero-baselines?dryRun=${dryRun}`, { method: 'POST' })
+  return apiFetch(`/meter-readings/fix-zero-baselines?dryRun=${dryRun}&batchSize=${batchSize}`, { method: 'POST' })
 }

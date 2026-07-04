@@ -2711,9 +2711,10 @@ function ReadingsTab() {
   const [fixPreview, setFixPreview]             = useState<ZeroBaselineReading[] | null>(null)
   const [fixApplied, setFixApplied]             = useState<{ fixed: number; invoicesVoided: number; errors: string[] } | null>(null)
   const [fixError, setFixError]                 = useState<string | null>(null)
+  const [fixProgress, setFixProgress]           = useState<{ done: number; total: number } | null>(null)
 
   async function handleFixDryRun() {
-    setFixRunning(true); setFixPreview(null); setFixApplied(null); setFixError(null)
+    setFixRunning(true); setFixPreview(null); setFixApplied(null); setFixError(null); setFixProgress(null)
     try {
       const res = await fixZeroBaselines(true)
       setFixPreview(res.readings ?? [])
@@ -2723,15 +2724,26 @@ function ReadingsTab() {
   }
 
   async function handleFixApply() {
-    setFixRunning(true); setFixError(null)
+    if (!fixPreview) return
+    const total = fixPreview.length
+    setFixRunning(true); setFixError(null); setFixProgress({ done: 0, total })
+    let totalFixed = 0; let totalVoided = 0; const allErrors: string[] = []
     try {
-      const res = await fixZeroBaselines(false)
-      setFixApplied({ fixed: res.fixed ?? 0, invoicesVoided: res.invoicesVoided ?? 0, errors: res.errorDetails ?? [] })
+      let remaining = total
+      while (remaining > 0) {
+        const res = await fixZeroBaselines(false, 100)
+        totalFixed  += res.fixed  ?? 0
+        totalVoided += res.invoicesVoided ?? 0
+        allErrors.push(...(res.errorDetails ?? []))
+        remaining = res.remaining ?? 0
+        setFixProgress({ done: totalFixed, total })
+      }
+      setFixApplied({ fixed: totalFixed, invoicesVoided: totalVoided, errors: allErrors })
       setFixPreview(null)
       onRefresh()
     } catch (e: unknown) {
       setFixError(e instanceof Error ? e.message : 'Failed to apply fixes')
-    } finally { setFixRunning(false) }
+    } finally { setFixRunning(false); setFixProgress(null) }
   }
 
   // CSV readings import
@@ -3049,10 +3061,24 @@ function ReadingsTab() {
                       </tbody>
                     </table>
                   </div>
+                  {fixProgress && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-text-muted">
+                        <span>Fixing readings…</span>
+                        <span>{fixProgress.done} / {fixProgress.total}</span>
+                      </div>
+                      <div className="w-full bg-surface-border rounded-full h-2">
+                        <div
+                          className="bg-primary-500 h-2 rounded-full transition-all"
+                          style={{ width: `${Math.round((fixProgress.done / fixProgress.total) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <Button variant="ghost" className="flex-1" onClick={() => setShowFixModal(false)}>Cancel</Button>
+                    <Button variant="ghost" className="flex-1" disabled={fixRunning} onClick={() => setShowFixModal(false)}>Cancel</Button>
                     <Button variant="danger" className="flex-1" disabled={fixRunning} onClick={handleFixApply}>
-                      {fixRunning ? 'Applying…' : `Fix ${fixPreview.length} Reading(s) & Void Invoices`}
+                      {fixRunning ? `Fixing… (${fixProgress?.done ?? 0}/${fixProgress?.total ?? fixPreview.length})` : `Fix ${fixPreview.length} Reading(s) & Void Invoices`}
                     </Button>
                   </div>
                 </div>
