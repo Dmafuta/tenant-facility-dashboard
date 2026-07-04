@@ -414,6 +414,47 @@ function TrendTab({ meterId, utilityType }: { meterId: string; utilityType: stri
   )
 }
 
+// ── Meter QR Print ────────────────────────────────────────────────────────
+
+function printMeterQr(meter: MeterData) {
+  const url = `${window.location.origin}/tenant-reading?m=${meter.id}`
+  const win = window.open('', '_blank', 'width=500,height=600')
+  if (!win) return
+  win.document.write(`<!DOCTYPE html><html><head>
+<title>Meter QR — ${meter.meter_number}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center;
+         justify-content: center; min-height: 100vh; padding: 24px; gap: 16px; }
+  .card { border: 2px solid #111; border-radius: 12px; padding: 24px;
+          display: flex; flex-direction: column; align-items: center; gap: 12px;
+          max-width: 320px; width: 100%; }
+  h2 { font-size: 18px; font-weight: 700; text-align: center; }
+  .sub { font-size: 13px; color: #555; text-align: center; }
+  .url { font-size: 10px; color: #888; word-break: break-all; text-align: center; margin-top: 4px; }
+  .instructions { font-size: 12px; color: #333; text-align: center;
+                  border-top: 1px solid #eee; padding-top: 12px; line-height: 1.5; }
+  @media print { body { padding: 0; } button { display: none !important; } }
+</style>
+</head><body>
+<div class="card">
+  <h2>${meter.unit_label ?? meter.meter_number}</h2>
+  <p class="sub">Meter #${meter.meter_number} &bull; ${meter.utility_type?.replace('_', ' ') ?? ''}</p>
+  <div id="qr"></div>
+  <p class="url">${url}</p>
+  <p class="instructions">Scan this QR code with your phone camera to submit your own meter reading.</p>
+</div>
+<button onclick="window.print()" style="margin-top:16px;padding:10px 24px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;">Print / Save as PDF</button>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script>
+  QRCode.toCanvas(document.createElement('canvas'), ${JSON.stringify(url)}, { width: 200, margin: 1 }, function(err, canvas) {
+    if (!err) document.getElementById('qr').appendChild(canvas)
+  })
+</script>
+</body></html>`)
+  win.document.close()
+}
+
 // ── Meter Detail Drawer ────────────────────────────────────────────────────
 
 const METER_TYPES = ['postpaid', 'prepaid', 'smart'] as const
@@ -557,6 +598,21 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   return (
     <Drawer open={open} onClose={onClose} title={`${utilityLabel(meter.utility_type)} — ${meter.meter_number}`}>
       <div className="p-4 space-y-4">
+
+        {/* Print QR — only for consumer meters (unit-assigned, postpaid) */}
+        {meter.unit_id && meter.meter_type !== 'smart' && (
+          <button
+            onClick={() => printMeterQr(meter)}
+            className="w-full flex items-center justify-center gap-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg py-2.5 text-sm font-medium text-text-muted hover:border-green-500 hover:text-green-600 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 3.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5zm-12 0a2.5 2.5 0 110-5 2.5 2.5 0 010 5zM4 7h16M7 4h10" />
+            </svg>
+            Print Tenant QR Code
+          </button>
+        )}
+
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="p-3 rounded-lg bg-surface-muted dark:bg-dark-card">
             <p className="text-xs text-text-muted">Location</p>
