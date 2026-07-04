@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod, clearAnomaly } from '@/lib/api/meters'
 import type { ZeroBaselineReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
@@ -23,8 +23,8 @@ import {
 import type { WaterSupplierData, ReserveTankData, WaterZoneData, WaterBalancePeriodData } from '@/lib/api/water'
 import { getUnitsFromApi } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
-import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice, reconnectNotice } from '@/lib/api/disconnection'
-import { getWaterLossReport, getUnreadMeters, getInvoices, type InvoiceData } from '@/lib/api/invoices'
+import { getOverdueUtilityCharges, getDisconnectionNotices, sendDisconnectionNotice, reconnectNotice, bulkReconnect } from '@/lib/api/disconnection'
+import { getWaterLossReport, getUnreadMeters, getInvoices, bulkIssueInvoices, getPeriodComparison, getConsumptionTrend, type InvoiceData, type PeriodComparisonRow, type PeriodComparisonSummary, type ConsumptionTrendRow } from '@/lib/api/invoices'
 import type { DisconnectionNoticeData } from '@/lib/api/disconnection'
 import type { ChargeData } from '@/lib/api/charges'
 import { getSettings } from '@/lib/api/settings'
@@ -342,6 +342,78 @@ function ReadingEntryModal({
   )
 }
 
+// ── Consumption Trend Tab (inside drawer) ──────────────────────────────────
+
+function TrendTab({ meterId, utilityType }: { meterId: string; utilityType: string }) {
+  const [rows, setRows]       = useState<ConsumptionTrendRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true); setError(null)
+    getConsumptionTrend({ meterId, months: 12 })
+      .then(setRows)
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load trend'))
+      .finally(() => setLoading(false))
+  }, [meterId])
+
+  const unit = ['water', 'water_sewer'].includes(utilityType) ? 'm³' : 'units'
+
+  if (loading) return <p className="text-sm text-text-muted py-8 text-center">Loading trend data…</p>
+  if (error)   return <p className="text-sm text-danger py-4 text-center">{error}</p>
+  if (rows.length === 0) return <p className="text-sm text-text-muted py-8 text-center">No reading history available.</p>
+
+  const maxVal = Math.max(...rows.map(r => Number(r.units_consumed ?? 0)), 1)
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-text-muted">Last {rows.length} billing periods — consumption ({unit})</p>
+      <div className="flex items-end gap-1 h-40 border-b border-surface-border dark:border-dark-border px-1">
+        {rows.map(r => {
+          const val = Number(r.units_consumed ?? 0)
+          const pct = maxVal > 0 ? (val / maxVal) * 100 : 0
+          return (
+            <div key={r.period} className="flex-1 flex flex-col items-center justify-end gap-1 group" title={`${r.period}: ${val} ${unit}`}>
+              <div
+                className="w-full rounded-t transition-colors bg-primary-500 dark:bg-primary-400 group-hover:bg-primary-600"
+                style={{ height: `${Math.max(2, pct)}%` }}
+              />
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-start gap-1 px-1 overflow-x-auto">
+        {rows.map(r => (
+          <div key={r.period} className="flex-1 text-center min-w-0">
+            <p className="text-[9px] text-text-muted truncate">{r.period.slice(5)}</p>
+            <p className="text-[10px] font-semibold text-text">{Number(r.units_consumed ?? 0).toFixed(1)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="overflow-auto max-h-48">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-[11px] text-text-muted border-b border-surface-border dark:border-dark-border">
+              <th className="py-1.5 pr-3">Period</th>
+              <th className="py-1.5 pr-3 text-right">Consumed</th>
+              <th className="py-1.5 text-right">Amount (KES)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...rows].reverse().map(r => (
+              <tr key={r.period} className="border-b border-surface-border/50 dark:border-dark-border/50 text-text">
+                <td className="py-1.5 pr-3">{r.period}</td>
+                <td className="py-1.5 pr-3 text-right font-mono">{Number(r.units_consumed ?? 0).toFixed(3)} {unit}</td>
+                <td className="py-1.5 text-right font-mono">{Number(r.amount_due ?? 0).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ── Meter Detail Drawer ────────────────────────────────────────────────────
 
 const METER_TYPES = ['postpaid', 'prepaid', 'smart'] as const
@@ -523,6 +595,7 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
         <Tabs defaultValue="readings">
           <TabsList className="mb-3">
             <TabsTrigger value="readings">Readings</TabsTrigger>
+            <TabsTrigger value="trend">Trend</TabsTrigger>
             <TabsTrigger value="history">Migration History{history.length > 0 ? ` (${history.length})` : ''}</TabsTrigger>
             {meter.status === 'active' && (
               <TabsTrigger value="swap">Swap Meter</TabsTrigger>
@@ -606,6 +679,10 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
               </div>
             )}
           </TabsContent>
+          <TabsContent value="trend">
+            <TrendTab meterId={meter.id} utilityType={meter.utility_type} />
+          </TabsContent>
+
           <TabsContent value="history">
             <div className="space-y-2">
               {loadingH ? (
@@ -3273,6 +3350,8 @@ function DisconnectionTab({
   const [toast, setToast] = useState<string | null>(null)
   const [candPage, setCandPage] = useState(1)
   const CAND_PAGE_SIZE = 25
+  const [selectedNotices, setSelectedNotices] = useState<Set<string>>(new Set())
+  const [bulkReconnecting, setBulkReconnecting] = useState(false)
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -3323,6 +3402,22 @@ function DisconnectionTab({
       showToast('❌ Failed to record reconnection')
     } finally {
       setReconnecting(null)
+    }
+  }
+
+  async function handleBulkReconnect() {
+    const ids = Array.from(selectedNotices)
+    if (!ids.length) return
+    setBulkReconnecting(true)
+    try {
+      const res = await bulkReconnect(ids)
+      showToast(`✅ ${res.reconnected} reconnected${res.skipped > 0 ? ` · ${res.skipped} skipped` : ''}`)
+      setSelectedNotices(new Set())
+      onRefresh()
+    } catch {
+      showToast('❌ Bulk reconnect failed')
+    } finally {
+      setBulkReconnecting(false)
     }
   }
 
@@ -3534,12 +3629,32 @@ function DisconnectionTab({
       {/* Sent notices log */}
       {sentNotices.length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <h4 className="text-sm font-semibold text-gray-900">Recently Sent Notices</h4>
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
+            <h4 className="text-sm font-semibold text-gray-900 flex-1">Recently Sent Notices</h4>
+            {selectedNotices.size > 0 && (
+              <button
+                disabled={bulkReconnecting}
+                onClick={handleBulkReconnect}
+                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {bulkReconnecting ? '…' : `✓ Reconnect Selected (${selectedNotices.size})`}
+              </button>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <th className="px-3 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={selectedNotices.size > 0 && sentNotices.filter(n => n.status !== 'reconnected').every(n => selectedNotices.has(n.id))}
+                    onChange={e => {
+                      if (e.target.checked) setSelectedNotices(new Set(sentNotices.filter(n => n.status !== 'reconnected').map(n => n.id)))
+                      else setSelectedNotices(new Set())
+                    }}
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">Unit · Tenant</th>
                 <th className="px-4 py-3 font-medium">Meter</th>
                 <th className="px-4 py-3 font-medium">Utility</th>
@@ -3552,7 +3667,21 @@ function DisconnectionTab({
             </thead>
             <tbody>
               {sentNotices.slice(0, 20).map(n => (
-                <tr key={n.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                <tr key={n.id} className={cn('border-b border-gray-50 last:border-0 hover:bg-gray-50', selectedNotices.has(n.id) ? 'bg-green-50' : '')}>
+                  <td className="px-3 py-3">
+                    {n.status !== 'reconnected' && (
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={selectedNotices.has(n.id)}
+                        onChange={e => {
+                          const next = new Set(selectedNotices)
+                          if (e.target.checked) next.add(n.id); else next.delete(n.id)
+                          setSelectedNotices(next)
+                        }}
+                      />
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{n.unit_label ?? '—'}</p>
                     <p className="text-xs text-gray-500">{n.person_name ?? '—'}</p>
@@ -3738,6 +3867,7 @@ function InventoryTab({
   const [totalPages, setTotalPages] = useState(1)
   const [totalElements, setTotalElements] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
@@ -3758,8 +3888,6 @@ function InventoryTab({
     }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [debouncedSearch, typeFilter, page, externalRefreshKey])
-
-  const filtered = meters  // alias
 
   if (loading) return <p className="py-12 text-center text-text-muted text-sm">Loading…</p>
 
@@ -3782,6 +3910,17 @@ function InventoryTab({
           className="w-44"
         />
         <p className="text-xs text-text-muted ml-auto">{totalElements} meter{totalElements !== 1 ? 's' : ''} in inventory</p>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={() => {
+              const first = meters.find(m => selectedIds.has(m.id))
+              if (first) onAssign(first)
+            }}
+            className="flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-700"
+          >
+            Assign Selected ({selectedIds.size}) →
+          </button>
+        )}
       </div>
 
       {meters.length === 0 ? (
@@ -3799,6 +3938,14 @@ function InventoryTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface-muted dark:bg-dark-hover border-b border-surface-border dark:border-dark-border">
+                <th className="px-3 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={meters.length > 0 && meters.every(m => selectedIds.has(m.id))}
+                    onChange={e => setSelectedIds(e.target.checked ? new Set(meters.map(m => m.id)) : new Set())}
+                  />
+                </th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Utility</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Meter Number</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-text-muted">Account No.</th>
@@ -3809,8 +3956,20 @@ function InventoryTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border dark:divide-dark-border">
-              {filtered.map(m => (
-                <tr key={m.id} className="hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors">
+              {meters.map(m => (
+                <tr key={m.id} className={cn('hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors', selectedIds.has(m.id) ? 'bg-primary-50 dark:bg-primary-900/10' : '')}>
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      className="rounded"
+                      checked={selectedIds.has(m.id)}
+                      onChange={e => {
+                        const next = new Set(selectedIds)
+                        if (e.target.checked) next.add(m.id); else next.delete(m.id)
+                        setSelectedIds(next)
+                      }}
+                    />
+                  </td>
                   <td className="px-4 py-3 text-sm">
                     <span>{utilityIcon(m.utility_type)}</span>
                     <span className="text-xs text-text-muted ml-1.5">{utilityLabel(m.utility_type)}</span>
@@ -3890,6 +4049,11 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
   const [toast, setToast]               = useState<{ msg: string; ok: boolean } | null>(null)
   const [wsInvoices, setWsInvoices]     = useState<InvoiceData[]>([])
   const [refreshKey, setRefreshKey]     = useState(0)
+  const [generatingBills, setGeneratingBills] = useState(false)
+  const [exportingCsv, setExportingCsv]       = useState(false)
+  const [photoUrl, setPhotoUrl]               = useState<string | null>(null)
+  const [clearingAnomaly, setClearingAnomaly] = useState<string | null>(null)
+  const [showBlockSummary, setShowBlockSummary] = useState(false)
 
   // Active period lock
   const [activePeriod, setActivePeriodState]  = useState<string | null>(null)
@@ -3990,11 +4154,76 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
     }
   }
 
+  async function handleGenerateBills() {
+    setGeneratingBills(true)
+    try {
+      const res = await bulkIssueInvoices(period, 'WS')
+      showToast(`Generated ${res.issued} WS invoice${res.issued === 1 ? '' : 's'}${res.skipped > 0 ? ` · ${res.skipped} skipped` : ''}.`, true)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to generate invoices.', false)
+    } finally {
+      setGeneratingBills(false)
+    }
+  }
+
+  async function handleExportCsv() {
+    setExportingCsv(true)
+    try {
+      // Fetch all rows (large page)
+      const all = await getMeterReadingRun({ period, utilityType: utilFilter !== 'all' ? utilFilter : undefined, search: debouncedSearch || undefined, page: 0, size: 9999 })
+      const headers = ['Unit', 'Meter No', 'Utility', 'Type', 'Prev Reading', 'Curr Reading', 'Consumed', 'Date Read', 'Read By', 'Source', 'Status', 'Amount Due (KES)']
+      const csvRows = all.content.map(r => [
+        r.unitLabel ?? '', r.meterNumber, r.utilityType, r.meterType,
+        r.previousValue ?? '', r.currentValue ?? '', r.unitsConsumed ?? '',
+        r.readingDate ?? '', r.readBy ?? '', r.source ?? '',
+        r.readingId ? (r.anomaly ? 'anomaly' : r.source === 'estimated' ? 'estimated' : 'read') : 'pending',
+        r.amountDue ?? '',
+      ])
+      const csv = [headers, ...csvRows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+      a.download = `reading-run-${period}.csv`
+      a.click()
+      showToast(`Exported ${all.content.length} rows.`, true)
+    } catch {
+      showToast('Export failed.', false)
+    } finally {
+      setExportingCsv(false)
+    }
+  }
+
+  async function handleClearAnomaly(readingId: string) {
+    setClearingAnomaly(readingId)
+    try {
+      await clearAnomaly(readingId)
+      showToast('Anomaly cleared.', true)
+      await fetchReadings()
+    } catch {
+      showToast('Failed to clear anomaly.', false)
+    } finally {
+      setClearingAnomaly(null)
+    }
+  }
+
   function shiftPeriod(delta: number) {
     const [y, m] = period.split('-').map(Number)
     const d = new Date(y, m - 1 + delta)
     setPeriod(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
+
+  // Group reading run rows by block/zone prefix
+  const blockSummary = useMemo(() => {
+    const groups: Record<string, { total: number; read: number; anomalies: number }> = {}
+    for (const r of runRows) {
+      const label = r.unitLabel ?? 'Unassigned'
+      const block = label.split(/[-/ ]/)[0] || label
+      if (!groups[block]) groups[block] = { total: 0, read: 0, anomalies: 0 }
+      groups[block].total++
+      if (r.readingId) groups[block].read++
+      if (r.anomaly)   groups[block].anomalies++
+    }
+    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [runRows])
 
   const progressColor =
     pct === 100 ? 'bg-green-500' :
@@ -4023,7 +4252,7 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
           >›</button>
           <span className="text-sm font-semibold text-text hidden sm:block">{fmtPeriodLabel(period)}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {pendingCount > 0 && (
             <Button variant="outline" size="sm" disabled={estimating} onClick={handleEstimate}>
               {estimating
@@ -4031,6 +4260,15 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
                 : `✦ Estimate ${pendingCount} unread`}
             </Button>
           )}
+          <CanDo action="write" resource={{ type: 'utility' }}>
+            <Button variant="outline" size="sm" disabled={generatingBills || loading} onClick={handleGenerateBills}
+              title="Generate Water & Sewer invoices for all read meters this period">
+              {generatingBills ? '…' : '⚡ Generate WS Bills'}
+            </Button>
+          </CanDo>
+          <Button variant="ghost" size="sm" disabled={exportingCsv || loading} onClick={handleExportCsv}>
+            {exportingCsv ? '…' : '⬇ CSV'}
+          </Button>
           <Button variant="outline" size="sm" disabled={loading} onClick={fetchReadings}>
             {loading ? '…' : '↺ Refresh'}
           </Button>
@@ -4239,7 +4477,39 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
             className="text-xs text-text-muted hover:text-text transition-colors"
           >✕ Clear filters</button>
         )}
+        <button
+          onClick={() => setShowBlockSummary(v => !v)}
+          className="ml-auto text-xs text-primary hover:underline"
+        >
+          {showBlockSummary ? 'Hide' : '📊 Block Summary'}
+        </button>
       </div>
+
+      {/* ── Block / Zone Summary ─────────────────────────────────────────── */}
+      {showBlockSummary && blockSummary.length > 0 && (
+        <Card className="p-4">
+          <p className="text-sm font-semibold text-text mb-3">Reading Completion by Block (current page)</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {blockSummary.map(([block, s]) => {
+              const pct = s.total > 0 ? Math.round((s.read / s.total) * 100) : 0
+              return (
+                <div key={block} className="p-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card">
+                  <p className="text-xs font-semibold text-text truncate">{block}</p>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-surface-border dark:border-dark-border overflow-hidden">
+                    <div className={cn('h-full rounded-full', pct === 100 ? 'bg-green-500' : pct >= 60 ? 'bg-primary-500' : 'bg-amber-400')} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-text-muted mt-1">
+                    <span>{s.read}/{s.total} read</span>
+                    <span className={cn('font-semibold', pct === 100 ? 'text-green-600' : pct >= 60 ? 'text-primary-600' : 'text-amber-600')}>{pct}%</span>
+                  </div>
+                  {s.anomalies > 0 && <p className="text-[10px] text-red-500 mt-0.5">⚠ {s.anomalies} anomal{s.anomalies === 1 ? 'y' : 'ies'}</p>}
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-text-muted mt-3">Based on block/zone prefix of unit label (current page only).</p>
+        </Card>
+      )}
 
       {/* ── Table ────────────────────────────────────────────────────────── */}
       <Card className="overflow-hidden p-0">
@@ -4340,18 +4610,35 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {isPending && (
-                          <button
-                            onClick={() => { setReadTarget(meterForModal); setShowRead(true) }}
-                            className={cn(
-                              'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm',
-                              isBackPeriod
-                                ? 'bg-surface-border dark:bg-dark-border text-text-muted cursor-default'
-                                : 'bg-primary-600 hover:bg-primary-700 text-white',
-                            )}
-                            title={isBackPeriod ? 'Already billed for a later period — for audit only' : undefined}
-                          >Record</button>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {r.photoBase64 && (
+                            <button
+                              onClick={() => setPhotoUrl(`data:image/jpeg;base64,${r.photoBase64}`)}
+                              className="px-2 py-1 text-xs rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:bg-surface-hover dark:hover:bg-dark-hover"
+                              title="View meter photo"
+                            >📷</button>
+                          )}
+                          {r.anomaly && r.readingId && (
+                            <button
+                              onClick={() => handleClearAnomaly(r.readingId!)}
+                              disabled={clearingAnomaly === r.readingId}
+                              className="px-2 py-1 text-xs rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50"
+                              title="Clear anomaly flag"
+                            >{clearingAnomaly === r.readingId ? '…' : '✓ Clear ⚠'}</button>
+                          )}
+                          {isPending && (
+                            <button
+                              onClick={() => { setReadTarget(meterForModal); setShowRead(true) }}
+                              className={cn(
+                                'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm',
+                                isBackPeriod
+                                  ? 'bg-surface-border dark:bg-dark-border text-text-muted cursor-default'
+                                  : 'bg-primary-600 hover:bg-primary-700 text-white',
+                              )}
+                              title={isBackPeriod ? 'Already billed for a later period — for audit only' : undefined}
+                            >Record</button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -4386,6 +4673,16 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
         onClose={() => { setShowRead(false); setReadTarget(null) }}
         onSaved={() => { fetchReadings(); onRefreshMeters() }}
       />
+
+      {/* Photo viewer modal */}
+      {photoUrl && (
+        <Modal open={!!photoUrl} onClose={() => setPhotoUrl(null)} title="Meter Photo" size="md">
+          <div className="flex justify-center p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoUrl} alt="Meter reading photo" className="max-h-[70vh] max-w-full rounded-lg object-contain" />
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -4433,6 +4730,20 @@ export function UtilitiesPageClient() {
   const [unreadSearch, setUnreadSearch]     = useState('')
   const [unreadPage, setUnreadPage]         = useState(0)
   const UNREAD_PAGE_SIZE = 20
+
+  // Period comparison
+  const [compPeriod1, setCompPeriod1]   = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 2)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [compPeriod2, setCompPeriod2]   = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [compUtility, setCompUtility]   = useState('water')
+  const [compData, setCompData]         = useState<{ summary: PeriodComparisonSummary; rows: PeriodComparisonRow[] } | null>(null)
+  const [compLoading, setCompLoading]   = useState(false)
+  const [compError, setCompError]       = useState<string | null>(null)
 
   const loadReports = useCallback(async (period: string, search = '', pg = 0) => {
     setReportLoading(true); setReportError(null)
@@ -4775,6 +5086,119 @@ export function UtilitiesPageClient() {
                 Select a period and click <strong>Refresh</strong> to view the water loss and unread meters reports.
               </p>
             )}
+
+            {/* ── Period-over-Period Comparison ─────────────────────────────── */}
+            <Card className="p-5 space-y-4">
+              <h3 className="font-semibold text-text">Period-over-Period Comparison</h3>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-text-muted whitespace-nowrap">Period 1</label>
+                  <input
+                    type="month" value={compPeriod1}
+                    onChange={e => setCompPeriod1(e.target.value)}
+                    className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-text-muted whitespace-nowrap">Period 2</label>
+                  <input
+                    type="month" value={compPeriod2}
+                    onChange={e => setCompPeriod2(e.target.value)}
+                    className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <select
+                  value={compUtility}
+                  onChange={e => setCompUtility(e.target.value)}
+                  className="h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="water">💧 Water</option>
+                  <option value="water_sewer">💧 Water & Sewer</option>
+                  <option value="electricity">⚡ Electricity</option>
+                  <option value="sewerage">🚰 Sewerage</option>
+                  <option value="gas_piped">🔥 Gas (Piped)</option>
+                  <option value="internet">📶 Internet</option>
+                </select>
+                <Button size="sm" disabled={compLoading || !compPeriod1 || !compPeriod2}
+                  onClick={async () => {
+                    setCompLoading(true); setCompError(null)
+                    try { setCompData(await getPeriodComparison(compPeriod1, compPeriod2, compUtility)) }
+                    catch (e) { setCompError(e instanceof Error ? e.message : 'Failed to load comparison') }
+                    finally { setCompLoading(false) }
+                  }}
+                >
+                  {compLoading ? 'Comparing…' : 'Compare'}
+                </Button>
+                {compData && (
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    const s = compData.summary
+                    const headers = ['Unit', 'Meter No', `Consumed ${s.period1}`, `Consumed ${s.period2}`, 'Change %', `Amount ${s.period1} KES`, `Amount ${s.period2} KES`]
+                    const csvRows = compData.rows.map(r => [r.unit_label ?? '', r.meter_number ?? '', r.consumed_p1 ?? 0, r.consumed_p2 ?? 0, r.change_pct?.toFixed(1) ?? '', r.amount_p1 ?? 0, r.amount_p2 ?? 0])
+                    const csv = [headers, ...csvRows].map(row => row.map(v => `"${String(v)}"`).join(',')).join('\n')
+                    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+                    a.download = `comparison-${compPeriod1}-vs-${compPeriod2}.csv`; a.click()
+                  }}>⬇ CSV</Button>
+                )}
+              </div>
+              {compError && <p className="text-sm text-danger">{compError}</p>}
+              {compData && (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      ['Period 1', compData.summary.period1, 'text-text'],
+                      ['Period 2', compData.summary.period2, 'text-text'],
+                      [`Total ${compData.summary.period1}`, `${Number(compData.summary.total_consumed_p1).toFixed(1)} m³`, 'text-primary-600 dark:text-primary-400'],
+                      [`Total ${compData.summary.period2}`, `${Number(compData.summary.total_consumed_p2).toFixed(1)} m³`, 'text-primary-600 dark:text-primary-400'],
+                    ].map(([label, value, cls]) => (
+                      <div key={label as string} className="rounded-lg border border-surface-border dark:border-dark-border p-3">
+                        <p className="text-xs text-text-muted mb-1">{label}</p>
+                        <p className={cn('text-lg font-semibold', cls as string)}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-text-muted">Overall change:</span>
+                    <span className={cn('text-lg font-bold', (compData.summary.overall_change_pct ?? 0) > 0 ? 'text-red-600' : 'text-green-600')}>
+                      {(compData.summary.overall_change_pct ?? 0) > 0 ? '+' : ''}{Number(compData.summary.overall_change_pct ?? 0).toFixed(1)}%
+                    </span>
+                    <span className="text-xs text-text-muted">{compData.summary.meter_count} meters compared</span>
+                  </div>
+                  <div className="max-h-72 overflow-auto rounded-lg border border-surface-border dark:border-dark-border">
+                    <table className="w-full text-sm min-w-[600px]">
+                      <thead className="bg-surface-muted dark:bg-dark-card sticky top-0">
+                        <tr className="text-xs text-text-muted">
+                          <th className="px-4 py-2.5 text-left">Unit</th>
+                          <th className="px-4 py-2.5 text-left">Meter</th>
+                          <th className="px-4 py-2.5 text-right">P1 Consumed</th>
+                          <th className="px-4 py-2.5 text-right">P2 Consumed</th>
+                          <th className="px-4 py-2.5 text-right">Change</th>
+                          <th className="px-4 py-2.5 text-right">P1 Amount</th>
+                          <th className="px-4 py-2.5 text-right">P2 Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compData.rows.map(r => (
+                          <tr key={r.meter_id} className="border-t border-surface-border dark:border-dark-border hover:bg-surface-hover dark:hover:bg-dark-hover">
+                            <td className="px-4 py-2.5 font-medium">{r.unit_label ?? '—'}</td>
+                            <td className="px-4 py-2.5 font-mono text-xs text-text-muted">{r.meter_number}</td>
+                            <td className="px-4 py-2.5 text-right font-mono">{Number(r.consumed_p1 ?? 0).toFixed(3)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono">{Number(r.consumed_p2 ?? 0).toFixed(3)}</td>
+                            <td className={cn('px-4 py-2.5 text-right font-semibold', (r.change_pct ?? 0) > 20 ? 'text-red-600' : (r.change_pct ?? 0) < -20 ? 'text-green-600' : 'text-text-muted')}>
+                              {r.change_pct != null ? `${r.change_pct > 0 ? '+' : ''}${r.change_pct.toFixed(1)}%` : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono text-text-muted">{Number(r.amount_p1 ?? 0).toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-text-muted">{Number(r.amount_p2 ?? 0).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+              {!compData && !compLoading && (
+                <p className="text-sm text-text-muted text-center py-4">Select two periods and click Compare to view consumption changes per meter.</p>
+              )}
+            </Card>
           </div>
         </TabsContent>
       </Tabs>

@@ -338,6 +338,7 @@ export interface ReadingRunRow {
   readBy: string | null
   anomaly: boolean
   readingStatus: string | null
+  photoBase64: string | null
 }
 
 export interface ReadingRunPageData {
@@ -390,6 +391,10 @@ export interface ZeroBaselineReading {
   wrongConsumed: string
   currentValue: string
   amountDue: string
+}
+
+export async function clearAnomaly(readingId: string): Promise<MeterReadingData> {
+  return apiFetch<MeterReadingData>(`/meter-readings/${readingId}/clear-anomaly`, { method: 'POST' })
 }
 
 export async function getActivePeriod(): Promise<{ activePeriod: string | null }> {

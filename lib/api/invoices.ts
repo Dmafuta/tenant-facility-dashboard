@@ -472,6 +472,37 @@ export async function getConsumptionTrend(
   return apiFetch<ConsumptionTrendRow[]>(`/reports/consumption-trend?${qs}`)
 }
 
+export interface PeriodComparisonRow {
+  meter_id: string
+  unit_label: string | null
+  meter_number: string | null
+  utility_type: string | null
+  consumed_p1: number | null
+  consumed_p2: number | null
+  amount_p1: number | null
+  amount_p2: number | null
+  change_pct: number | null
+}
+
+export interface PeriodComparisonSummary {
+  period1: string
+  period2: string
+  total_consumed_p1: number
+  total_consumed_p2: number
+  total_amount_p1: number
+  total_amount_p2: number
+  overall_change_pct: number | null
+  meter_count: number
+}
+
+export async function getPeriodComparison(
+  period1: string, period2: string, utilityType?: string
+): Promise<{ summary: PeriodComparisonSummary; rows: PeriodComparisonRow[] }> {
+  const qs = new URLSearchParams({ period1, period2 })
+  if (utilityType) qs.set('utilityType', utilityType)
+  return apiFetch(`/reports/period-comparison?${qs}`)
+}
+
 export async function deleteVoidedInvoice(id: string): Promise<void> {
   return apiFetch(`/invoices/${id}`, { method: 'DELETE' })
 }

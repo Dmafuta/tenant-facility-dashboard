@@ -57,3 +57,10 @@ export async function sendDisconnectionNotice(payload: SendNoticePayload): Promi
 export async function reconnectNotice(id: string): Promise<DisconnectionNoticeData> {
   return apiFetch<DisconnectionNoticeData>(`/disconnection-notices/${id}/reconnect`, { method: 'PATCH' })
 }
+
+export async function bulkReconnect(ids: string[]): Promise<{ reconnected: number; skipped: number }> {
+  return apiFetch<{ reconnected: number; skipped: number }>('/disconnection-notices/bulk-reconnect', {
+    method: 'POST',
+    body: JSON.stringify(ids),
+  })
+}
