@@ -352,13 +352,15 @@ export async function getMeterReadingRun(params: {
   period?: string
   utilityType?: string
   search?: string
+  status?: 'read' | 'pending' | 'all'
   page?: number
   size?: number
 }): Promise<ReadingRunPageData> {
   const qs = new URLSearchParams()
-  if (params.period)      qs.set('period',      params.period)
-  if (params.utilityType) qs.set('utilityType', params.utilityType)
-  if (params.search)      qs.set('search',      params.search)
+  if (params.period)                         qs.set('period',      params.period)
+  if (params.utilityType)                    qs.set('utilityType', params.utilityType)
+  if (params.search)                         qs.set('search',      params.search)
+  if (params.status && params.status !== 'all') qs.set('status',  params.status)
   qs.set('page', String(params.page ?? 0))
   qs.set('size', String(params.size ?? 20))
   return apiFetch<ReadingRunPageData>(`/meters/reading-run?${qs}`)

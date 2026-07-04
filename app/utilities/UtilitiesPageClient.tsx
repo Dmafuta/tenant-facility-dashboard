@@ -3874,6 +3874,7 @@ function fmtReading3(n: number) {
 function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
   const [period, setPeriod]             = useState(currentPeriodStr)
   const [utilFilter, setUtilFilter]     = useState('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'read' | 'pending'>('all')
   const [search, setSearch]             = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage]                 = useState(1)
@@ -3927,6 +3928,7 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
       period:      period || undefined,
       utilityType: utilFilter !== 'all' ? utilFilter : undefined,
       search:      debouncedSearch || undefined,
+      status:      statusFilter !== 'all' ? statusFilter : undefined,
       page:        page - 1,
       size:        PAGE_SIZE,
     }).then(r => {
@@ -3939,7 +3941,7 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
       }
     }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [period, utilFilter, debouncedSearch, page, refreshKey])
+  }, [period, utilFilter, statusFilter, debouncedSearch, page, refreshKey])
 
   // Back-billing guard: fetch WS invoices once per period
   const billedLaterUnitIds = useMemo(() => {
@@ -4211,9 +4213,29 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
           <option value="gas_piped">🔥 Gas (Piped)</option>
           <option value="internet">📶 Internet</option>
         </select>
-        {(search || utilFilter !== 'all') && (
+        <div className="flex rounded-lg border border-surface-border dark:border-dark-border overflow-hidden text-sm">
+          {(['all', 'pending', 'read'] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => { setStatusFilter(s); setPage(1) }}
+              className={cn(
+                'px-3 py-1.5 font-medium transition-colors',
+                statusFilter === s
+                  ? s === 'read'
+                    ? 'bg-green-600 text-white'
+                    : s === 'pending'
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-primary-600 text-white'
+                  : 'bg-white dark:bg-dark-surface text-text-muted hover:bg-surface-hover dark:hover:bg-dark-hover'
+              )}
+            >
+              {s === 'all' ? 'All' : s === 'read' ? '✓ Read' : '⏳ Pending'}
+            </button>
+          ))}
+        </div>
+        {(search || utilFilter !== 'all' || statusFilter !== 'all') && (
           <button
-            onClick={() => { setSearch(''); setUtilFilter('all'); setPage(1) }}
+            onClick={() => { setSearch(''); setUtilFilter('all'); setStatusFilter('all'); setPage(1) }}
             className="text-xs text-text-muted hover:text-text transition-colors"
           >✕ Clear filters</button>
         )}
