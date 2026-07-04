@@ -160,6 +160,11 @@ export async function deleteGlobalMeter(meterId: string): Promise<void> {
   await apiFetch<unknown>(`/meters/${meterId}`, { method: 'DELETE' })
 }
 
+export async function deleteReading(readingId: string, reason?: string): Promise<void> {
+  const qs = reason ? `?reason=${encodeURIComponent(reason)}` : ''
+  await apiFetch<unknown>(`/meter-readings/${readingId}${qs}`, { method: 'DELETE' })
+}
+
 export interface MeterSwapRequest {
   newMeterNumber: string
   swapDate: string        // YYYY-MM-DD

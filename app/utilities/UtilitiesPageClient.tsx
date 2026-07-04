@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod, clearAnomaly } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod, clearAnomaly, deleteReading } from '@/lib/api/meters'
 import type { ZeroBaselineReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
@@ -480,6 +480,12 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   const [correcting, setCorrecting] = useState(false)
   const [correctError, setCorrectError] = useState<string | null>(null)
 
+  // Reading rejection
+  const [rejectTarget, setRejectTarget] = useState<MeterReadingData | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejecting, setRejecting] = useState(false)
+  const [rejectError, setRejectError] = useState<string | null>(null)
+
   // Meter swap
   const [swapForm, setSwapForm] = useState({
     newMeterNumber: '', swapDate: '', closingReading: '', initialReading: '0',
@@ -594,6 +600,22 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
     }
   }
 
+  async function handleReject() {
+    if (!rejectTarget) return
+    setRejecting(true)
+    setRejectError(null)
+    try {
+      await deleteReading(rejectTarget.id, rejectReason || undefined)
+      setReadings(prev => prev.filter(r => r.id !== rejectTarget.id))
+      setRejectTarget(null)
+      setRejectReason('')
+    } catch (e: unknown) {
+      setRejectError(e instanceof Error ? e.message : 'Failed to reject reading.')
+    } finally {
+      setRejecting(false)
+    }
+  }
+
   if (!meter) return null
   return (
     <Drawer open={open} onClose={onClose} title={`${utilityLabel(meter.utility_type)} — ${meter.meter_number}`}>
@@ -671,17 +693,26 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
                         <span className="font-medium text-text">{r.billing_period ?? r.reading_date ?? '—'}</span>
                         {r.anomaly && <span className="text-xs px-1.5 py-0.5 rounded bg-warning/15 text-warning font-medium">⚠ Anomaly</span>}
                         {r.source === 'estimated' && <span className="text-xs px-1.5 py-0.5 rounded bg-surface-border text-text-muted">Est.</span>}
+                        {r.source === 'self_read' && <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-medium">Self-read</span>}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
                           r.status === 'billed' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
                         )}>{r.status}</span>
-                        {r.status === 'pending_bill' && correctTarget?.id !== r.id && (
+                        {r.status === 'pending_bill' && correctTarget?.id !== r.id && rejectTarget?.id !== r.id && (
                           <button
                             onClick={() => openCorrect(r)}
                             className="text-xs text-primary hover:underline"
                           >
                             Correct
+                          </button>
+                        )}
+                        {r.status === 'pending_bill' && r.source === 'self_read' && correctTarget?.id !== r.id && rejectTarget?.id !== r.id && (
+                          <button
+                            onClick={() => { setRejectTarget(r); setRejectReason(''); setRejectError(null) }}
+                            className="text-xs text-danger hover:underline"
+                          >
+                            Reject
                           </button>
                         )}
                       </div>
@@ -726,6 +757,33 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
                           <Button variant="ghost" size="sm" onClick={() => setCorrectTarget(null)} disabled={correcting}>Cancel</Button>
                           <Button size="sm" onClick={handleCorrect} disabled={correcting || !correctCurrent}>
                             {correcting ? 'Saving…' : 'Save Correction'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Inline reject form — self_read only */}
+                    {rejectTarget?.id === r.id && (
+                      <div className="mt-3 pt-3 border-t border-danger/30 bg-danger/5 rounded-lg p-3 space-y-2">
+                        <p className="text-xs font-semibold text-danger">Reject self-reading?</p>
+                        <p className="text-[11px] text-text-muted">
+                          This will delete the reading so the tenant can resubmit via QR.
+                        </p>
+                        <div>
+                          <label className="text-[11px] text-text-muted block mb-1">Reason (optional — shown in audit log)</label>
+                          <input
+                            type="text"
+                            value={rejectReason}
+                            onChange={e => setRejectReason(e.target.value)}
+                            placeholder="e.g. misread dial, wrong period"
+                            className="w-full border border-surface-border dark:border-dark-border rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-danger"
+                          />
+                        </div>
+                        {rejectError && <p className="text-xs text-danger">{rejectError}</p>}
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="ghost" size="sm" onClick={() => setRejectTarget(null)} disabled={rejecting}>Cancel</Button>
+                          <Button size="sm" className="!bg-danger hover:!bg-danger/90 !text-white" onClick={handleReject} disabled={rejecting}>
+                            {rejecting ? 'Rejecting…' : 'Confirm Reject'}
                           </Button>
                         </div>
                       </div>
