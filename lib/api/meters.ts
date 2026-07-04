@@ -379,3 +379,25 @@ export async function getUtilityStats(): Promise<UtilityStats> {
 export async function syncLastReading(period: string): Promise<{ period: string; updated: number; skipped: number }> {
   return apiFetch(`/meter-readings/sync-last-reading?period=${encodeURIComponent(period)}`, { method: 'POST' })
 }
+
+export interface ZeroBaselineReading {
+  readingId: string
+  meterNumber: string
+  unitLabel: string
+  billingPeriod: string
+  wrongConsumed: string
+  currentValue: string
+  amountDue: string
+}
+
+export async function fixZeroBaselines(dryRun: boolean): Promise<{
+  dryRun: boolean
+  affected?: number
+  readings?: ZeroBaselineReading[]
+  fixed?: number
+  invoicesVoided?: number
+  errors?: number
+  errorDetails?: string[]
+}> {
+  return apiFetch(`/meter-readings/fix-zero-baselines?dryRun=${dryRun}`, { method: 'POST' })
+}

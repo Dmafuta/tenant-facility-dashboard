@@ -11,7 +11,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines } from '@/lib/api/meters'
+import type { ZeroBaselineReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -2704,6 +2705,35 @@ function ReadingsTab() {
       setSyncing(false) }
   }
 
+  // Fix zero-baseline readings
+  const [showFixModal, setShowFixModal]         = useState(false)
+  const [fixRunning, setFixRunning]             = useState(false)
+  const [fixPreview, setFixPreview]             = useState<ZeroBaselineReading[] | null>(null)
+  const [fixApplied, setFixApplied]             = useState<{ fixed: number; invoicesVoided: number; errors: string[] } | null>(null)
+  const [fixError, setFixError]                 = useState<string | null>(null)
+
+  async function handleFixDryRun() {
+    setFixRunning(true); setFixPreview(null); setFixApplied(null); setFixError(null)
+    try {
+      const res = await fixZeroBaselines(true)
+      setFixPreview(res.readings ?? [])
+    } catch (e: unknown) {
+      setFixError(e instanceof Error ? e.message : 'Failed to scan readings')
+    } finally { setFixRunning(false) }
+  }
+
+  async function handleFixApply() {
+    setFixRunning(true); setFixError(null)
+    try {
+      const res = await fixZeroBaselines(false)
+      setFixApplied({ fixed: res.fixed ?? 0, invoicesVoided: res.invoicesVoided ?? 0, errors: res.errorDetails ?? [] })
+      setFixPreview(null)
+      onRefresh()
+    } catch (e: unknown) {
+      setFixError(e instanceof Error ? e.message : 'Failed to apply fixes')
+    } finally { setFixRunning(false) }
+  }
+
   // CSV readings import
   const csvInputRef = useRef<HTMLInputElement>(null)
   const [csvImporting, setCsvImporting] = useState(false)
@@ -2839,6 +2869,11 @@ function ReadingsTab() {
               Sync Baselines
             </Button>
           </CanDo>
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="ghost" onClick={() => { setShowFixModal(true); setFixPreview(null); setFixApplied(null); setFixError(null) }}>
+              Fix Zero Baselines
+            </Button>
+          </CanDo>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={readings.length === 0}>
             ⬇ Export CSV
           </Button>
@@ -2953,6 +2988,75 @@ function ReadingsTab() {
                   {syncing ? 'Syncing…' : `Sync from ${syncPeriod}`}
                 </Button>
               </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Fix Zero Baselines Modal */}
+      <Modal open={showFixModal} onClose={() => setShowFixModal(false)} title="Fix Zero-Baseline Readings" size="lg">
+        <div className="p-5 space-y-4">
+          {fixApplied ? (
+            <div className="space-y-3">
+              <div className={cn('rounded-lg p-4 text-sm', fixApplied.errors.length > 0 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success')}>
+                <p className="font-semibold mb-1">Done — {fixApplied.fixed} reading(s) corrected, {fixApplied.invoicesVoided} invoice(s) voided</p>
+                {fixApplied.errors.map((e, i) => <p key={i} className="text-xs mt-1">{e}</p>)}
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => setShowFixModal(false)}>Close</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                Scans for readings where <code className="bg-surface-border px-1 rounded text-xs">previous_value = 0</code> and consumption is &gt;10 units on the meter&apos;s <strong>first-ever reading</strong>.
+                These represent meters that were billed from the dial&apos;s opening position instead of zero actual consumption.
+              </p>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                <strong>What the fix does:</strong> sets consumed = 0, amount = 0 on the reading, then voids the associated WS invoice (if still in draft/issued status). Paid invoices are left untouched.
+              </div>
+              {fixError && <p className="text-sm text-danger">{fixError}</p>}
+
+              {fixPreview === null ? (
+                <Button variant="outline" className="w-full" disabled={fixRunning} onClick={handleFixDryRun}>
+                  {fixRunning ? 'Scanning…' : 'Scan for Affected Readings'}
+                </Button>
+              ) : fixPreview.length === 0 ? (
+                <div className="rounded-lg bg-success/10 text-success p-4 text-sm text-center">
+                  No zero-baseline readings found. Everything looks correct.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-text">{fixPreview.length} affected reading(s) found:</p>
+                  <div className="rounded-lg border border-surface-border overflow-auto max-h-64">
+                    <table className="w-full text-xs">
+                      <thead className="bg-surface-border/50 sticky top-0">
+                        <tr>
+                          {['Unit', 'Meter', 'Period', 'Wrong Consumed', 'Opening Value', 'Amount Billed'].map(h => (
+                            <th key={h} className="text-left px-3 py-2 font-medium text-text-muted">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fixPreview.map(r => (
+                          <tr key={r.readingId} className="border-t border-surface-border">
+                            <td className="px-3 py-2 font-medium">{r.unitLabel}</td>
+                            <td className="px-3 py-2 text-text-muted">{r.meterNumber}</td>
+                            <td className="px-3 py-2">{r.billingPeriod}</td>
+                            <td className="px-3 py-2 text-danger font-semibold">{r.wrongConsumed} m³</td>
+                            <td className="px-3 py-2">{r.currentValue}</td>
+                            <td className="px-3 py-2 text-danger">KES {r.amountDue}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" className="flex-1" onClick={() => setShowFixModal(false)}>Cancel</Button>
+                    <Button variant="danger" className="flex-1" disabled={fixRunning} onClick={handleFixApply}>
+                      {fixRunning ? 'Applying…' : `Fix ${fixPreview.length} Reading(s) & Void Invoices`}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
