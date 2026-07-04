@@ -4032,19 +4032,41 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
           <Button variant="outline" size="sm" disabled={loading} onClick={fetchReadings}>
             {loading ? '…' : '↺ Refresh'}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setSetPeriodInput(activePeriod ?? period); setShowSetPeriodModal(true) }}>
-            🔒 {activePeriod ? `Active: ${activePeriod}` : 'Set Active Period'}
-          </Button>
         </div>
       </div>
 
-      {/* ── Active period banner ──────────────────────────────────────────── */}
-      {activePeriod && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-sm text-primary-700 dark:text-primary-300">
-          <span className="text-base">🔒</span>
-          <span><strong>Active reading cycle locked to {activePeriod}</strong> — PWA meter readers are restricted to this period.</span>
+      {/* ── Active reading cycle control ──────────────────────────────────── */}
+      <div className={cn(
+        'flex items-center justify-between gap-4 px-4 py-3 rounded-xl border',
+        activePeriod
+          ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
+          : 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20'
+      )}>
+        <div className="flex items-center gap-3">
+          <span className="text-xl">{activePeriod ? '🔒' : '🔓'}</span>
+          <div>
+            <p className={cn('text-sm font-semibold', activePeriod ? 'text-green-800 dark:text-green-200' : 'text-amber-800 dark:text-amber-200')}>
+              {activePeriod ? `Active Reading Cycle: ${activePeriod}` : 'No active reading cycle set'}
+            </p>
+            <p className={cn('text-xs mt-0.5', activePeriod ? 'text-green-700 dark:text-green-300' : 'text-amber-700 dark:text-amber-300')}>
+              {activePeriod
+                ? 'PWA meter readers are locked to this period.'
+                : 'PWA meter readers can select any period — set a cycle to lock them in.'}
+            </p>
+          </div>
         </div>
-      )}
+        <button
+          onClick={() => { setSetPeriodInput(activePeriod ?? period); setShowSetPeriodModal(true) }}
+          className={cn(
+            'shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors',
+            activePeriod
+              ? 'bg-green-600 hover:bg-green-700 text-white'
+              : 'bg-amber-600 hover:bg-amber-700 text-white'
+          )}
+        >
+          {activePeriod ? 'Change Period' : 'Set Active Period'}
+        </button>
+      </div>
 
       {/* ── Set Active Period modal ───────────────────────────────────────── */}
       <Modal open={showSetPeriodModal} onClose={() => setShowSetPeriodModal(false)} title="Set Active Reading Period" size="sm">
