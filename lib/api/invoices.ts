@@ -472,6 +472,17 @@ export async function getConsumptionTrend(
   return apiFetch<ConsumptionTrendRow[]>(`/reports/consumption-trend?${qs}`)
 }
 
+export async function deleteVoidedInvoice(id: string): Promise<void> {
+  return apiFetch(`/invoices/${id}`, { method: 'DELETE' })
+}
+
+export async function deleteBulkVoidedInvoices(params?: { period?: string; categoryCode?: string }): Promise<{ deleted: number }> {
+  const qs = new URLSearchParams()
+  if (params?.period)       qs.set('period',       params.period)
+  if (params?.categoryCode) qs.set('categoryCode', params.categoryCode)
+  return apiFetch(`/invoices/bulk-voided?${qs}`, { method: 'DELETE' })
+}
+
 export async function updateInvoiceCategory(
   id: string,
   payload: Partial<Pick<InvoiceCategory, 'name' | 'tagline' | 'bank_name' | 'bank_account' | 'bank_branch' | 'active'>>

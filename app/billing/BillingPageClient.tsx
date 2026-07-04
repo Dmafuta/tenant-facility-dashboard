@@ -19,7 +19,7 @@ import {
   type InvoiceData, type InvoiceCategory, type InvoicePayment, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
   type CollectionSummary, type CollectionSummaryRow,
-  getInvoiceCategories,
+  getInvoiceCategories, deleteBulkVoidedInvoices,
 } from '@/lib/api/invoices'
 import {
   getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
@@ -600,6 +600,11 @@ export function BillingPageClient() {
   const [bulkEmailing, setBulkEmailing]             = useState(false)
   const [bulkEmailResult, setBulkEmailResult]       = useState<{ sent: number; skipped: number; message: string } | null>(null)
 
+  // Delete voided invoices
+  const [showDeleteVoidedModal, setShowDeleteVoidedModal] = useState(false)
+  const [deletingVoided, setDeletingVoided]               = useState(false)
+  const [deleteVoidedResult, setDeleteVoidedResult]       = useState<{ deleted: number } | null>(null)
+
   // Disconnection notice
   const [disconnectTarget, setDisconnectTarget] = useState<InvoiceData | null>(null)
   const [disconnectType, setDisconnectType]     = useState<'reminder' | 'formal'>('reminder')
@@ -1044,6 +1049,24 @@ export function BillingPageClient() {
     }
   }
 
+  // ── Delete voided invoices ─────────────────────────────────────────────────
+
+  async function handleDeleteVoided() {
+    setDeletingVoided(true); setError(null); setDeleteVoidedResult(null)
+    try {
+      const result = await deleteBulkVoidedInvoices(
+        !['Reports', 'Adjustments'].includes(activeTab) ? { categoryCode: activeTab } : undefined
+      )
+      setDeleteVoidedResult(result)
+      await refresh()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete voided invoices')
+      setShowDeleteVoidedModal(false)
+    } finally {
+      setDeletingVoided(false)
+    }
+  }
+
   // ── Disconnection notice ───────────────────────────────────────────────────
 
   async function handleSendNotice() {
@@ -1210,6 +1233,9 @@ export function BillingPageClient() {
         )}
         <Button variant="ghost" size="sm" onClick={() => { setShowBulkEmailModal(true); setBulkEmailResult(null) }}>
           Bulk Email
+        </Button>
+        <Button variant="ghost" size="sm" className="text-danger hover:bg-danger/5" onClick={() => { setShowDeleteVoidedModal(true); setDeleteVoidedResult(null) }}>
+          Delete Voided
         </Button>
         {activeTab === 'SC' && (
           <Button variant="primary" size="sm" onClick={() => { setShowRunModal(true); setRunResult(null) }}>
@@ -3110,6 +3136,48 @@ export function BillingPageClient() {
               {obSaving ? 'Saving…' : 'Save Balance'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Delete Voided Invoices modal */}
+      <Modal
+        open={showDeleteVoidedModal}
+        onClose={() => { setShowDeleteVoidedModal(false); setDeleteVoidedResult(null) }}
+        title="Delete Voided Invoices"
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {deleteVoidedResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{deleteVoidedResult.deleted} voided invoice{deleteVoidedResult.deleted !== 1 ? 's' : ''} permanently deleted.</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => { setShowDeleteVoidedModal(false); setDeleteVoidedResult(null) }}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="bg-danger/10 border border-danger/20 rounded-lg p-3 text-sm text-danger">
+                <p className="font-semibold mb-1">⚠ This action is permanent</p>
+                <p>All voided invoices{!['Reports', 'Adjustments'].includes(activeTab) ? ` in the ${activeTab} category` : ''} will be deleted along with their charge records. This cannot be undone.</p>
+              </div>
+              <p className="text-sm text-text-muted">
+                Only invoices with status <strong>Voided</strong> will be removed. Paid, partial, issued, and draft invoices are not affected.
+              </p>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowDeleteVoidedModal(false)}>Cancel</Button>
+                <Button
+                  variant="danger" className="flex-1"
+                  disabled={deletingVoided}
+                  onClick={handleDeleteVoided}
+                >
+                  {deletingVoided ? 'Deleting…' : 'Delete All Voided'}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 
