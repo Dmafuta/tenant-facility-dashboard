@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod } from '@/lib/api/meters'
 import type { ZeroBaselineReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
@@ -3890,6 +3890,25 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
   const [wsInvoices, setWsInvoices]     = useState<InvoiceData[]>([])
   const [refreshKey, setRefreshKey]     = useState(0)
 
+  // Active period lock
+  const [activePeriod, setActivePeriodState]  = useState<string | null>(null)
+  const [showSetPeriodModal, setShowSetPeriodModal] = useState(false)
+  const [setPeriodInput, setSetPeriodInput]   = useState('')
+  const [settingPeriod, setSettingPeriod]     = useState(false)
+
+  useEffect(() => {
+    getActivePeriod().then(r => {
+      if (r.activePeriod) {
+        setActivePeriodState(r.activePeriod)
+        setPeriod(r.activePeriod)
+        setSetPeriodInput(r.activePeriod)
+      } else {
+        setSetPeriodInput(period)
+      }
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
     return () => clearTimeout(t)
@@ -4013,8 +4032,63 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
           <Button variant="outline" size="sm" disabled={loading} onClick={fetchReadings}>
             {loading ? '…' : '↺ Refresh'}
           </Button>
+          <Button variant="outline" size="sm" onClick={() => { setSetPeriodInput(activePeriod ?? period); setShowSetPeriodModal(true) }}>
+            🔒 {activePeriod ? `Active: ${activePeriod}` : 'Set Active Period'}
+          </Button>
         </div>
       </div>
+
+      {/* ── Active period banner ──────────────────────────────────────────── */}
+      {activePeriod && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-sm text-primary-700 dark:text-primary-300">
+          <span className="text-base">🔒</span>
+          <span><strong>Active reading cycle locked to {activePeriod}</strong> — PWA meter readers are restricted to this period.</span>
+        </div>
+      )}
+
+      {/* ── Set Active Period modal ───────────────────────────────────────── */}
+      <Modal open={showSetPeriodModal} onClose={() => setShowSetPeriodModal(false)} title="Set Active Reading Period" size="sm">
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-text-muted">
+            Lock the PWA meter readers to a specific billing period. Meter readers and bulk meter readers will only be able to submit readings for this period. Field technicians retain free navigation.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+            <input
+              type="month"
+              value={setPeriodInput}
+              onChange={e => setSetPeriodInput(e.target.value)}
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          {activePeriod && (
+            <p className="text-xs text-text-muted">Current active period: <strong>{activePeriod}</strong></p>
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setShowSetPeriodModal(false)}>Cancel</Button>
+            <Button
+              variant="primary" className="flex-1"
+              disabled={settingPeriod || !setPeriodInput}
+              onClick={async () => {
+                setSettingPeriod(true)
+                try {
+                  const res = await setActivePeriod(setPeriodInput)
+                  setActivePeriodState(res.activePeriod)
+                  setPeriod(res.activePeriod)
+                  setShowSetPeriodModal(false)
+                  showToast(`Active period set to ${res.activePeriod}`)
+                } catch (e) {
+                  showToast(e instanceof Error ? e.message : 'Failed to set period', false)
+                } finally {
+                  setSettingPeriod(false)
+                }
+              }}
+            >
+              {settingPeriod ? 'Saving…' : 'Set Period'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ── Toast ────────────────────────────────────────────────────────── */}
       {toast && (

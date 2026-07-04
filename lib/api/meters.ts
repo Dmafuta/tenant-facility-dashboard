@@ -390,6 +390,17 @@ export interface ZeroBaselineReading {
   amountDue: string
 }
 
+export async function getActivePeriod(): Promise<{ activePeriod: string | null }> {
+  return apiFetch<{ activePeriod: string | null }>('/meter-readings/active-period')
+}
+
+export async function setActivePeriod(period: string): Promise<{ activePeriod: string }> {
+  return apiFetch<{ activePeriod: string }>('/meter-readings/active-period', {
+    method: 'PUT',
+    body: JSON.stringify({ period }),
+  })
+}
+
 export async function fixZeroBaselines(dryRun: boolean, batchSize = 100): Promise<{
   dryRun: boolean
   affected?: number
