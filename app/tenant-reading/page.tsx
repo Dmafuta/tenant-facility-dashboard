@@ -1,11 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-const BACKEND = process.env.NEXT_PUBLIC_APP_URL ?? ''
-
 export default function TenantReadingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" /></div>}>
+      <TenantReadingForm />
+    </Suspense>
+  )
+}
+
+function TenantReadingForm() {
   const params       = useSearchParams()
   const meterToken   = params.get('m') ?? ''
 
