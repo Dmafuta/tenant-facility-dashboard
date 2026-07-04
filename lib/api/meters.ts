@@ -375,3 +375,7 @@ export interface UtilityStats {
 export async function getUtilityStats(): Promise<UtilityStats> {
   return apiFetch<UtilityStats>('/meters/stats')
 }
+
+export async function syncLastReading(period: string): Promise<{ period: string; updated: number; skipped: number }> {
+  return apiFetch(`/meter-readings/sync-last-reading?period=${encodeURIComponent(period)}`, { method: 'POST' })
+}

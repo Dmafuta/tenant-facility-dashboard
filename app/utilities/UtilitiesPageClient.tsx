@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
   getWaterSuppliers, createWaterSupplier, updateWaterSupplier, toggleWaterSupplier,
@@ -2683,6 +2683,27 @@ function ReadingsTab() {
     }
   }
 
+  // Sync last reading
+  const [showSyncModal, setShowSyncModal] = useState(false)
+  const [syncPeriod, setSyncPeriod]       = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [syncing, setSyncing]             = useState(false)
+  const [syncResult, setSyncResult]       = useState<{ updated: number; skipped: number } | null>(null)
+  const [syncError, setSyncError]         = useState<string | null>(null)
+
+  async function handleSyncLastReading() {
+    setSyncing(true); setSyncResult(null); setSyncError(null)
+    try {
+      const result = await syncLastReading(syncPeriod)
+      setSyncResult(result)
+    } catch (e: unknown) {
+      setSyncError(e instanceof Error ? e.message : 'Failed to sync last readings')
+    } finally {
+      setSyncing(false) }
+  }
+
   // CSV readings import
   const csvInputRef = useRef<HTMLInputElement>(null)
   const [csvImporting, setCsvImporting] = useState(false)
@@ -2813,6 +2834,11 @@ function ReadingsTab() {
               Generate Estimated
             </Button>
           </CanDo>
+          <CanDo action="write" resource={{ type: 'unit' }}>
+            <Button size="sm" variant="ghost" onClick={() => { setShowSyncModal(true); setSyncResult(null); setSyncError(null) }}>
+              Sync Baselines
+            </Button>
+          </CanDo>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={readings.length === 0}>
             ⬇ Export CSV
           </Button>
@@ -2889,6 +2915,42 @@ function ReadingsTab() {
                 <Button variant="ghost" className="flex-1" onClick={() => setShowEstModal(false)}>Cancel</Button>
                 <Button variant="primary" className="flex-1" disabled={generating || !estPeriod} onClick={handleGenerateEstimated}>
                   {generating ? 'Generating…' : `Generate for ${estPeriod}`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Sync Baselines Modal */}
+      <Modal open={showSyncModal} onClose={() => setShowSyncModal(false)} title="Sync Meter Baselines" size="sm">
+        <div className="p-5 space-y-4">
+          {syncResult ? (
+            <div className="space-y-3">
+              <div className="rounded-lg bg-success/10 text-success p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{syncResult.updated} meter(s) updated. {syncResult.skipped} skipped (meter not found).</p>
+              </div>
+              <Button variant="primary" className="w-full" onClick={() => setShowSyncModal(false)}>Close</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                Sets each meter&apos;s <strong>last reading</strong> baseline to its most recent reading for the selected period.
+                Run this after a bulk or CSV import to ensure the next month&apos;s readings calculate consumption correctly from the right starting point.
+              </p>
+              {syncError && <p className="text-sm text-danger">{syncError}</p>}
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+                <input
+                  type="month" value={syncPeriod} onChange={e => setSyncPeriod(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowSyncModal(false)}>Cancel</Button>
+                <Button variant="primary" className="flex-1" disabled={syncing || !syncPeriod} onClick={handleSyncLastReading}>
+                  {syncing ? 'Syncing…' : `Sync from ${syncPeriod}`}
                 </Button>
               </div>
             </>
