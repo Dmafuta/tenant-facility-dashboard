@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/Select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
+import { AssignReadingsTab } from '@/components/utilities/AssignReadingsTab'
 import { cn } from '@/lib/cn'
 import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod, clearAnomaly, deleteReading } from '@/lib/api/meters'
 import type { ZeroBaselineReading } from '@/lib/api/meters'
@@ -4983,6 +4984,7 @@ export function UtilitiesPageClient() {
           </TabsTrigger>
           <TabsTrigger value="readings">Readings</TabsTrigger>
           <TabsTrigger value="reading-run">Reading Run</TabsTrigger>
+          <TabsTrigger value="assign">Assign Readings</TabsTrigger>
           <TabsTrigger value="disconnections">Disconnections</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
@@ -5026,6 +5028,9 @@ export function UtilitiesPageClient() {
         </TabsContent>
         <TabsContent value="reading-run" className="pt-5">
           <ReadingRunTab onRefreshMeters={fetchStats} />
+        </TabsContent>
+        <TabsContent value="assign" className="pt-5">
+          <AssignReadingsTab activePeriod={activePeriod ?? ''} />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
           <DisconnectionTab
