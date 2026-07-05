@@ -5030,7 +5030,7 @@ export function UtilitiesPageClient() {
           <ReadingRunTab onRefreshMeters={fetchStats} />
         </TabsContent>
         <TabsContent value="assign" className="pt-5">
-          <AssignReadingsTab activePeriod={activePeriod ?? ''} />
+          <AssignReadingsTab />
         </TabsContent>
         <TabsContent value="disconnections" className="pt-5">
           <DisconnectionTab

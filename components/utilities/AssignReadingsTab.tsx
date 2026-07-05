@@ -231,8 +231,8 @@ function buildReaderSummary(phases: PhaseSummary[]): ReaderSummaryRow[] {
   return Array.from(map.values()).sort((a, b) => a.reader_name.localeCompare(b.reader_name))
 }
 
-export function AssignReadingsTab({ activePeriod }: { activePeriod: string }) {
-  const defaultPeriod = activePeriod || new Date().toISOString().slice(0, 7)
+export function AssignReadingsTab() {
+  const defaultPeriod = new Date().toISOString().slice(0, 7)
   const [period, setPeriod]   = useState(defaultPeriod)
   const [phases, setPhases]   = useState<PhaseSummary[]>([])
   const [readers, setReaders] = useState<AssignmentUser[]>([])
