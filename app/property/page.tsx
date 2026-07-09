@@ -13,8 +13,8 @@ async function loadData(): Promise<{ units: Unit[] | undefined; allPeople: Perso
     const authHeader: Record<string, string> = token ? { Cookie: `access_token=${token}` } : {}
 
     const [unitsRes, peopleRes] = await Promise.all([
-      fetch(`${backend}/api/units`,  { cache: 'no-store', headers: authHeader }),
-      fetch(`${backend}/api/people`, { cache: 'no-store', headers: authHeader }),
+      fetch(`${backend}/api/units`,  { next: { revalidate: 60 }, headers: authHeader }),
+      fetch(`${backend}/api/people`, { next: { revalidate: 60 }, headers: authHeader }),
     ])
 
     const apiUnits: UnitData[]    = unitsRes.ok  ? ((await unitsRes.json()).data  ?? []) : []

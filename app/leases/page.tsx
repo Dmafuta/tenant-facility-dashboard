@@ -8,7 +8,7 @@ async function loadLeases(): Promise<LeaseData[]> {
     const cookieStore = await cookies()
     const token = cookieStore.get('access_token')?.value
     const authHeader: Record<string, string> = token ? { Cookie: `access_token=${token}` } : {}
-    const res = await fetch(`${backend}/api/leases`, { cache: 'no-store', headers: authHeader })
+    const res = await fetch(`${backend}/api/leases`, { next: { revalidate: 30 }, headers: authHeader })
     if (!res.ok) return []
     return (await res.json()).data ?? []
   } catch {

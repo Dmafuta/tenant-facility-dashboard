@@ -12,8 +12,8 @@ async function loadData(token?: string): Promise<{ people: Person[] | undefined;
 
   try {
     const [peopleRes, unitsRes] = await Promise.all([
-      fetch(`${backend}/api/people`, { cache: 'no-store', headers: authHeader }),
-      fetch(`${backend}/api/units`,  { cache: 'no-store', headers: authHeader }),
+      fetch(`${backend}/api/people`, { next: { revalidate: 60 }, headers: authHeader }),
+      fetch(`${backend}/api/units`,  { next: { revalidate: 60 }, headers: authHeader }),
     ])
 
     const apiPeople: PersonData[] = peopleRes.ok ? ((await peopleRes.json()).data ?? []) : []
