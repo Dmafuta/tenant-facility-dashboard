@@ -2202,7 +2202,7 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
                           <tr key={unit.id} className="hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors">
                             <td className="px-3 py-2.5 font-semibold text-text">{unit.number}</td>
                             <td className="px-3 py-2.5 text-text-muted">
-                              {tenant ? `${tenant.first_name} ${tenant.last_name}` : livesHere ? 'Owner' : '—'}
+                              {isRentedOut ? (unit.current_occupant ?? 'Occupied') : livesHere ? 'Owner' : '—'}
                             </td>
                             <td className="px-3 py-2.5 text-text-muted capitalize">{unit.use_type.replace(/_/g, ' ')}</td>
                             <td className="px-3 py-2.5">

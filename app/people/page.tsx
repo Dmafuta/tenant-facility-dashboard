@@ -30,7 +30,7 @@ async function loadUnits(token?: string): Promise<Unit[]> {
       status:           statusMap[u.status] ?? 'vacant',
       monthly_rate:     u.asking_rent ?? 0,
       owners:           [],
-      current_occupant: undefined,
+      current_occupant: u.current_occupant ?? undefined,
     }))
   } catch {
     return []
