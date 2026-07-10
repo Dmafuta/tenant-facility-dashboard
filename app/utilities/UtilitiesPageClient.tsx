@@ -618,12 +618,24 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   }
 
   if (!meter) return null
+  const isReplaced = meter.status === 'replaced'
   return (
     <Drawer open={open} onClose={onClose} title={`${utilityLabel(meter.utility_type)} — ${meter.meter_number}`}>
       <div className="p-4 space-y-4">
 
+        {/* Replaced meter — read-only banner */}
+        {isReplaced && (
+          <div className="flex items-start gap-3 rounded-lg border border-surface-border bg-surface-muted dark:bg-dark-card px-4 py-3 text-sm text-text-muted">
+            <span className="mt-0.5 shrink-0 text-base">🔒</span>
+            <div>
+              <p className="font-semibold text-text">This meter has been replaced</p>
+              <p className="mt-0.5 text-xs">It is retained for audit history. Readings and edits are disabled.</p>
+            </div>
+          </div>
+        )}
+
         {/* Print QR — only for consumer meters (unit-assigned, postpaid) */}
-        {meter.unit_id && meter.meter_type !== 'smart' && (
+        {!isReplaced && meter.unit_id && meter.meter_type !== 'smart' && (
           <button
             onClick={() => printMeterQr(meter)}
             className="w-full flex items-center justify-center gap-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg py-2.5 text-sm font-medium text-text-muted hover:border-green-500 hover:text-green-600 transition-colors"
@@ -1509,61 +1521,76 @@ function MetersTab({
                   </td>
                   <td className={TD} onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-2">
-                      {m.meter_type === 'smart' ? (
+                      {m.status === 'replaced' ? (
                         <>
-                          <span className="text-[11px] text-success whitespace-nowrap">⚡ Auto</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface-border text-text-muted font-medium whitespace-nowrap">Replaced</span>
+                          <span className="text-text-muted">·</span>
+                          <button
+                            onClick={() => onView(m)}
+                            className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap"
+                          >
+                            View History
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {m.meter_type === 'smart' ? (
+                            <>
+                              <span className="text-[11px] text-success whitespace-nowrap">⚡ Auto</span>
+                              <span className="text-text-muted">·</span>
+                              <CanDo action="write" resource={{ type: 'unit' }}>
+                                <button onClick={() => onRead(m)} className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap">
+                                  Override
+                                </button>
+                              </CanDo>
+                            </>
+                          ) : m.last_reading === null ? (
+                            <CanDo action="write" resource={{ type: 'unit' }}>
+                              <button
+                                onClick={() => { setEditTarget(m); setShowEdit(true) }}
+                                className="text-xs font-medium text-warning hover:underline whitespace-nowrap"
+                                title="Set the opening baseline reading — no charge generated"
+                              >
+                                Set Opening Reading
+                              </button>
+                            </CanDo>
+                          ) : (
+                            <CanDo action="write" resource={{ type: 'unit' }}>
+                              <button
+                                onClick={() => onRead(m)}
+                                className="text-xs font-medium text-primary-600 hover:underline whitespace-nowrap"
+                              >
+                                {readingActionLabel(m.meter_type)}
+                              </button>
+                            </CanDo>
+                          )}
+                          <span className="text-text-muted">·</span>
+                          <button
+                            onClick={() => onView(m)}
+                            className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap"
+                          >
+                            View
+                          </button>
                           <span className="text-text-muted">·</span>
                           <CanDo action="write" resource={{ type: 'unit' }}>
-                            <button onClick={() => onRead(m)} className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap">
-                              Override
+                            <button
+                              onClick={() => { setEditTarget(m); setShowEdit(true) }}
+                              className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap"
+                            >
+                              Edit
+                            </button>
+                          </CanDo>
+                          <span className="text-text-muted">·</span>
+                          <CanDo action="write" resource={{ type: 'unit' }}>
+                            <button
+                              onClick={() => { setDeleteTarget(m); setShowDeleteConfirm(true) }}
+                              className="text-xs font-medium text-danger hover:text-red-700 whitespace-nowrap"
+                            >
+                              Delete
                             </button>
                           </CanDo>
                         </>
-                      ) : m.last_reading === null ? (
-                        <CanDo action="write" resource={{ type: 'unit' }}>
-                          <button
-                            onClick={() => { setEditTarget(m); setShowEdit(true) }}
-                            className="text-xs font-medium text-warning hover:underline whitespace-nowrap"
-                            title="Set the opening baseline reading — no charge generated"
-                          >
-                            Set Opening Reading
-                          </button>
-                        </CanDo>
-                      ) : (
-                        <CanDo action="write" resource={{ type: 'unit' }}>
-                          <button
-                            onClick={() => onRead(m)}
-                            className="text-xs font-medium text-primary-600 hover:underline whitespace-nowrap"
-                          >
-                            {readingActionLabel(m.meter_type)}
-                          </button>
-                        </CanDo>
                       )}
-                      <span className="text-text-muted">·</span>
-                      <button
-                        onClick={() => onView(m)}
-                        className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap"
-                      >
-                        View
-                      </button>
-                      <span className="text-text-muted">·</span>
-                      <CanDo action="write" resource={{ type: 'unit' }}>
-                        <button
-                          onClick={() => { setEditTarget(m); setShowEdit(true) }}
-                          className="text-xs font-medium text-text-muted hover:text-text whitespace-nowrap"
-                        >
-                          Edit
-                        </button>
-                      </CanDo>
-                      <span className="text-text-muted">·</span>
-                      <CanDo action="write" resource={{ type: 'unit' }}>
-                        <button
-                          onClick={() => { setDeleteTarget(m); setShowDeleteConfirm(true) }}
-                          className="text-xs font-medium text-danger hover:text-red-700 whitespace-nowrap"
-                        >
-                          Delete
-                        </button>
-                      </CanDo>
                     </div>
                   </td>
                 </tr>
