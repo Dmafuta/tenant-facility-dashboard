@@ -45,6 +45,25 @@ export async function getPeopleFromApi(): Promise<PersonData[]> {
   return apiFetch<PersonData[]>('/people')
 }
 
+export interface PeoplePage {
+  content: PersonData[]
+  totalPages: number
+  totalElements: number
+  page: number
+  size: number
+}
+
+export async function getPeoplePaged(
+  type: 'owner' | 'tenant',
+  search: string,
+  page: number,
+  size = 25
+): Promise<PeoplePage> {
+  const params = new URLSearchParams({ type, page: String(page), size: String(size) })
+  if (search) params.set('search', search)
+  return apiFetch<PeoplePage>(`/people?${params}`)
+}
+
 export async function getPersonById(id: string): Promise<PersonData> {
   return apiFetch<PersonData>(`/people/${id}`)
 }

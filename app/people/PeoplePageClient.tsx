@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -34,6 +34,7 @@ import {
   resendWelcomeEmail,
   getPersonById,
   apiPersonToPerson,
+  getPeoplePaged,
   type PersonData,
 } from '@/lib/api/people'
 import type {
@@ -1801,8 +1802,8 @@ function ManageAccessModal({ person, onClose }: { person: Person; onClose: () =>
 
 // ── PersonDetail ─────────────────────────────────────────────────────────
 
-function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
-  person: Person; onExit: () => void; onUpdate: (p: Person) => void; allUnits: Unit[]; allPeople: Person[]
+function PersonDetail({ person, onExit, onUpdate, allUnits }: {
+  person: Person; onExit: () => void; onUpdate: (p: Person) => void; allUnits: Unit[]
 }) {
   const initials   = `${person.first_name[0]}${person.last_name[0]}`
   const ownedUnits = allUnits.filter(u => (person.unit_ids ?? []).includes(u.id))
@@ -2190,8 +2191,7 @@ function PersonDetail({ person, onExit, onUpdate, allUnits, allPeople }: {
                     <tbody className="divide-y divide-surface-border dark:divide-dark-border">
                       {sorted.map(unit => {
                         const livesHere = person.type === 'resident_owner' && person.home_unit_id === unit.id
-                        const tenant = allPeople.find(p => p.type === 'tenant' && (p.unit_ids ?? []).includes(unit.id))
-                        const isRentedOut = !!tenant
+                        const isRentedOut = !livesHere && unit.status === 'occupied'
                         const statusLabel = livesHere ? 'Lives here' : isRentedOut ? 'Rented out' : unit.status === 'vacant' ? 'Vacant' : unit.status
                         const statusCls = livesHere
                           ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
@@ -2279,30 +2279,104 @@ function PersonRow({ person, selected, onClick }: { person: Person; selected: bo
   )
 }
 
+// ── Per-tab pagination hook ────────────────────────────────────────────────
+
+function useTabPeople(type: 'owner' | 'tenant', debouncedSearch: string) {
+  const [page, setPage] = useState(0)
+  const [items, setItems] = useState<Person[]>([])
+  const [totalPages, setTotalPages] = useState(0)
+  const [totalElements, setTotalElements] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // Compute the effective page: reset to 0 when search changes
+  const searchRef = useRef(debouncedSearch)
+  const currentPage = searchRef.current !== debouncedSearch ? 0 : page
+
+  useEffect(() => {
+    if (searchRef.current !== debouncedSearch) {
+      searchRef.current = debouncedSearch
+      setPage(0)
+    }
+  }, [debouncedSearch])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getPeoplePaged(type, debouncedSearch, currentPage)
+      .then(resp => {
+        if (cancelled) return
+        setItems(resp.content.map(apiPersonToPerson))
+        setTotalPages(resp.totalPages)
+        setTotalElements(resp.totalElements)
+      })
+      .catch(() => { if (!cancelled) setItems([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [type, debouncedSearch, currentPage, refreshKey])
+
+  const refetch    = useCallback(() => setRefreshKey(k => k + 1), [])
+  const updateItem = useCallback((p: Person) => setItems(prev => prev.map(x => x.id === p.id ? p : x)), [])
+
+  return { items, page: currentPage, setPage, totalPages, totalElements, loading, refetch, updateItem }
+}
+
+// ── Pagination controls ────────────────────────────────────────────────────
+
+function PaginationBar({ page, totalPages, totalElements, onPrev, onNext }: {
+  page: number; totalPages: number; totalElements: number
+  onPrev: () => void; onNext: () => void
+}) {
+  if (totalPages <= 1) return null
+  return (
+    <div className="flex items-center justify-between px-4 py-2 border-t border-surface-border dark:border-dark-border flex-shrink-0">
+      <button
+        onClick={onPrev}
+        disabled={page === 0}
+        className="text-xs text-text-muted hover:text-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-2 py-1 rounded hover:bg-surface-muted dark:hover:bg-dark-hover"
+      >
+        ← Prev
+      </button>
+      <span className="text-xs text-text-muted">
+        Page {page + 1} of {totalPages} · {totalElements} total
+      </span>
+      <button
+        onClick={onNext}
+        disabled={page >= totalPages - 1}
+        className="text-xs text-text-muted hover:text-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-2 py-1 rounded hover:bg-surface-muted dark:hover:bg-dark-hover"
+      >
+        Next →
+      </button>
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
-export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeople?: Person[]; allUnits?: Unit[] } = {}) {
-  const [search, setSearch]     = useState('')
-  const [selected, setSelected] = useState<Person | null>(null)
+export function PeoplePageClient({ allUnits = [] }: { allUnits?: Unit[] } = {}) {
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch]           = useState('')
+  const [selected, setSelected]       = useState<Person | null>(null)
+  const [activeTab, setActiveTab]     = useState<'owners' | 'tenants'>('owners')
   const [showTenant,    setShowTenant]    = useState(false)
   const [showOwner,     setShowOwner]     = useState(false)
   const [showCorporate, setShowCorporate] = useState(false)
   const [showRegMenu,   setShowRegMenu]   = useState(false)
   const [showExit,      setShowExit]      = useState(false)
 
-  const [people, setPeople] = useState<Person[]>(initialPeople ?? [])
-  const addPerson    = (p: Person) => setPeople(prev => [p, ...prev])
-  const updatePerson = (p: Person) => {
-    setPeople(prev => prev.map(x => x.id === p.id ? p : x))
-    setSelected(p)
-  }
+  // Debounce search to avoid firing on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
 
-  const owners  = useMemo(() => people.filter(p => p.type === 'resident_owner' || p.type === 'non_resident_owner'), [people])
-  const tenants = useMemo(() => people.filter(p => p.type === 'tenant' || p.type === 'short_stay_guest'), [people])
+  const owners  = useTabPeople('owner',  search)
+  const tenants = useTabPeople('tenant', search)
 
   function exportCsv() {
+    const list = activeTab === 'owners' ? owners.items : tenants.items
     const headers = ['First Name','Last Name','Email','Phone','National ID','Type','Status','KYC Status','Joined Date']
-    const rows = people.map(p => [
+    const rows = list.map(p => [
       p.first_name, p.last_name, p.email ?? '', p.phone ?? '',
       p.national_id ?? '', p.type, p.status, p.kyc_status ?? '',
       p.joined_date ?? '',
@@ -2315,18 +2389,45 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
     URL.revokeObjectURL(url)
   }
 
-  const filterPeople = (list: Person[]) => {
-    const q = search.toLowerCase()
-    const result = q
-      ? list.filter(p =>
-          `${p.first_name} ${p.last_name}`.toLowerCase().includes(q) ||
-          (p.email ?? '').toLowerCase().includes(q) ||
-          (p.phone ?? '').includes(q) ||
-          (p.national_id ?? '').toLowerCase().includes(q)
-        )
-      : list
-    return [...result].sort((a, b) =>
-      `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`)
+  function addPerson(p: Person) {
+    if (p.type === 'resident_owner' || p.type === 'non_resident_owner') {
+      owners.refetch()
+    } else if (p.type === 'tenant' || p.type === 'short_stay_guest') {
+      tenants.refetch()
+    }
+  }
+
+  function updatePerson(p: Person) {
+    owners.updateItem(p)
+    tenants.updateItem(p)
+    setSelected(p)
+  }
+
+  function renderTabContent(tab: ReturnType<typeof useTabPeople>, emptyMsg: string) {
+    if (tab.loading) {
+      return (
+        <div className="flex-1 flex items-center justify-center py-10">
+          <div className="w-5 h-5 border-2 border-primary-600/30 border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+        <div className="flex-1 overflow-y-auto">
+          {tab.items.length === 0 ? (
+            <p className="text-center text-sm text-text-muted py-8">{emptyMsg}</p>
+          ) : tab.items.map(p => (
+            <PersonRow key={p.id} person={p} selected={selected?.id === p.id} onClick={() => setSelected(p)} />
+          ))}
+        </div>
+        <PaginationBar
+          page={tab.page}
+          totalPages={tab.totalPages}
+          totalElements={tab.totalElements}
+          onPrev={() => tab.setPage(p => Math.max(0, p - 1))}
+          onNext={() => tab.setPage(p => Math.min(tab.totalPages - 1, p + 1))}
+        />
+      </div>
     )
   }
 
@@ -2337,10 +2438,10 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
       <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
         <div className="p-3 border-b border-surface-border dark:border-dark-border space-y-2">
           <div className="flex gap-2">
-            <SearchInput placeholder="Search by name, email, phone or ID number..." value={search} onChange={setSearch} />
+            <SearchInput placeholder="Search by name, email, phone or ID number..." value={searchInput} onChange={setSearchInput} />
             <button
               onClick={exportCsv}
-              title="Export to CSV"
+              title="Export current page to CSV"
               className="flex-shrink-0 px-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
@@ -2384,24 +2485,16 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
           </div>
         </div>
 
-        <Tabs defaultValue="owners" className="flex flex-col flex-1 overflow-hidden">
+        <Tabs defaultValue="owners" onValueChange={v => setActiveTab(v as 'owners' | 'tenants')} className="flex flex-col flex-1 overflow-hidden min-h-0">
           <TabsList className="px-4 flex-shrink-0">
-            <TabsTrigger value="owners">Owners ({owners.length})</TabsTrigger>
-            <TabsTrigger value="tenants">Tenants ({tenants.length})</TabsTrigger>
+            <TabsTrigger value="owners">Owners ({owners.totalElements})</TabsTrigger>
+            <TabsTrigger value="tenants">Tenants ({tenants.totalElements})</TabsTrigger>
           </TabsList>
-          <TabsContent value="owners" className="flex-1 overflow-y-auto">
-            {filterPeople(owners).length === 0 ? (
-              <p className="text-center text-sm text-text-muted py-8">No owners found.</p>
-            ) : filterPeople(owners).map(p => (
-              <PersonRow key={p.id} person={p} selected={selected?.id === p.id} onClick={() => setSelected(p)} />
-            ))}
+          <TabsContent value="owners" className="flex flex-col flex-1 overflow-hidden min-h-0">
+            {renderTabContent(owners, search ? 'No owners match your search.' : 'No owners found.')}
           </TabsContent>
-          <TabsContent value="tenants" className="flex-1 overflow-y-auto">
-            {filterPeople(tenants).length === 0 ? (
-              <p className="text-center text-sm text-text-muted py-8">No tenants found.</p>
-            ) : filterPeople(tenants).map(p => (
-              <PersonRow key={p.id} person={p} selected={selected?.id === p.id} onClick={() => setSelected(p)} />
-            ))}
+          <TabsContent value="tenants" className="flex flex-col flex-1 overflow-hidden min-h-0">
+            {renderTabContent(tenants, search ? 'No tenants match your search.' : 'No tenants found.')}
           </TabsContent>
         </Tabs>
       </div>
@@ -2416,7 +2509,7 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
           </div>
         )}
         {selected ? (
-          <PersonDetail person={selected} onExit={() => setShowExit(true)} onUpdate={updatePerson} allUnits={allUnits} allPeople={people} />
+          <PersonDetail person={selected} onExit={() => setShowExit(true)} onUpdate={updatePerson} allUnits={allUnits} />
         ) : (
           <div className="flex-1 flex items-center justify-center text-center p-8">
             <div>
@@ -2445,7 +2538,6 @@ export function PeoplePageClient({ initialPeople, allUnits = [] }: { initialPeop
           open={showExit}
           onClose={() => setShowExit(false)}
           onComplete={() => {
-            // Refresh the person record to reflect unit unassignment
             getPersonById(selected.id).then(p => { if (p) updatePerson(apiPersonToPerson(p)) })
             setShowExit(false)
           }}
