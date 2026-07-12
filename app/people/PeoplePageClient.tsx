@@ -1451,6 +1451,52 @@ function KycPanel({ personId, personType }: { personId: string; personType: stri
   )
 }
 
+// ── Visitor History Panel ───────────────────────────────────────────────────
+
+function VisitorHistoryPanel({ personId }: { personId: string }) {
+  const [visitors, setVisitors] = useState<any[]>([])
+  const [loading,  setLoading]  = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/api/backend/visitors?personId=${personId}&size=50`)
+      .then(r => r.json())
+      .then(d => setVisitors(d?.data?.content ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [personId])
+
+  if (loading) return <PanelSpinner />
+  if (visitors.length === 0) return <PanelEmpty text="No visitor records for this resident." />
+
+  return (
+    <div className="space-y-2">
+      {visitors.map((v: any) => (
+        <div key={v.id} className="rounded-lg border border-surface-border dark:border-dark-border p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-text truncate">{v.visitor_name}</p>
+              <p className="text-xs text-text-muted">{v.id_type?.replace(/_/g, ' ')} · {v.id_number}</p>
+            </div>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              v.status === 'active'
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+            }`}>
+              {v.status === 'active' ? 'Inside' : 'Checked out'}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
+            {v.unit_label && <span>Unit {v.unit_label}</span>}
+            <span>{v.reason?.replace(/_/g, ' ')}</span>
+            <span>{v.checked_in_at ? new Date(v.checked_in_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── EditPersonModal ────────────────────────────────────────────────────────
 
 function EditPersonModal({ person, onClose, onSaved }: {
@@ -1974,6 +2020,7 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
           {isResident && <TabsTrigger value="emergency">Emergency</TabsTrigger>}
           {hasCrb && <TabsTrigger value="crb">CRB</TabsTrigger>}
           <TabsTrigger value="kyc">KYC</TabsTrigger>
+          <TabsTrigger value="visitors">Visitors</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -2239,6 +2286,7 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
         {isResident && <TabsContent value="emergency"><EmergencyContactsPanel personId={person.id} /></TabsContent>}
         {hasCrb && <TabsContent value="crb" className="p-4"><CrbPanel personId={person.id} /></TabsContent>}
         <TabsContent value="kyc" className="p-4"><KycPanel personId={person.id} personType={person.type} /></TabsContent>
+        <TabsContent value="visitors" className="p-4"><VisitorHistoryPanel personId={person.id} /></TabsContent>
       </Tabs>
     </div>
   )

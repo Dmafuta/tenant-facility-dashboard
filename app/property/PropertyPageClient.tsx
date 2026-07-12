@@ -537,6 +537,9 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
   const [showMeterModal,  setShowMeterModal]  = useState(false)
   const [editMeter,       setEditMeter]       = useState<MeterData | null>(null)
 
+  const [unitVisitors,    setUnitVisitors]    = useState<any[]>([])
+  const [visitorsLoading, setVisitorsLoading] = useState(false)
+
   function handleUnitSaved(unit: UnitData) {
     const mapped = apiUnitToUnit(unit)
     setLiveUnits(prev => {
@@ -623,6 +626,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
       setUnitLeases([])
       setUnitCharges([])
       setUnitMeters([])
+      setUnitVisitors([])
       return
     }
     const id = selected.id
@@ -632,6 +636,12 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
     getCharges(id).then(setUnitCharges).catch(() => {}).finally(() => setChargesLoading(false))
     setMetersLoading(true)
     getMeters(id).then(setUnitMeters).catch(() => {}).finally(() => setMetersLoading(false))
+    setVisitorsLoading(true)
+    fetch(`/api/backend/visitors?unitId=${id}&size=50`)
+      .then(r => r.json())
+      .then(d => setUnitVisitors(d?.data?.content ?? []))
+      .catch(() => {})
+      .finally(() => setVisitorsLoading(false))
   }, [selected?.id])
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
@@ -1050,6 +1060,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
                 <TabsTrigger value="leases">Leases</TabsTrigger>
                 <TabsTrigger value="financials">Financials</TabsTrigger>
                 <TabsTrigger value="utilities">Utilities</TabsTrigger>
+                <TabsTrigger value="visitors">Visitors</TabsTrigger>
               </TabsList>
 
               {/* Overview */}
@@ -1525,6 +1536,50 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
                         </div>
                       )
                     })
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* Visitors */}
+              <TabsContent value="visitors">
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">
+                    {unitVisitors.length} visit{unitVisitors.length !== 1 ? 's' : ''} recorded
+                  </p>
+                  {visitorsLoading ? (
+                    <div className="py-8 flex justify-center">
+                      <span className="w-5 h-5 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
+                    </div>
+                  ) : unitVisitors.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-text-muted">
+                      <p className="text-2xl mb-2">🚶</p>
+                      No visitor records for this unit.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {unitVisitors.map((v: any) => (
+                        <div key={v.id} className="rounded-lg border border-surface-border dark:border-dark-border p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-text truncate">{v.visitor_name}</p>
+                              <p className="text-xs text-text-muted">{v.id_type?.replace(/_/g, ' ')} · {v.id_number}</p>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              v.status === 'active'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                            }`}>
+                              {v.status === 'active' ? 'Inside' : 'Checked out'}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
+                            <span>{v.reason?.replace(/_/g, ' ')}</span>
+                            {v.host_name && <span>→ {v.host_name}</span>}
+                            <span>{v.checked_in_at ? new Date(v.checked_in_at).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : ''}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </TabsContent>
