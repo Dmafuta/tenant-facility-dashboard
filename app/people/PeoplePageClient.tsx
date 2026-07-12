@@ -1475,8 +1475,8 @@ function VisitorHistoryPanel({ personId }: { personId: string }) {
         <div key={v.id} className="rounded-lg border border-surface-border dark:border-dark-border p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-text truncate">{v.visitor_name}</p>
-              <p className="text-xs text-text-muted">{v.id_type?.replace(/_/g, ' ')} · {v.id_number}</p>
+              <p className="text-sm font-medium text-text truncate">{v.visitorName}</p>
+              <p className="text-xs text-text-muted">{v.idType?.replace(/_/g, ' ')} · {v.idNumber}</p>
             </div>
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
               v.status === 'active'
@@ -1487,9 +1487,9 @@ function VisitorHistoryPanel({ personId }: { personId: string }) {
             </span>
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
-            {v.unit_label && <span>Unit {v.unit_label}</span>}
+            {v.unitLabel && <span>Unit {v.unitLabel}</span>}
             <span>{v.reason?.replace(/_/g, ' ')}</span>
-            <span>{v.checked_in_at ? new Date(v.checked_in_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+            <span>{v.checkedInAt ? new Date(v.checkedInAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
           </div>
         </div>
       ))}

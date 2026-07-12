@@ -1561,8 +1561,8 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
                         <div key={v.id} className="rounded-lg border border-surface-border dark:border-dark-border p-3">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-text truncate">{v.visitor_name}</p>
-                              <p className="text-xs text-text-muted">{v.id_type?.replace(/_/g, ' ')} · {v.id_number}</p>
+                              <p className="text-sm font-medium text-text truncate">{v.visitorName}</p>
+                              <p className="text-xs text-text-muted">{v.idType?.replace(/_/g, ' ')} · {v.idNumber}</p>
                             </div>
                             <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                               v.status === 'active'
@@ -1574,8 +1574,8 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
                           </div>
                           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
                             <span>{v.reason?.replace(/_/g, ' ')}</span>
-                            {v.host_name && <span>→ {v.host_name}</span>}
-                            <span>{v.checked_in_at ? new Date(v.checked_in_at).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : ''}</span>
+                            {v.hostName && <span>→ {v.hostName}</span>}
+                            <span>{v.checkedInAt ? new Date(v.checkedInAt).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : ''}</span>
                           </div>
                         </div>
                       ))}
