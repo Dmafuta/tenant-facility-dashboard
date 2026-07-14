@@ -158,25 +158,46 @@ export function OccupancyPageClient() {
                 <p className="text-2xl font-bold text-blue-600">{counts.reserved}</p>
                 <p className="text-xs text-text-muted">Reserved</p>
               </div>
-              {blockStats.length > 0 && (
-                <div className="flex-[2] min-w-[180px] bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl p-4">
-                  <p className="text-xs font-semibold text-text-muted mb-2">By Block</p>
-                  <div className="space-y-1.5">
-                    {blockStats.map(bs => (
-                      <div key={bs.block} className="flex items-center gap-2 text-xs">
-                        <span className="w-16 truncate text-text-muted">{bs.block}</span>
-                        <div className="flex-1 h-2 bg-surface-border dark:bg-dark-border rounded-full overflow-hidden">
-                          <div className="h-full bg-primary-500 rounded-full transition-all" style={{ width: `${bs.pct}%` }} />
-                        </div>
-                        <span className="w-12 text-right text-text font-medium shrink-0">{bs.occupied}/{bs.total}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
+
+        {/* By Block strip */}
+        {!loading && blockStats.length > 0 && (
+          <div className="px-6 py-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-2">By Block</p>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {blockStats.map(bs => (
+                <button
+                  key={bs.block}
+                  onClick={() => setBlockFilter(blockFilter === bs.block ? 'all' : bs.block)}
+                  className={cn(
+                    'flex-shrink-0 flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-all hover:shadow-sm',
+                    blockFilter === bs.block
+                      ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface hover:border-primary-300'
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className={cn('text-xs font-semibold truncate max-w-[100px]', blockFilter === bs.block ? 'text-primary-600' : 'text-text')}>{bs.block}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <div className="w-20 h-1.5 bg-surface-border dark:bg-dark-border rounded-full overflow-hidden">
+                        <div
+                          className={cn('h-full rounded-full transition-all', bs.pct === 100 ? 'bg-green-500' : bs.pct >= 70 ? 'bg-primary-500' : bs.pct >= 40 ? 'bg-amber-500' : 'bg-rose-400')}
+                          style={{ width: `${bs.pct}%` }}
+                        />
+                      </div>
+                      <span className="text-[11px] text-text-muted whitespace-nowrap">{bs.occupied}/{bs.total}</span>
+                    </div>
+                  </div>
+                  <span className={cn('text-sm font-bold tabular-nums shrink-0', bs.pct === 100 ? 'text-green-600' : bs.pct >= 70 ? 'text-primary-600' : bs.pct >= 40 ? 'text-amber-600' : 'text-rose-500')}>
+                    {bs.pct}%
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Filter + grid */}
