@@ -10,8 +10,6 @@ import {
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { IntegrationsPageClient } from '@/app/integrations/IntegrationsPageClient'
-import { ENTRY_POINTS } from '@/lib/mock-data'
-import type { EntryPoint, EntryPointType, EntryPointDirection } from '@/lib/types'
 import { cn } from '@/lib/cn'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { getInvoiceCategories, updateInvoiceCategory, type InvoiceCategory } from '@/lib/api/invoices'
@@ -25,10 +23,11 @@ import {
   getSettings, updateSettings, listSystemUsers, listSystemUsersPaged, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
   getRulesDocumentInfo, uploadRulesDocument, deleteRulesDocument,
-  resetTestData,
   type FacilitySettings, type SystemUser, type AppRole, type RolePermission, type DocumentInfo,
-  type ResetTestDataResult,
 } from '@/lib/api/settings'
+import { DangerSection } from '@/app/settings/sections/DangerSection'
+import { FacilitySection } from '@/app/settings/sections/FacilitySection'
+import { NotificationsSection } from '@/app/settings/sections/NotificationsSection'
 
 // ── Shared design components ───────────────────────────────────────────────────
 function SectionHeader({ title, subtitle, badge }: { title: string; subtitle: string; badge?: React.ReactNode }) {
@@ -428,114 +427,6 @@ function BillingSettings() {
           </div>
         </div>
       )}
-    </div>
-    </div>
-  )
-}
-
-// ── Notification Settings ─────────────────────────────────────────────────────
-function NotificationSettings() {
-  const [form, setForm] = useState<Partial<FacilitySettings>>({})
-  const [saved, setSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getSettings().then(s => setForm(s)).finally(() => setLoading(false))
-  }, [])
-
-  const save = async () => {
-    await updateSettings(form)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
-
-  const toggle = (key: keyof FacilitySettings) =>
-    setForm(p => ({ ...p, [key]: !p[key] }))
-
-  if (loading) return <div className="p-6 text-sm text-text-muted">Loading…</div>
-
-  const sections = [
-    { category: 'Onboarding', items: [
-      { label: 'Welcome email on registration', desc: 'Send a welcome email to new tenants and owners when they are registered. Disable during development or bulk imports.', channels: ['email'], key: 'send_welcome_email' as const },
-    ]},
-    { category: 'Financial', items: [
-      { label: 'Rent overdue reminder',    desc: 'Alert when rent is unpaid after grace period', channels: ['email','sms'], key: 'notify_rent_overdue'         as const },
-      { label: 'Payment received',         desc: 'Notify when a payment is logged',              channels: ['email'],       key: 'notify_payment_received'      as const },
-      { label: 'Arrears escalation',       desc: 'Alert when arrears exceed 2 months',           channels: ['email','sms'], key: 'notify_arrears_escalation'    as const },
-    ]},
-    { category: 'Maintenance', items: [
-      { label: 'New work order',           desc: 'Notify supervisor of new maintenance request', channels: ['email'],       key: 'notify_new_work_order'        as const },
-      { label: 'Work order overdue',       desc: 'Alert when open work order is 7+ days old',   channels: ['email'],       key: 'notify_work_order_overdue'    as const },
-      { label: 'Preventive maintenance due', desc: 'Reminder 7 days before scheduled task',     channels: ['email'],       key: 'notify_preventive_maintenance' as const },
-    ]},
-    { category: 'Compliance', items: [
-      { label: 'Breach recorded',          desc: 'Alert when a new breach is logged',            channels: ['email'],       key: 'notify_breach_recorded'       as const },
-      { label: 'Document expiry (30 days)',desc: 'Alert when certificate or contract nears expiry', channels: ['email'],   key: 'notify_document_expiry'       as const },
-    ]},
-    { category: 'Utilities', items: [
-      { label: 'Water loss alert',         desc: 'Notify when water loss exceeds 10%',           channels: ['email','sms'], key: 'notify_water_loss'            as const },
-      { label: 'Meter reading due',        desc: 'Monthly reminder to capture meter readings',   channels: ['email'],       key: 'notify_meter_reading_due'     as const },
-    ]},
-  ]
-
-  const paused = !!form.notifications_paused
-
-  return (
-    <div className="relative">
-      <SectionHeader title="Notifications" subtitle="Control which alerts and emails are sent to tenants, owners, and staff." />
-    <div className="p-6 space-y-6 overflow-y-auto pb-16">
-      {/* ── Master pause banner ── */}
-      <div className={`rounded-xl border-2 px-5 py-4 flex items-center justify-between gap-4 ${paused ? 'border-warning bg-warning/10' : 'border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface'}`}>
-        <div>
-          <p className={`text-sm font-semibold ${paused ? 'text-warning' : 'text-text'}`}>
-            {paused ? '⚠ All notifications are paused' : 'Notifications active'}
-          </p>
-          <p className="text-xs text-text-muted mt-0.5">
-            {paused
-              ? 'No billing emails, payment receipts, or alerts will be sent. Auth emails (OTP, invites) are unaffected.'
-              : 'Billing emails, payment receipts, and alerts send normally. Toggle to pause all outgoing notifications.'}
-          </p>
-        </div>
-        <button
-          onClick={async () => {
-            const updated = { ...form, notifications_paused: !paused }
-            setForm(updated)
-            await updateSettings({ notifications_paused: !paused })
-          }}
-          className={`flex-shrink-0 w-12 h-6 rounded-full relative cursor-pointer transition-colors ${paused ? 'bg-warning' : 'bg-success'}`}
-        >
-          <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow transition-all ${paused ? 'left-0.5' : 'right-0.5'}`} />
-        </button>
-      </div>
-
-      {sections.map(section => (
-        <div key={section.category}>
-          <h3 className="text-sm font-semibold text-text mb-3">{section.category}</h3>
-          <div className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl overflow-hidden divide-y divide-surface-border dark:divide-dark-border">
-            {section.items.map(item => (
-              <div key={item.key} className="flex items-center justify-between px-4 py-3 gap-4">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-text">{item.label}</p>
-                  <p className="text-xs text-text-muted">{item.desc}</p>
-                  <div className="flex gap-1 mt-1">
-                    {item.channels.map(c => (
-                      <span key={c} className="text-[10px] font-semibold uppercase bg-surface-hover dark:bg-dark-hover border border-surface-border dark:border-dark-border rounded px-1.5 py-0.5 text-text-muted">{c}</span>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={() => toggle(item.key)}
-                  className={`w-10 h-5 rounded-full relative cursor-pointer flex-shrink-0 transition-colors ${form[item.key] ? 'bg-primary-500' : 'bg-surface-border dark:bg-dark-border'}`}>
-                  <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 shadow transition-all ${form[item.key] ? 'right-0.5' : 'left-0.5'}`} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-      <button onClick={save}
-        className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${saved ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
-        {saved ? '✓ Saved' : 'Save Changes'}
-      </button>
     </div>
     </div>
   )
@@ -1176,243 +1067,6 @@ function UsersSettings() {
   )
 }
 
-// ── Facility Setup — Entry Points ─────────────────────────────────────────────
-
-const TYPE_ICON: Record<EntryPointType, string> = {
-  pedestrian: '🚶',
-  vehicle:    '🚗',
-  service:    '🔧',
-  emergency:  '🚨',
-  mixed:      '🔀',
-}
-
-const STATUS_CLASS: Record<string, string> = {
-  active:      'bg-success/10 text-success',
-  locked:      'bg-warning/10 text-warning',
-  fault:       'bg-danger/10 text-danger',
-  maintenance: 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400',
-}
-
-const DIRECTION_LABEL: Record<EntryPointDirection, string> = {
-  entry: 'Entry only',
-  exit:  'Exit only',
-  both:  'Entry & Exit',
-}
-
-function EntryPointRow({ ep, onEdit }: { ep: EntryPoint; onEdit: (ep: EntryPoint) => void }) {
-  return (
-    <tr className="hover:bg-surface-hover dark:hover:bg-dark-hover">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{TYPE_ICON[ep.type]}</span>
-          <div>
-            <p className="text-sm font-medium text-text">{ep.name}</p>
-            {ep.location_description && <p className="text-xs text-text-muted">{ep.location_description}</p>}
-          </div>
-        </div>
-      </td>
-      <td className="px-4 py-3 text-xs text-text-muted capitalize">{ep.type}</td>
-      <td className="px-4 py-3 text-xs text-text-muted">{DIRECTION_LABEL[ep.direction]}</td>
-      <td className="px-4 py-3 text-xs text-text-muted">
-        {ep.operating_hours.always_open
-          ? '24/7'
-          : `${ep.operating_hours.open_time} – ${ep.operating_hours.close_time}`}
-      </td>
-      <td className="px-4 py-3">
-        <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded capitalize', STATUS_CLASS[ep.status])}>
-          {ep.status}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <span className={cn('text-[11px] px-2 py-0.5 rounded', ep.requires_staff ? 'bg-surface-muted text-text-muted' : 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400')}>
-          {ep.requires_staff ? 'Manned' : 'Automated'}
-        </span>
-      </td>
-      <td className="px-4 py-3">
-        <button onClick={() => onEdit(ep)} className="text-xs text-primary-600 hover:underline mr-3">Edit</button>
-        <button className="text-xs text-danger hover:underline">Remove</button>
-      </td>
-    </tr>
-  )
-}
-
-function AddEntryPointModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-text">Add Entry Point</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text text-lg">✕</button>
-        </div>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Name</label>
-            <input className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500" placeholder="e.g. Main Vehicle Gate" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Type</label>
-              <select className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text">
-                <option value="vehicle">Vehicle</option>
-                <option value="pedestrian">Pedestrian</option>
-                <option value="service">Service</option>
-                <option value="emergency">Emergency</option>
-                <option value="mixed">Mixed</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Direction</label>
-              <select className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text">
-                <option value="both">Entry & Exit</option>
-                <option value="entry">Entry only</option>
-                <option value="exit">Exit only</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Location Description</label>
-            <input className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text" placeholder="e.g. North perimeter, facing Ngong Road" />
-          </div>
-          <div className="flex items-center gap-3">
-            <input type="checkbox" id="always_open" className="accent-primary-600" />
-            <label htmlFor="always_open" className="text-sm text-text">Always open (24/7)</label>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Opens</label>
-              <input type="time" defaultValue="06:00" className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">Closes</label>
-              <input type="time" defaultValue="22:00" className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <input type="checkbox" id="manned" className="accent-primary-600" />
-            <label htmlFor="manned" className="text-sm text-text">Requires staff (manned gate)</label>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
-            <textarea className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-card text-text h-16 resize-none" />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-text-muted hover:text-text">Cancel</button>
-          <button onClick={() => { alert('Entry point added (demo)'); onClose() }}
-            className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-            Add Entry Point
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FacilitySetupSettings() {
-  const [showAdd, setShowAdd] = useState(false)
-  const [editEp, setEditEp] = useState<EntryPoint | null>(null)
-
-  const stats = useMemo(() => ({
-    total:      ENTRY_POINTS.length,
-    active:     ENTRY_POINTS.filter(e => e.status === 'active').length,
-    fault:      ENTRY_POINTS.filter(e => e.status === 'fault').length,
-    manned:     ENTRY_POINTS.filter(e => e.requires_staff).length,
-  }), [])
-
-  return (
-    <div className="relative">
-      <SectionHeader title="Facility Setup" subtitle="Building details and compound entry points." />
-    <div className="p-6 space-y-6">
-      <Card className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-text">Building Details</h3>
-          <button className="text-xs text-primary-600 hover:underline">Edit</button>
-        </div>
-        <div className="grid grid-cols-3 gap-4 text-xs">
-          {[
-            { label: 'Property Name',    value: 'Green Valley Estate' },
-            { label: 'Total Units',      value: '24 units across 3 blocks' },
-            { label: 'Floors',           value: '6 floors per block' },
-            { label: 'Year Built',       value: '2018' },
-            { label: 'Plot Number',      value: 'L.R No. 209/12476' },
-            { label: 'Physical Address', value: 'Ngong Road, Nairobi' },
-          ].map(f => (
-            <div key={f.label}>
-              <p className="text-text-muted mb-0.5">{f.label}</p>
-              <p className="font-medium text-text">{f.value}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-text">Entry Points</h3>
-            <p className="text-xs text-text-muted mt-0.5">All gates and access points for this facility.</p>
-          </div>
-          <button onClick={() => setShowAdd(true)}
-            className="px-3 py-1.5 text-xs font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-            + Add Entry Point
-          </button>
-        </div>
-
-        <div className="grid grid-cols-4 gap-3 mb-4">
-          {[
-            { label: 'Total',  value: stats.total,  color: 'text-text' },
-            { label: 'Active', value: stats.active, color: 'text-success' },
-            { label: 'Fault',  value: stats.fault,  color: 'text-danger' },
-            { label: 'Manned', value: stats.manned, color: 'text-text-muted' },
-          ].map(s => (
-            <Card key={s.label} className="p-3 text-center">
-              <p className={cn('text-xl font-bold', s.color)}>{s.value}</p>
-              <p className="text-xs text-text-muted">{s.label}</p>
-            </Card>
-          ))}
-        </div>
-
-        <Card className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-hover dark:bg-dark-hover">
-              <tr>
-                {['Entry Point','Type','Direction','Hours','Status','Mode',''].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-xs font-medium text-text-muted">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-border dark:divide-dark-border">
-              {ENTRY_POINTS.map(ep => (
-                <EntryPointRow key={ep.id} ep={ep} onEdit={setEditEp} />
-              ))}
-            </tbody>
-          </table>
-        </Card>
-
-        <p className="text-xs text-text-muted mt-2">
-          Devices (biometric readers, ANPR cameras, boom gate controllers) are managed from the <strong>Access Control</strong> page.
-        </p>
-      </div>
-
-      <AddEntryPointModal open={showAdd} onClose={() => setShowAdd(false)} />
-      {editEp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditEp(null)} />
-          <div className="relative z-10 bg-surface dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-text">Edit — {editEp.name}</h2>
-              <button onClick={() => setEditEp(null)} className="text-text-muted hover:text-text text-lg">✕</button>
-            </div>
-            <p className="text-sm text-text-muted mb-4">Edit form mirrors the Add form. Implementation pending.</p>
-          </div>
-        </div>
-      )}
-    </div>
-    </div>
-  )
-}
-
 // ── Documents Settings ─────────────────────────────────────────────────────────
 function DocumentsSettings() {
   const [info,     setInfo]     = useState<DocumentInfo | null>(null)
@@ -1916,132 +1570,6 @@ function DataSetupSettings() {
   )
 }
 
-// ── TEMPORARY: Danger Zone ────────────────────────────────────────────────────
-// Remove this component and its tab content before production go-live.
-function DangerZone() {
-  const [confirmText, setConfirmText]   = useState('')
-  const [running, setRunning]           = useState(false)
-  const [result, setResult]             = useState<ResetTestDataResult | null>(null)
-  const [error, setError]               = useState<string | null>(null)
-  const [showModal, setShowModal]       = useState(false)
-
-  async function handleReset() {
-    setRunning(true); setError(null); setResult(null)
-    try {
-      const res = await resetTestData()
-      setResult(res)
-      setShowModal(false)
-      setConfirmText('')
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Reset failed')
-    } finally {
-      setRunning(false)
-    }
-  }
-
-  return (
-    <div className="relative">
-      <SectionHeader title="Danger Zone" subtitle="Irreversible operations. Proceed with extreme caution." />
-    <div className="p-6 max-w-2xl space-y-6">
-      {/* Warning banner */}
-      <div className="rounded-lg border-2 border-danger/40 bg-danger/5 p-4 flex gap-3">
-        <span className="text-danger text-xl mt-0.5">⚠️</span>
-        <div>
-          <p className="font-semibold text-danger">Danger Zone — Temporary</p>
-          <p className="text-sm text-text-muted mt-1">
-            This section is for test-data cleanup only. Remove it before go-live.
-          </p>
-        </div>
-      </div>
-
-      {/* Reset card */}
-      <div className="rounded-lg border border-danger/30 bg-surface dark:bg-dark-card p-5 space-y-3">
-        <div>
-          <p className="font-medium text-text">Clear All Test Data</p>
-          <p className="text-sm text-text-muted mt-1">
-            Permanently deletes all meter readings, invoices, charges, payments and
-            disconnection notices, then resets all meter baselines to zero.
-            Meters, units, persons, leases and opening balances are <strong>kept</strong>.
-          </p>
-        </div>
-        <ul className="text-xs text-text-muted space-y-0.5 list-disc list-inside">
-          <li>invoice_payments</li>
-          <li>disconnection_notices</li>
-          <li>charges</li>
-          <li>invoices</li>
-          <li>meter_readings</li>
-          <li>meter_type_history</li>
-          <li>meters → last_reading &amp; last_reading_date reset to NULL</li>
-        </ul>
-        <button
-          onClick={() => { setShowModal(true); setConfirmText(''); setError(null); setResult(null) }}
-          className="px-4 py-2 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 transition-colors"
-        >
-          Clear Test Data…
-        </button>
-      </div>
-
-      {/* Result */}
-      {result && (
-        <div className="rounded-lg border border-success/30 bg-success/5 p-4 text-sm space-y-1">
-          <p className="font-medium text-success">Reset complete — all test data removed.</p>
-          <ul className="text-text-muted text-xs space-y-0.5 list-disc list-inside mt-2">
-            <li>{result.invoice_payments_deleted} payments deleted</li>
-            <li>{result.disconnection_notices_deleted} disconnection notices deleted</li>
-            <li>{result.charges_deleted} charges deleted</li>
-            <li>{result.invoices_deleted} invoices deleted</li>
-            <li>{result.meter_readings_deleted} meter readings deleted</li>
-            <li>{result.meter_type_history_deleted} type history records deleted</li>
-            <li>{result.meters_baseline_reset} meter baselines reset</li>
-          </ul>
-        </div>
-      )}
-
-      {/* Confirm modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface dark:bg-dark-card rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">⚠️</span>
-              <p className="font-semibold text-text text-lg">Confirm Data Reset</p>
-            </div>
-            <p className="text-sm text-text-muted">
-              This will permanently delete <strong>all</strong> billing and meter reading data. This cannot be undone.
-            </p>
-            <p className="text-sm text-text">
-              Type <strong className="text-danger">RESET</strong> to confirm:
-            </p>
-            <input
-              type="text"
-              value={confirmText}
-              onChange={e => setConfirmText(e.target.value)}
-              placeholder="RESET"
-              className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-danger"
-            />
-            {error && <p className="text-sm text-danger">{error}</p>}
-            <div className="flex justify-end gap-3 pt-1">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 rounded-lg border border-surface-border dark:border-dark-border text-sm text-text hover:bg-surface-muted transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReset}
-                disabled={confirmText !== 'RESET' || running}
-                className="px-4 py-2 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 disabled:opacity-40 transition-colors"
-              >
-                {running ? 'Resetting…' : 'Yes, Delete Everything'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-    </div>
-  )
-}
-
 // -- Page -----------------------------------------------------------------------
 type SectionKey =
   | 'general' | 'facility' | 'billing' | 'notifications' | 'roles'
@@ -2121,16 +1649,16 @@ export function SettingsPageClient() {
         {/* Content */}
         <div className="flex-1 min-w-0 overflow-y-auto">
           {active === 'general'       && <GeneralSettings />}
-          {active === 'facility'      && <FacilitySetupSettings />}
+          {active === 'facility'      && <FacilitySection />}
           {active === 'billing'       && <BillingSettings />}
-          {active === 'notifications' && <NotificationSettings />}
+          {active === 'notifications' && <NotificationsSection />}
           {active === 'roles'         && <RolesSettings />}
           {active === 'users'         && <UsersSettings />}
           {active === 'branding'      && <BrandingSettings />}
           {active === 'integrations'  && <IntegrationsPageClient />}
           {active === 'documents'     && <DocumentsSettings />}
           {active === 'data-setup'    && <DataSetupSettings />}
-          {active === 'danger-zone'   && <DangerZone />}
+          {active === 'danger-zone'   && <DangerSection />}
         </div>
       </main>
     </DashboardLayout>
