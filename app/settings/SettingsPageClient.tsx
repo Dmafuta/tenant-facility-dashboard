@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
@@ -30,6 +30,69 @@ import {
   type ResetTestDataResult,
 } from '@/lib/api/settings'
 
+// ── Shared design components ───────────────────────────────────────────────────
+function SectionHeader({ title, subtitle, badge }: { title: string; subtitle: string; badge?: React.ReactNode }) {
+  return (
+    <div className="border-b border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface">
+      <div className="mx-auto max-w-3xl px-8 py-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-text">{title}</h2>
+            <p className="mt-1 text-sm text-text-muted">{subtitle}</p>
+          </div>
+          {badge}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card">
+      <header className="border-b border-surface-border dark:border-dark-border px-6 py-4">
+        <h3 className="text-sm font-semibold text-text">{title}</h3>
+        {description && <p className="mt-0.5 text-xs text-text-muted">{description}</p>}
+      </header>
+      <div className="space-y-4 px-6 py-5">{children}</div>
+    </section>
+  )
+}
+
+function SectionField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-medium text-text-muted">{label}</label>
+      {children}
+      {hint && <p className="text-[11px] text-text-muted">{hint}</p>}
+    </div>
+  )
+}
+
+function StickySaveBar({ dirty, saving, onSave, onDiscard }: {
+  dirty: boolean; saving: boolean; onSave: () => void; onDiscard: () => void
+}) {
+  if (!dirty) return null
+  return (
+    <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2">
+      <div className="flex items-center gap-3 rounded-full border border-surface-border dark:border-dark-border bg-white/95 dark:bg-dark-card/95 px-3 py-2 shadow-lg backdrop-blur">
+        <div className="flex items-center gap-2 pl-2 pr-1 text-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="text-text-muted">Unsaved changes</span>
+        </div>
+        <button onClick={onDiscard} disabled={saving}
+          className="px-3 py-1.5 text-sm rounded-md text-text-muted hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors disabled:opacity-50">
+          Discard
+        </button>
+        <button onClick={onSave} disabled={saving}
+          className="px-3 py-1.5 text-sm font-medium rounded-md bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition-colors">
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── General Settings ──────────────────────────────────────────────────────────
 function GeneralSettings() {
   const [form, setForm] = useState({
@@ -39,72 +102,83 @@ function GeneralSettings() {
     currency:         'KES',
     timezone:         'Africa/Nairobi',
   })
-  const [saved, setSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [savedForm, setSavedForm] = useState(form)
+  const [loading, setLoading]     = useState(true)
+  const [saving, setSaving]       = useState(false)
 
   useEffect(() => {
     getSettings().then(s => {
-      setForm({
+      const initial = {
         property_name:    s.property_name    ?? '',
         management_email: s.management_email ?? '',
         contact_phone:    s.contact_phone    ?? '',
         currency:         s.currency         ?? 'KES',
         timezone:         s.timezone         ?? 'Africa/Nairobi',
-      })
+      }
+      setForm(initial)
+      setSavedForm(initial)
     }).finally(() => setLoading(false))
   }, [])
 
-  const save = async () => {
+  const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(savedForm), [form, savedForm])
+
+  const onSave = async () => {
+    setSaving(true)
     await updateSettings(form)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSavedForm(form)
+    setSaving(false)
   }
+
+  const inp = 'w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500'
 
   if (loading) return <div className="p-6 text-sm text-text-muted">Loading…</div>
 
   return (
-    <div className="p-6 max-w-xl space-y-5">
-      <h3 className="text-sm font-semibold text-text">Property Information</h3>
-      {([
-        { label: 'Property Name',    key: 'property_name',    type: 'text' },
-        { label: 'Management Email', key: 'management_email', type: 'email' },
-      ] as const).map(f => (
-        <div key={f.key}>
-          <label className="block text-xs font-medium text-text-muted mb-1">{f.label}</label>
-          <input type={f.type} value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
-        </div>
-      ))}
-      <div>
-        <label className="block text-xs font-medium text-text-muted mb-1">Contact Phone</label>
-        <PhoneInput value={form.contact_phone} onChange={v => setForm(p => ({ ...p, contact_phone: v }))} />
+    <div className="relative">
+      <SectionHeader title="General" subtitle="Workspace identity, regional defaults, and contact details." />
+      <div className="mx-auto max-w-3xl px-8 py-8 pb-32 space-y-6">
+        <SettingsCard title="Workspace profile" description="Shown on invoices, notices, and the tenant portal.">
+          <SectionField label="Property name" hint="Displayed in the sidebar and tenant portal.">
+            <input type="text" value={form.property_name}
+              onChange={e => setForm(p => ({ ...p, property_name: e.target.value }))}
+              className={inp} />
+          </SectionField>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SectionField label="Management email">
+              <input type="email" value={form.management_email}
+                onChange={e => setForm(p => ({ ...p, management_email: e.target.value }))}
+                className={inp} />
+            </SectionField>
+            <SectionField label="Contact phone">
+              <PhoneInput value={form.contact_phone} onChange={v => setForm(p => ({ ...p, contact_phone: v }))} />
+            </SectionField>
+          </div>
+        </SettingsCard>
+
+        <SettingsCard title="Regional defaults" description="Currency and timezone used across the workspace.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SectionField label="Currency">
+              <select value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value }))}
+                className={inp}>
+                <option value="KES">KES — Kenyan Shilling</option>
+                <option value="USD">USD — US Dollar</option>
+                <option value="UGX">UGX — Ugandan Shilling</option>
+                <option value="TZS">TZS — Tanzanian Shilling</option>
+              </select>
+            </SectionField>
+            <SectionField label="Timezone">
+              <select value={form.timezone} onChange={e => setForm(p => ({ ...p, timezone: e.target.value }))}
+                className={inp}>
+                <option value="Africa/Nairobi">Africa/Nairobi (EAT +3)</option>
+                <option value="Africa/Lagos">Africa/Lagos (WAT +1)</option>
+                <option value="Africa/Johannesburg">Africa/Johannesburg (SAST +2)</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </SectionField>
+          </div>
+        </SettingsCard>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Currency</label>
-          <select value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
-            <option value="KES">KES — Kenyan Shilling</option>
-            <option value="USD">USD — US Dollar</option>
-            <option value="UGX">UGX — Ugandan Shilling</option>
-            <option value="TZS">TZS — Tanzanian Shilling</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Timezone</label>
-          <select value={form.timezone} onChange={e => setForm(p => ({ ...p, timezone: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
-            <option value="Africa/Nairobi">Africa/Nairobi (EAT +3)</option>
-            <option value="Africa/Lagos">Africa/Lagos (WAT +1)</option>
-            <option value="Africa/Johannesburg">Africa/Johannesburg (SAST +2)</option>
-            <option value="UTC">UTC</option>
-          </select>
-        </div>
-      </div>
-      <button onClick={save}
-        className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${saved ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
-        {saved ? '✓ Saved' : 'Save Changes'}
-      </button>
+      <StickySaveBar dirty={dirty} saving={saving} onSave={onSave} onDiscard={() => setForm(savedForm)} />
     </div>
   )
 }
@@ -173,6 +247,7 @@ function BillingSettings() {
   if (loading) return <div className="p-6 text-sm text-text-muted">Loading…</div>
 
   const numFields = [
+
     { label: 'Rent Due Day',    sublabel: 'Day of month rent is due',         key: 'rent_due_day'      as const, suffix: 'th of month' },
     { label: 'Grace Period',    sublabel: 'Days before late fees apply',       key: 'grace_period_days' as const, suffix: 'days' },
     { label: 'Late Fee Rate',   sublabel: 'Per week after grace period',       key: 'late_fee_percent'  as const, suffix: '% per week' },
@@ -185,7 +260,9 @@ function BillingSettings() {
   ]
 
   return (
-    <div className="p-6 max-w-xl space-y-6">
+    <div className="relative">
+      <SectionHeader title="Billing & Payments" subtitle="Rent schedules, service charges, water rates, and invoice category settings." />
+    <div className="p-6 max-w-xl space-y-6 pb-16">
       <div>
         <h3 className="text-sm font-semibold text-text mb-4">Rent & Payment Settings</h3>
         <div className="grid grid-cols-2 gap-4">
@@ -352,6 +429,7 @@ function BillingSettings() {
         </div>
       )}
     </div>
+    </div>
   )
 }
 
@@ -403,7 +481,9 @@ function NotificationSettings() {
   const paused = !!form.notifications_paused
 
   return (
-    <div className="p-6 space-y-6 overflow-y-auto">
+    <div className="relative">
+      <SectionHeader title="Notifications" subtitle="Control which alerts and emails are sent to tenants, owners, and staff." />
+    <div className="p-6 space-y-6 overflow-y-auto pb-16">
       {/* ── Master pause banner ── */}
       <div className={`rounded-xl border-2 px-5 py-4 flex items-center justify-between gap-4 ${paused ? 'border-warning bg-warning/10' : 'border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface'}`}>
         <div>
@@ -456,6 +536,7 @@ function NotificationSettings() {
         className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${saved ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
         {saved ? '✓ Saved' : 'Save Changes'}
       </button>
+    </div>
     </div>
   )
 }
@@ -542,6 +623,8 @@ function RolesSettings() {
   }
 
   return (
+    <div className="relative">
+      <SectionHeader title="Roles" subtitle="Define custom roles and their permission sets." />
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-text">Roles</h3>
@@ -644,6 +727,7 @@ function RolesSettings() {
         </div>
       )}
     </div>
+    </div>
   )
 }
 
@@ -677,6 +761,8 @@ function BrandingSettings() {
   if (loading) return <p className="p-6 text-sm text-text-muted">Loading…</p>
 
   return (
+    <div className="relative">
+      <SectionHeader title="Branding" subtitle="White-label the tenant portal with your own name and logo." />
     <div className="p-6 space-y-6 max-w-lg">
       {/* Plan badge */}
       <div className="flex items-center gap-3">
@@ -737,6 +823,7 @@ function BrandingSettings() {
           {saving ? 'Saving…' : 'Save Branding'}
         </button>
       )}
+    </div>
     </div>
   )
 }
@@ -855,6 +942,8 @@ function UsersSettings() {
   )
 
   return (
+    <div className="relative">
+      <SectionHeader title="Users" subtitle="Manage staff portal access and invitations." />
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h3 className="text-sm font-semibold text-text shrink-0">
@@ -1083,6 +1172,7 @@ function UsersSettings() {
         </div>
       )}
     </div>
+    </div>
   )
 }
 
@@ -1232,6 +1322,8 @@ function FacilitySetupSettings() {
   }), [])
 
   return (
+    <div className="relative">
+      <SectionHeader title="Facility Setup" subtitle="Building details and compound entry points." />
     <div className="p-6 space-y-6">
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1317,6 +1409,7 @@ function FacilitySetupSettings() {
         </div>
       )}
     </div>
+    </div>
   )
 }
 
@@ -1370,6 +1463,8 @@ function DocumentsSettings() {
   }
 
   return (
+    <div className="relative">
+      <SectionHeader title="Document Templates" subtitle="Upload documents automatically attached to resident welcome emails." />
     <div className="p-6 max-w-2xl space-y-6">
       <div>
         <h2 className="text-base font-semibold text-text">Property Documents</h2>
@@ -1430,6 +1525,7 @@ function DocumentsSettings() {
         {error   && <p className="text-sm text-danger">{error}</p>}
         {success && <p className="text-sm text-success">{success}</p>}
       </Card>
+    </div>
     </div>
   )
 }
@@ -1582,6 +1678,8 @@ function DataSetupSettings() {
   const inputCls = 'w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500'
 
   return (
+    <div className="relative">
+      <SectionHeader title="Data & Imports" subtitle="Set opening balances and import historical data." />
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
@@ -1814,6 +1912,7 @@ function DataSetupSettings() {
         </div>
       )}
     </div>
+    </div>
   )
 }
 
@@ -1841,6 +1940,8 @@ function DangerZone() {
   }
 
   return (
+    <div className="relative">
+      <SectionHeader title="Danger Zone" subtitle="Irreversible operations. Proceed with extreme caution." />
     <div className="p-6 max-w-2xl space-y-6">
       {/* Warning banner */}
       <div className="rounded-lg border-2 border-danger/40 bg-danger/5 p-4 flex gap-3">
@@ -1936,6 +2037,7 @@ function DangerZone() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }
