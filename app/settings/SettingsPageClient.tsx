@@ -8,11 +8,9 @@ import {
   Settings as SettingsIcon, Building2, CreditCard, Bell, Palette,
   Plug, FileText, Database, ShieldCheck, AlertTriangle, Users as UsersIcon, Shield,
 } from 'lucide-react'
-import { Card } from '@/components/ui/Card'
 import { IntegrationsPageClient } from '@/app/integrations/IntegrationsPageClient'
 import { cn } from '@/lib/cn'
 import { PhoneInput } from '@/components/ui/PhoneInput'
-import { getInvoiceCategories, updateInvoiceCategory, type InvoiceCategory } from '@/lib/api/invoices'
 import {
   getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
   parseOpeningBalanceExcel, bulkImportOpeningBalances,
@@ -22,12 +20,14 @@ import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 import {
   getSettings, updateSettings, listSystemUsers, listSystemUsersPaged, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite,
   listRoles, createRole, updateRole, deleteRole,
-  getRulesDocumentInfo, uploadRulesDocument, deleteRulesDocument,
-  type FacilitySettings, type SystemUser, type AppRole, type RolePermission, type DocumentInfo,
+  type FacilitySettings, type SystemUser, type AppRole, type RolePermission,
 } from '@/lib/api/settings'
 import { DangerSection } from '@/app/settings/sections/DangerSection'
 import { FacilitySection } from '@/app/settings/sections/FacilitySection'
 import { NotificationsSection } from '@/app/settings/sections/NotificationsSection'
+import { BillingSection } from '@/app/settings/sections/BillingSection'
+import { BrandingSection } from '@/app/settings/sections/BrandingSection'
+import { DocumentsSection } from '@/app/settings/sections/DocumentsSection'
 
 // ── Shared design components ───────────────────────────────────────────────────
 function SectionHeader({ title, subtitle, badge }: { title: string; subtitle: string; badge?: React.ReactNode }) {
@@ -178,256 +178,6 @@ function GeneralSettings() {
         </SettingsCard>
       </div>
       <StickySaveBar dirty={dirty} saving={saving} onSave={onSave} onDiscard={() => setForm(savedForm)} />
-    </div>
-  )
-}
-
-// ── Billing Settings ──────────────────────────────────────────────────────────
-function BillingSettings() {
-  const [form, setForm] = useState({
-    rent_due_day:           1,
-    grace_period_days:      5,
-    late_fee_percent:       2.0,
-    deposit_months:         2,
-    service_charge_enabled: true,
-    auto_generate_charges:  true,
-    service_charge_amount:  0,
-    sc_billing_cycle:       'monthly' as 'monthly' | 'quarterly' | 'semi_annual' | 'annual',
-    sc_due_day:             5,
-    water_rate_per_unit:    0,
-    management_fee_percent: 0,
-    sewerage_percent:       0,
-  })
-  const [saved, setSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [categories, setCategories] = useState<InvoiceCategory[]>([])
-  const [catForms, setCatForms] = useState<Record<string, Partial<InvoiceCategory>>>({})
-  const [catSaving, setCatSaving] = useState<string | null>(null)
-  const [catSaved, setCatSaved] = useState<string | null>(null)
-
-  useEffect(() => {
-    Promise.all([getSettings(), getInvoiceCategories()]).then(([s, cats]) => {
-      setForm({
-        rent_due_day:           s.rent_due_day           ?? 1,
-        grace_period_days:      s.grace_period_days      ?? 5,
-        late_fee_percent:       s.late_fee_percent       ?? 2.0,
-        deposit_months:         s.deposit_months         ?? 2,
-        service_charge_enabled: s.service_charge_enabled ?? true,
-        auto_generate_charges:  s.auto_generate_charges  ?? true,
-        service_charge_amount:  (s as unknown as Record<string,number>).service_charge_amount ?? 0,
-        sc_billing_cycle:       (s.sc_billing_cycle ?? 'monthly') as 'monthly' | 'quarterly' | 'semi_annual' | 'annual',
-        sc_due_day:             s.sc_due_day ?? 5,
-        water_rate_per_unit:    s.water_rate_per_unit    ?? 0,
-        management_fee_percent: s.management_fee_percent ?? 0,
-        sewerage_percent:       s.sewerage_percent       ?? 0,
-      })
-      setCategories(cats)
-      const forms: Record<string, Partial<InvoiceCategory>> = {}
-      cats.forEach(c => { forms[c.id] = { ...c } })
-      setCatForms(forms)
-    }).finally(() => setLoading(false))
-  }, [])
-
-  const save = async () => {
-    await updateSettings(form)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
-
-  async function saveCat(id: string) {
-    setCatSaving(id)
-    try {
-      await updateInvoiceCategory(id, catForms[id] ?? {})
-      setCatSaved(id)
-      setTimeout(() => setCatSaved(null), 2000)
-    } finally { setCatSaving(null) }
-  }
-
-  if (loading) return <div className="p-6 text-sm text-text-muted">Loading…</div>
-
-  const numFields = [
-
-    { label: 'Rent Due Day',    sublabel: 'Day of month rent is due',         key: 'rent_due_day'      as const, suffix: 'th of month' },
-    { label: 'Grace Period',    sublabel: 'Days before late fees apply',       key: 'grace_period_days' as const, suffix: 'days' },
-    { label: 'Late Fee Rate',   sublabel: 'Per week after grace period',       key: 'late_fee_percent'  as const, suffix: '% per week' },
-    { label: 'Deposit Months',  sublabel: 'Security deposit requirement',      key: 'deposit_months'    as const, suffix: 'months rent' },
-  ]
-
-  const toggles = [
-    { label: 'Enable Service Charge',          desc: 'Bill monthly service charge alongside rent',               key: 'service_charge_enabled' as const },
-    { label: 'Auto-generate Monthly Charges',  desc: 'Automatically create rent + service charges on 1st',      key: 'auto_generate_charges'  as const },
-  ]
-
-  return (
-    <div className="relative">
-      <SectionHeader title="Billing & Payments" subtitle="Rent schedules, service charges, water rates, and invoice category settings." />
-    <div className="p-6 max-w-xl space-y-6 pb-16">
-      <div>
-        <h3 className="text-sm font-semibold text-text mb-4">Rent & Payment Settings</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {numFields.map(f => (
-            <div key={f.key} className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-3">
-              <label className="block text-xs font-medium text-text-muted mb-0.5">{f.label}</label>
-              <p className="text-[10px] text-text-muted mb-2">{f.sublabel}</p>
-              <div className="flex items-center gap-2">
-                <input type="number" value={form[f.key]}
-                  onChange={e => setForm(p => ({ ...p, [f.key]: parseFloat(e.target.value) || 0 }))}
-                  className="w-16 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <span className="text-xs text-text-muted">{f.suffix}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold text-text mb-3">Service Charge Settings</h3>
-        <div className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-4 space-y-3">
-          {toggles.map(t => (
-            <div key={t.key} className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-text">{t.label}</p>
-                <p className="text-xs text-text-muted">{t.desc}</p>
-              </div>
-              <button onClick={() => setForm(p => ({ ...p, [t.key]: !p[t.key] }))}
-                className={`w-10 h-5 rounded-full relative transition-colors ${form[t.key] ? 'bg-primary-500' : 'bg-surface-border dark:bg-dark-border'}`}>
-                <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 shadow transition-all ${form[t.key] ? 'right-0.5' : 'left-0.5'}`} />
-              </button>
-            </div>
-          ))}
-          <div className="border-t border-surface-border dark:border-dark-border pt-3 space-y-3">
-            <div>
-              <p className="text-sm font-medium text-text mb-0.5">Monthly Rate per Unit</p>
-              <p className="text-xs text-text-muted mb-2">Fixed SC amount billed per month — invoices are multiplied by months in the billing period</p>
-              <div className="flex items-center gap-2">
-                <input type="number" min="0" step="0.01" value={form.service_charge_amount}
-                  onChange={e => setForm(p => ({ ...p, service_charge_amount: parseFloat(e.target.value) || 0 }))}
-                  className="w-28 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <span className="text-xs text-text-muted">KES / unit / month</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-sm font-medium text-text mb-0.5">Billing Cycle</p>
-                <p className="text-xs text-text-muted mb-2">How often SC invoices are generated</p>
-                <select value={form.sc_billing_cycle}
-                  onChange={e => setForm(p => ({ ...p, sc_billing_cycle: e.target.value as typeof p.sc_billing_cycle }))}
-                  className="w-full px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="semi_annual">Semi-Annual</option>
-                  <option value="annual">Annual</option>
-                </select>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-text mb-0.5">Due Day</p>
-                <p className="text-xs text-text-muted mb-2">Day of month invoice is due</p>
-                <div className="flex items-center gap-2">
-                  <input type="number" min="1" max="28" value={form.sc_due_day}
-                    onChange={e => setForm(p => ({ ...p, sc_due_day: parseInt(e.target.value) || 5 }))}
-                    className="w-16 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                  <span className="text-xs text-text-muted">of month</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold text-text mb-1">Water & Sewerage Rates</h3>
-        <p className="text-xs text-text-muted mb-4">Applied globally to all water meter readings. Sewerage and management fee are calculated as a percentage of the raw water charge.</p>
-        <div className="grid grid-cols-3 gap-4">
-          {([
-            { label: 'Water Rate',      sublabel: 'KES per m³',                   key: 'water_rate_per_unit'    as const, suffix: 'KES/m³' },
-            { label: 'Management Fee',  sublabel: '% of water charge',             key: 'management_fee_percent' as const, suffix: '%' },
-            { label: 'Sewerage',        sublabel: '% of water charge (excl. fee)', key: 'sewerage_percent'       as const, suffix: '%' },
-          ] as const).map(f => (
-            <div key={f.key} className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-lg p-3">
-              <label className="block text-xs font-medium text-text-muted mb-0.5">{f.label}</label>
-              <p className="text-[10px] text-text-muted mb-2">{f.sublabel}</p>
-              <div className="flex items-center gap-2">
-                <input type="number" min="0" step="0.01" value={form[f.key]}
-                  onChange={e => setForm(p => ({ ...p, [f.key]: parseFloat(e.target.value) || 0 }))}
-                  className="w-20 px-2 py-1 text-sm border border-surface-border dark:border-dark-border rounded bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <span className="text-xs text-text-muted">{f.suffix}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <button onClick={save}
-        className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${saved ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
-        {saved ? '✓ Saved' : 'Save Changes'}
-      </button>
-
-      {/* Invoice Categories */}
-      {categories.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-text mb-1">Invoice Categories</h3>
-          <p className="text-xs text-text-muted mb-4">Configure bank details and taglines shown on printed invoices for each billing category.</p>
-          <div className="space-y-4">
-            {categories.map(cat => {
-              const cf = catForms[cat.id] ?? {}
-              const set = (k: keyof InvoiceCategory, v: string | boolean) =>
-                setCatForms(p => ({ ...p, [cat.id]: { ...p[cat.id], [k]: v } }))
-              return (
-                <div key={cat.id} className="border border-surface-border dark:border-dark-border rounded-lg p-4 bg-surface dark:bg-dark-surface space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-mono text-xs font-bold text-primary-600 bg-primary-50 dark:bg-primary-900/20 px-2 py-0.5 rounded">{cat.code}</span>
-                      <span className="ml-2 text-sm font-semibold text-text">{cat.name}</span>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
-                      <button onClick={() => set('active', !(cf.active ?? cat.active))}
-                        className={`w-8 h-4 rounded-full relative transition-colors ${(cf.active ?? cat.active) ? 'bg-primary-500' : 'bg-surface-border dark:bg-dark-border'}`}>
-                        <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 shadow transition-all ${(cf.active ?? cat.active) ? 'right-0.5' : 'left-0.5'}`} />
-                      </button>
-                      Active
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-muted mb-1">Tagline (shown on invoice header)</label>
-                    <input type="text" value={(cf.tagline as string) ?? ''}
-                      onChange={e => set('tagline', e.target.value)}
-                      className="w-full px-2 py-1.5 text-sm border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      placeholder={`e.g. ${cat.name} Statement`} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs text-text-muted mb-1">Bank Name</label>
-                      <input type="text" value={(cf.bank_name as string) ?? ''}
-                        onChange={e => set('bank_name', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        placeholder="e.g. Equity Bank" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-text-muted mb-1">Account Number</label>
-                      <input type="text" value={(cf.bank_account as string) ?? ''}
-                        onChange={e => set('bank_account', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        placeholder="0123456789" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-text-muted mb-1">Branch</label>
-                      <input type="text" value={(cf.bank_branch as string) ?? ''}
-                        onChange={e => set('bank_branch', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-surface-border dark:border-dark-border rounded bg-white dark:bg-dark-card text-text focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        placeholder="Nairobi" />
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => saveCat(cat.id)}
-                    disabled={catSaving === cat.id}
-                    className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${catSaved === cat.id ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'} disabled:opacity-50`}
-                  >
-                    {catSaving === cat.id ? 'Saving…' : catSaved === cat.id ? '✓ Saved' : 'Save'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
     </div>
   )
 }
@@ -616,103 +366,6 @@ function RolesSettings() {
             </div>
           </div>
         </div>
-      )}
-    </div>
-    </div>
-  )
-}
-
-// ── Branding ──────────────────────────────────────────────────────────────────
-function BrandingSettings() {
-  const [form,    setForm]    = useState({ brand_name: '', brand_logo_url: '' })
-  const [plan,    setPlan]    = useState('standard')
-  const [loading, setLoading] = useState(true)
-  const [saving,  setSaving]  = useState(false)
-  const [saved,   setSaved]   = useState(false)
-  const [error,   setError]   = useState('')
-  const isPremium = plan === 'premium'
-
-  useEffect(() => {
-    getSettings().then(s => {
-      setPlan(s.plan ?? 'standard')
-      setForm({ brand_name: s.brand_name ?? '', brand_logo_url: s.brand_logo_url ?? '' })
-    }).finally(() => setLoading(false))
-  }, [])
-
-  async function handleSave() {
-    setSaving(true); setSaved(false); setError('')
-    try {
-      await updateSettings({ brand_name: form.brand_name, brand_logo_url: form.brand_logo_url })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
-    finally { setSaving(false) }
-  }
-
-  if (loading) return <p className="p-6 text-sm text-text-muted">Loading…</p>
-
-  return (
-    <div className="relative">
-      <SectionHeader title="Branding" subtitle="White-label the tenant portal with your own name and logo." />
-    <div className="p-6 space-y-6 max-w-lg">
-      {/* Plan badge */}
-      <div className="flex items-center gap-3">
-        <div>
-          <p className="text-xs font-medium text-text-muted mb-1">Current Plan</p>
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-            isPremium
-              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-              : 'bg-surface-muted dark:bg-dark-hover text-text-muted'
-          }`}>
-            {isPremium ? '★ Premium' : 'Standard'}
-          </span>
-        </div>
-        {!isPremium && (
-          <p className="text-xs text-text-muted mt-4">
-            White-label branding is available on the <strong>Premium</strong> plan.
-            Contact <a href="mailto:sales@quantumconnect.io" className="text-primary-600 hover:underline">sales@quantumconnect.io</a> to upgrade.
-          </p>
-        )}
-      </div>
-
-      {/* Brand fields — editable on premium, locked on standard */}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Brand Name</label>
-          <input
-            value={form.brand_name}
-            onChange={e => setForm(f => ({ ...f, brand_name: e.target.value }))}
-            disabled={!isPremium}
-            placeholder={isPremium ? 'e.g. Great Wall Gardens' : 'QuantumConnect (default)'}
-            className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <p className="text-[11px] text-text-muted mt-1">Replaces "QuantumConnect" in the bottom bar and outbound emails.</p>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Brand Logo URL</label>
-          <input
-            value={form.brand_logo_url}
-            onChange={e => setForm(f => ({ ...f, brand_logo_url: e.target.value }))}
-            disabled={!isPremium}
-            placeholder={isPremium ? 'https://…/your-icon.png' : 'QuantumConnect icon (default)'}
-            className="w-full px-3 py-2 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <p className="text-[11px] text-text-muted mt-1">16×16px icon shown next to the brand name. PNG with transparent background recommended.</p>
-        </div>
-      </div>
-
-      {error  && <p className="text-xs text-danger">{error}</p>}
-      {saved  && <p className="text-xs text-success">Branding saved.</p>}
-
-      {isPremium && (
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-        >
-          {saving && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-          {saving ? 'Saving…' : 'Save Branding'}
-        </button>
       )}
     </div>
     </div>
@@ -1067,122 +720,7 @@ function UsersSettings() {
   )
 }
 
-// ── Documents Settings ─────────────────────────────────────────────────────────
-function DocumentsSettings() {
-  const [info,     setInfo]     = useState<DocumentInfo | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [uploading,setUploading]= useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
-  const [success,  setSuccess]  = useState<string | null>(null)
 
-  useEffect(() => {
-    getRulesDocumentInfo().then(setInfo).catch(() => setInfo({ configured: false, filename: '', size: 0 })).finally(() => setLoading(false))
-  }, [])
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.type !== 'application/pdf') { setError('Only PDF files are accepted.'); return }
-    setUploading(true); setError(null); setSuccess(null)
-    try {
-      const updated = await uploadRulesDocument(file)
-      setInfo(updated)
-      setSuccess('Rules & Regulations uploaded successfully.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed.')
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  async function handleDelete() {
-    setDeleting(true); setError(null); setSuccess(null)
-    try {
-      await deleteRulesDocument()
-      setInfo({ configured: false, filename: '', size: 0 })
-      setSuccess('Document removed.')
-    } catch {
-      setError('Failed to remove document.')
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  function formatSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / 1024 / 1024).toFixed(2)} MB`
-  }
-
-  return (
-    <div className="relative">
-      <SectionHeader title="Document Templates" subtitle="Upload documents automatically attached to resident welcome emails." />
-    <div className="p-6 max-w-2xl space-y-6">
-      <div>
-        <h2 className="text-base font-semibold text-text">Property Documents</h2>
-        <p className="text-sm text-text-muted mt-1">
-          Upload documents that are automatically attached to emails sent to new residents.
-        </p>
-      </div>
-
-      {/* Rules & Regulations card */}
-      <Card className="p-6 space-y-4">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-900/20 flex items-center justify-center flex-shrink-0 text-2xl">
-            📄
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-text">Rules &amp; Regulations</p>
-            <p className="text-sm text-text-muted mt-0.5">
-              Attached to the welcome email sent to every new resident upon registration.
-            </p>
-            {loading ? (
-              <p className="text-sm text-text-muted mt-2">Loading…</p>
-            ) : info?.configured ? (
-              <div className="mt-3 flex items-center gap-3 p-3 bg-success/5 border border-success/20 rounded-lg">
-                <span className="text-success text-lg">✓</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text truncate">{info.filename}</p>
-                  <p className="text-xs text-text-muted">{formatSize(info.size)}</p>
-                </div>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="text-xs text-danger hover:underline disabled:opacity-50 flex-shrink-0"
-                >
-                  {deleting ? 'Removing…' : 'Remove'}
-                </button>
-              </div>
-            ) : (
-              <div className="mt-3 flex items-center gap-2 p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                <span className="text-warning text-lg">⚠</span>
-                <p className="text-sm text-text-muted">No document uploaded — welcome emails will be sent without an attachment.</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 pt-2 border-t border-surface-border dark:border-dark-border">
-          <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${uploading ? 'opacity-50 cursor-not-allowed bg-surface-muted text-text-muted' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
-            {uploading ? (
-              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Uploading…</>
-            ) : (
-              <>{info?.configured ? '↑ Replace PDF' : '↑ Upload PDF'}</>
-            )}
-            <input type="file" accept="application/pdf" className="sr-only" onChange={handleUpload} disabled={uploading} />
-          </label>
-          <p className="text-xs text-text-muted">PDF only, max 10 MB</p>
-        </div>
-
-        {error   && <p className="text-sm text-danger">{error}</p>}
-        {success && <p className="text-sm text-success">{success}</p>}
-      </Card>
-    </div>
-    </div>
-  )
-}
 
 // ── Data Setup (Opening Balances) ─────────────────────────────────────────────
 
@@ -1650,13 +1188,13 @@ export function SettingsPageClient() {
         <div className="flex-1 min-w-0 overflow-y-auto">
           {active === 'general'       && <GeneralSettings />}
           {active === 'facility'      && <FacilitySection />}
-          {active === 'billing'       && <BillingSettings />}
+          {active === 'billing'       && <BillingSection />}
           {active === 'notifications' && <NotificationsSection />}
           {active === 'roles'         && <RolesSettings />}
           {active === 'users'         && <UsersSettings />}
-          {active === 'branding'      && <BrandingSettings />}
+          {active === 'branding'      && <BrandingSection />}
           {active === 'integrations'  && <IntegrationsPageClient />}
-          {active === 'documents'     && <DocumentsSettings />}
+          {active === 'documents'     && <DocumentsSection />}
           {active === 'data-setup'    && <DataSetupSettings />}
           {active === 'danger-zone'   && <DangerSection />}
         </div>
