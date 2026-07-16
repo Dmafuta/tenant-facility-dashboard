@@ -3,13 +3,24 @@ name: Build & Deploy Frontend
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 env:
   REGISTRY:   ghcr.io
   IMAGE_NAME: ghcr.io/dmafuta/tenant-portal
 
 jobs:
-  build-and-deploy:
+  # ── Step 1: Always build + push image ─────────────────────────────────────
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,7 +48,14 @@ jobs:
           build-args: |
             NEXT_PUBLIC_TURNSTILE_SITE_KEY=${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
-      - name: Deploy to server
+  # ── Step 2a: Auto-deploy to staging on every push to main ─────────────────
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+
+    steps:
+      - name: Deploy to staging
         uses: appleboy/ssh-action@v1
         with:
           host:     ${{ secrets.SERVER_HOST }}
@@ -47,7 +65,31 @@ jobs:
           script: |
             cd /opt/tenantportal
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
-            # Ensure docker-compose.yml has image: field for frontend so pull works
+            docker compose -p tenantportal-staging -f docker-compose.staging.yml pull frontend-staging
+            docker compose -p tenantportal-staging -f docker-compose.staging.yml up -d --no-deps frontend-staging
+            docker image prune -f
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+
+  # ── Step 2b: Manual-only deploy to production ─────────────────────────────
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment: production
+
+    steps:
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1
+        with:
+          host:     ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key:      ${{ secrets.SERVER_SSH_KEY }}
+          envs:     GHCR_TOKEN,GHCR_ACTOR
+          script: |
+            cd /opt/tenantportal
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
             grep -q 'ghcr.io/dmafuta/tenant-portal' docker-compose.yml || \
               sed -i 's/^  frontend:$/  frontend:\n    image: ghcr.io\/dmafuta\/tenant-portal:latest/' docker-compose.yml
             docker compose pull frontend
