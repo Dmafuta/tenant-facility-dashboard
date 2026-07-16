@@ -1,7 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -1941,7 +1940,6 @@ export function SettingsPageClient() {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
-        <Topbar title="Settings" subtitle="Property configuration, billing rules and user management" />
         <Tabs defaultValue="general" className="flex flex-col flex-1 overflow-hidden min-h-0">
           <div className="px-6 pt-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
             <TabsList>

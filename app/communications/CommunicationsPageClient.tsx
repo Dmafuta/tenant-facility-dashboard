@@ -2,7 +2,6 @@
 import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { FACILITY_MESSAGES, INTEGRATION_PROVIDERS } from '@/lib/mock-data'
@@ -142,7 +141,6 @@ export function CommunicationsPageClient() {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
-        <Topbar title="Communications" subtitle="Broadcast messages and resident announcements" />
 
         {composing && <ComposePane onClose={() => setComposing(false)} />}
 

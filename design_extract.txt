@@ -1,0 +1,140 @@
+screen-pad { padding: 0 !important; }
+    .sheet { box-shadow: none !important; margin: 0 !important; }
+  }
+</style>
+</helmet>
+<div class="screen-pad" style="padding: 32px 16px; display: flex; justify-content: center;">
+  <div class="sheet" style="width: 816px; min-height: 1056px; background: #fff; box-shadow: 0 8px 40px rgba(20,33,61,0.16); color: oklch(0.30 0.03 250); display: flex; flex-direction: column;">
+
+    <!-- ===== HEADER ===== -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 18px 48px 12px; border-bottom: 3px solid oklch(0.40 0.06 250);">
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: oklch(0.40 0.06 250); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <div style="width: 28px; height: 28px; border: 2.5px solid #fff; border-radius: 0 50% 50% 50%; transform: rotate(45deg);"></div>
+        </div>
+        <div>
+          <div style="font-size: 19px; font-weight: 800; letter-spacing: -0.01em; color: oklch(0.32 0.05 250); line-height: 1.1;">Metro Water &amp; Sewerage Authority</div>
+          <div style="font-size: 11.5px; font-weight: 500; letter-spacing: 0.04em; color: oklch(0.55 0.03 250); margin-top: 3px;">Reliable water. Cleaner communities.</div>
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.14em; color: oklch(0.50 0.05 250);">STATEMENT</div>
+        <div style="font-size: 11px; color: oklch(0.55 0.02 250); margin-top: 6px;">Statement No.</div>
+        <div style="font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;">WS-2026-0518-4471</div>
+      </div>
+    </div>
+
+    <!-- ===== ACCOUNT META STRIP ===== -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); background: oklch(0.97 0.008 250); border-bottom: 1px solid oklch(0.90 0.01 250);">
+      <div style="padding: 11px 20px; border-right: 1px solid oklch(0.92 0.01 250);">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Account No.</div>
+        <div style="font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 4px;">4471-820934-02</div>
+      </div>
+      <div style="padding: 11px 20px; border-right: 1px solid oklch(0.92 0.01 250);">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Billing Period</div>
+        <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">May 2026</div>
+      </div>
+      <div style="padding: 11px 20px; border-right: 1px solid oklch(0.92 0.01 250);">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Statement Date</div>
+        <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">01 Jun 2026</div>
+      </div>
+      <div style="padding: 11px 20px;">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Payment Due</div>
+        <div style="font-size: 14px; font-weight: 700; color: oklch(0.45 0.13 28); margin-top: 4px;">15 Jun 2026</div>
+      </div>
+    </div>
+
+    <!-- ===== CUSTOMER + AMOUNT DUE ===== -->
+    <div style="display: flex; padding: 10px 48px 2px; gap: 32px; justify-content: space-between; align-items: flex-start;">
+      <div>
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: oklch(0.58 0.02 250); text-transform: uppercase; margin-bottom: 8px;">Billed To</div>
+        <div style="font-size: 15px; font-weight: 700; color: oklch(0.30 0.04 250);">A. N. Mwangi</div>
+        <div style="font-size: 13px; color: oklch(0.45 0.02 250); line-height: 1.5; margin-top: 3px;">Plot 28, Riverside Gardens<br>Lakeview Estate, Block C<br>Service Point: SP-0934-C</div>
+      </div>
+      <div style="background: oklch(0.34 0.05 250); border-radius: 4px; padding: 11px 26px; min-width: 252px; text-align: right;">
+        <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: oklch(0.80 0.04 250); text-transform: uppercase;">Total Amount Due</div>
+        <div style="font-size: 33px; font-weight: 800; color: #fff; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; margin-top: 4px;">$78.20</div>
+        <div style="font-size: 11.5px; color: oklch(0.82 0.04 250); margin-top: 6px;">Pay by 15 Jun 2026 to avoid a late fee</div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: CHARGES ===== -->
+    <div style="padding: 10px 48px 0;">
+      <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: oklch(0.45 0.05 250); text-transform: uppercase; padding-bottom: 6px; border-bottom: 2px solid oklch(0.40 0.06 250);">Statement Summary</div>
+
+      <!-- previous balance block -->
+      <div style="display: flex; justify-content: space-between; padding: 6px 4px; border-bottom: 1px solid oklch(0.93 0.008 250); font-size: 13.5px;">
+        <span style="color: oklch(0.40 0.02 250);">Previous balance</span>
+        <span style="font-weight: 600; font-variant-numeric: tabular-nums;">$33.90</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 6px 4px; border-bottom: 1px solid oklch(0.93 0.008 250); font-size: 13.5px;">
+        <span style="color: oklch(0.40 0.02 250);">Payment received — 22 May 2026 <span style="color: oklch(0.55 0.10 150); font-weight: 600;">· Thank you</span></span>
+        <span style="font-weight: 600; font-variant-numeric: tabular-nums; color: oklch(0.50 0.10 150);">−$21.60</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 6px 4px; border-bottom: 2px solid oklch(0.88 0.01 250); font-size: 13.5px;">
+        <span style="color: oklch(0.30 0.03 250); font-weight: 600;">Balance brought forward</span>
+        <span style="font-weight: 700; font-variant-numeric: tabular-nums;">$12.30</span>
+      </div>
+    </div>
+
+    <!-- ===== CURRENT CHARGES TABLE ===== -->
+    <div style="padding: 10px 48px 0;">
+      <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: oklch(0.45 0.05 250); text-transform: uppercase; margin-bottom: 4px;">Current Charges — May 2026</div>
+      <div style="display: grid; grid-template-columns: 1fr auto auto; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: oklch(0.60 0.02 250); text-transform: uppercase; padding: 8px 4px; border-bottom: 1px solid oklch(0.90 0.01 250);">
+        <span>Description</span>
+        <span style="text-align: right; padding-right: 28px;">Details</span>
+        <span style="text-align: right; min-width: 88px;">Amount</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr auto auto; align-items: center; font-size: 13px; padding: 6px 4px; border-bottom: 1px solid oklch(0.94 0.006 250);">
+        <span style="color: oklch(0.30 0.03 250); font-weight: 600;">Water consumption charge</span>
+        <span style="text-align: right; padding-right: 28px; color: oklch(0.52 0.02 250); font-size: 12px; font-variant-numeric: tabular-nums;">18 m³ @ $1.93</span>
+        <span style="text-align: right; min-width: 88px; font-weight: 600; font-variant-numeric: tabular-nums;">$34.80</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr auto auto; align-items: center; font-size: 13px; padding: 6px 4px; border-bottom: 1px solid oklch(0.94 0.006 250);">
+        <span style="color: oklch(0.30 0.03 250); font-weight: 600;">Management fee</span>
+        <span style="text-align: right; padding-right: 28px; color: oklch(0.52 0.02 250); font-size: 12px;">Fixed monthly</span>
+        <span style="text-align: right; min-width: 88px; font-weight: 600; font-variant-numeric: tabular-nums;">$5.00</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr auto auto; align-items: center; font-size: 13px; padding: 6px 4px; border-bottom: 1px solid oklch(0.94 0.006 250);">
+        <span style="color: oklch(0.30 0.03 250); font-weight: 600;">Sewerage fee</span>
+        <span style="text-align: right; padding-right: 28px; color: oklch(0.52 0.02 250); font-size: 12px;">75% of water charge</span>
+        <span style="text-align: right; min-width: 88px; font-weight: 600; font-variant-numeric: tabular-nums;">$26.10</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr auto; align-items: center; font-size: 13px; padding: 6px 4px; border-bottom: 2px solid oklch(0.88 0.01 250);">
+        <span style="color: oklch(0.30 0.03 250); font-weight: 700;">Total current charges</span>
+        <span style="text-align: right; min-width: 88px; font-weight: 700; font-variant-numeric: tabular-nums;">$65.90</span>
+      </div>
+
+      <!-- grand total -->
+      <div style="display: flex; justify-content: space-between; align-items: center; background: oklch(0.96 0.012 250); border-radius: 4px; padding: 10px 16px; margin-top: 8px;">
+        <span style="font-size: 14px; font-weight: 700; color: oklch(0.30 0.04 250);">Total amount due <span style="font-weight: 500; color: oklch(0.55 0.02 250); font-size: 12.5px;">(balance brought forward + current charges)</span></span>
+        <span style="font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: oklch(0.34 0.05 250);">$78.20</span>
+      </div>
+    </div>
+
+    <!-- ===== CONSUMPTION CHART + METER ===== -->
+    <div style="display: grid; grid-template-columns: 1.35fr 1fr; gap: 32px; padding: 10px 48px 0;">
+      <!-- chart -->
+      <div>
+        <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: oklch(0.45 0.05 250); text-transform: uppercase; padding-bottom: 10px; border-bottom: 2px solid oklch(0.40 0.06 250);">Consumption — Last 3 Months</div>
+        <div style="display: flex; align-items: flex-end; gap: 28px; height: 92px; padding: 12px 8px 0; border-bottom: 1px solid oklch(0.88 0.01 250);">
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
+            <div style="font-size: 12px; font-weight: 700; color: oklch(0.45 0.05 250); margin-bottom: 4px; font-variant-numeric: tabular-nums;">15</div>
+            <div style="width: 100%; max-width: 54px; height: 67px; background: oklch(0.72 0.05 250); border-radius: 3px 3px 0 0;"></div>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
+            <div style="font-size: 12px; font-weight: 700; color: oklch(0.45 0.05 250); margin-bottom: 4px; font-variant-numeric: tabular-nums;">16</div>
+            <div style="width: 100%; max-width: 54px; height: 72px; background: oklch(0.62 0.07 250); border-radius: 3px 3px 0 0;"></div>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
+            <div style="font-size: 12px; font-weight: 700; color: oklch(0.40 0.06 250); margin-bottom: 4px; font-variant-numeric: tabular-nums;">18</div>
+            <div style="width: 100%; max-width: 54px; height: 80px; background: oklch(0.40 0.06 250); border-radius: 3px 3px 0 0;"></div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 28px; padding: 8px 8px 0;">
+          <div style="flex: 1; text-align: center; font-size: 11.5px; font-weight: 600; color: oklch(0.50 0.02 250);">Mar</div>
+          <div style="flex: 1; text-align: center; font-size: 11.5px; font-weight: 600; color: oklch(0.50 0.02 250);">Apr</div>
+          <div style="flex: 1; text-align: center; font-size: 11.5px; font-weight: 600; color: oklch(0.50 0.02 250);">May</div>
+        </div>
+        <div sty

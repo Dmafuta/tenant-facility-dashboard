@@ -2,7 +2,6 @@
 import { cn } from '@/lib/cn'
 import { useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -257,7 +256,6 @@ export function MaintenancePageClient() {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
-        <Topbar title="Maintenance" subtitle="Work orders, repairs and preventive maintenance" />
 
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
           {[

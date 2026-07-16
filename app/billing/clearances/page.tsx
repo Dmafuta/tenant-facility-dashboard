@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import {
@@ -367,7 +366,6 @@ export default function ClearancesPage() {
   return (
     <DashboardLayout>
       <div className="flex flex-col min-h-screen">
-        <Topbar title="Move-Out Clearances" />
 
         <div className="flex-1 px-6 py-6 space-y-5">
 

@@ -1,0 +1,86 @@
+le="font-size: 11px; color: oklch(0.58 0.02 250); margin-top: 8px;">Figures in cubic metres (m³). 3-month average: 16.3 m³.</div>
+      </div>
+
+      <!-- meter reading -->
+      <div>
+        <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: oklch(0.45 0.05 250); text-transform: uppercase; padding-bottom: 10px; border-bottom: 2px solid oklch(0.40 0.06 250);">Meter Reading</div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid oklch(0.94 0.006 250); font-size: 13px;">
+          <span style="color: oklch(0.48 0.02 250);">Meter No.</span>
+          <span style="font-weight: 600; font-variant-numeric: tabular-nums;">MTR-77310</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid oklch(0.94 0.006 250); font-size: 13px;">
+          <span style="color: oklch(0.48 0.02 250);">Previous reading</span>
+          <span style="font-weight: 600; font-variant-numeric: tabular-nums;">01,242</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid oklch(0.94 0.006 250); font-size: 13px;">
+          <span style="color: oklch(0.48 0.02 250);">Current reading</span>
+          <span style="font-weight: 600; font-variant-numeric: tabular-nums;">01,260</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid oklch(0.94 0.006 250); font-size: 13px;">
+          <span style="color: oklch(0.48 0.02 250);">Reading type</span>
+          <span style="font-weight: 600;">Actual</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 2px; font-size: 13px;">
+          <span style="color: oklch(0.30 0.03 250); font-weight: 700;">Consumption</span>
+          <span style="font-weight: 700; font-variant-numeric: tabular-nums; color: oklch(0.34 0.05 250);">18 m³</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== HOW TO PAY ===== -->
+    <div style="padding: 10px 48px 0;">
+      <div style="background: oklch(0.97 0.008 250); border: 1px solid oklch(0.91 0.01 250); border-radius: 4px; padding: 11px 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: oklch(0.45 0.05 250); text-transform: uppercase; margin-bottom: 6px;">Pay Online</div>
+          <div style="font-size: 12.5px; color: oklch(0.42 0.02 250); line-height: 1.55;">pay.metrowater.gov<br>Use account 4471-820934-02</div>
+        </div>
+        <div style="border-left: 1px solid oklch(0.90 0.01 250); padding-left: 20px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: oklch(0.45 0.05 250); text-transform: uppercase; margin-bottom: 6px;">Bank Transfer</div>
+          <div style="font-size: 12.5px; color: oklch(0.42 0.02 250); line-height: 1.55;">Acct 0102 9981 4471<br>Metro Commercial Bank</div>
+        </div>
+        <div style="border-left: 1px solid oklch(0.90 0.01 250); padding-left: 20px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: oklch(0.45 0.05 250); text-transform: uppercase; margin-bottom: 6px;">In Person</div>
+          <div style="font-size: 12.5px; color: oklch(0.42 0.02 250); line-height: 1.55;">Any Metro Water office<br>Mon–Fri, 8:00–16:30</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <!-- ===== TEAR-OFF STUB ===== -->
+    <div style="margin: 10px 48px 0; border-top: 2px dashed oklch(0.78 0.02 250); padding-top: 8px;">
+      <div style="font-size: 10px; color: oklch(0.60 0.02 250); letter-spacing: 0.05em; margin-bottom: 8px;">✂ DETACH AND RETURN THIS PORTION WITH YOUR PAYMENT</div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; gap: 40px;">
+          <div>
+            <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Account No.</div>
+            <div style="font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 3px;">4471-820934-02</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Due Date</div>
+            <div style="font-size: 14px; font-weight: 600; margin-top: 3px;">15 Jun 2026</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Customer</div>
+            <div style="font-size: 14px; font-weight: 600; margin-top: 3px;">A. N. Mwangi</div>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: oklch(0.58 0.02 250); text-transform: uppercase;">Amount Due</div>
+          <div style="font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: oklch(0.34 0.05 250); margin-top: 2px;">$78.20</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== FOOTER ===== -->
+    <div style="margin-top: 12px; padding: 11px 48px; background: oklch(0.34 0.05 250); display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-size: 11px; color: oklch(0.82 0.04 250);">Customer care: 0800 100 200 · care@metrowater.gov</span>
+      <span style="font-size: 11px; color: oklch(0.82 0.04 250);">Metro Water &amp; Sewerage Authority</span>
+    </div>
+
+  </div>
+</div>
+
+
+
+</body></html>

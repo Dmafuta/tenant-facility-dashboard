@@ -1,7 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Drawer } from '@/components/ui/Drawer'
@@ -772,10 +771,6 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
 
   return (
     <DashboardLayout>
-      <Topbar
-        title="Property"
-        subtitle={`${units.length} units across ${blocks.length} blocks`}
-      />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-4">
         {/* Filters + Add Unit */}

@@ -2,7 +2,6 @@
 import { cn } from '@/lib/cn'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -452,18 +451,6 @@ export function VehiclesPageClient() {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
-        <Topbar
-          title="Vehicles"
-          subtitle="Vehicle registry, sticker management and verification"
-          actions={
-            <button
-              onClick={() => setDriveMode(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors"
-            >
-              <span>🔍</span> Start Verification Drive
-            </button>
-          }
-        />
 
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
           {[

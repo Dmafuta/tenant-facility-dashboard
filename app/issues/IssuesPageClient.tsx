@@ -2,7 +2,6 @@
 import { cn } from '@/lib/cn'
 import { useState, useEffect, useMemo } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Badge } from '@/components/ui/Badge'
 import { getIssues, createIssue, updateIssue, updateIssueStatus, deleteIssue, type IssueData } from '@/lib/api/issues'
@@ -420,18 +419,6 @@ export function IssuesPageClient() {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
-        <Topbar
-          title="Issues"
-          subtitle="Track, assign and resolve facility issues"
-          actions={
-            <button
-              onClick={() => { setEditing(null); setShowForm(true) }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors"
-            >
-              + Report Issue
-            </button>
-          }
-        />
 
         {/* Stats */}
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">

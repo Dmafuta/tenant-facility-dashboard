@@ -1,10 +1,8 @@
 import { Skeleton } from '@/components/ui/Skeleton'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 export default function PeopleLoading() {
   return (
     <DashboardLayout>
-      <Topbar title="People" />
       <main className="flex-1 flex" style={{ height:'calc(100vh - 56px)' }}>
         <div className="w-[420px] border-r border-surface-border p-4 space-y-3">
           <Skeleton className="h-9 w-full rounded-lg" />

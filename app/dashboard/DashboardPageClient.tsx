@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Card } from '@/components/ui/Card'
 import { useCountUp } from '@/hooks/useCountUp'
 import { getMpesaTransactions } from '@/lib/api/mpesa'
@@ -206,7 +205,6 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
 
   return (
     <DashboardLayout>
-      <Topbar title="Dashboard" subtitle={`Green Valley Estate · ${today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`} />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
 

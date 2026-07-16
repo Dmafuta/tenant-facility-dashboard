@@ -2,7 +2,6 @@
 import { cn } from '@/lib/cn'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
@@ -161,7 +160,6 @@ export function AuditPageClient() {
   return (
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
-        <Topbar title="Audit Trail" subtitle="Immutable log of all system actions and changes" />
 
         {/* KPIs */}
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">

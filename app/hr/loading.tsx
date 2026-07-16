@@ -1,11 +1,9 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Skeleton } from '@/components/ui/Skeleton'
 
 export default function HRLoading() {
   return (
     <DashboardLayout>
-      <Topbar title="HR & Staff" subtitle="Facility staff roster, vendor contracts, and onboarding" />
       <main className="flex-1 p-6 space-y-6">
         <Skeleton className="h-12 rounded-xl" />
         <div className="grid grid-cols-6 gap-3">

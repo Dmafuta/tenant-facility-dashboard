@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { getPeopleFromApi, type PersonData } from '@/lib/api/people'
@@ -311,7 +310,6 @@ function StatementsInner() {
   return (
     <DashboardLayout>
       <div className="flex flex-col min-h-screen">
-        <Topbar title="Resident W&S Statement" />
 
         <div className="flex-1 px-6 py-6 space-y-5">
 

@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { Card } from '@/components/ui/Card'
 import {
   listRuns, createRun, getRun, uploadAttendance,
@@ -566,7 +565,6 @@ export default function CasualPayrollClient() {
 
   return (
     <DashboardLayout>
-      <Topbar title="Payroll" subtitle="Casual worker bi-weekly payroll" />
       <main className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <div className="space-y-3">

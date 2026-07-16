@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Topbar } from '@/components/layout/Topbar'
 import { HRPageClient } from './HRPageClient'
 import type { Person, PersonType, PersonStatus, KycStatus } from '@/lib/types'
 import type { PersonData } from '@/lib/api/people'
@@ -81,10 +80,6 @@ export default async function HRPage() {
 
   return (
     <DashboardLayout>
-      <Topbar
-        title="HR & Staff"
-        subtitle="Facility staff roster, vendor contracts, and onboarding"
-      />
       <main className="flex-1 overflow-auto">
         <HRPageClient
           initialStaff={staff}
