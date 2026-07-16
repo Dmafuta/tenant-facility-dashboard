@@ -2,28 +2,28 @@
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import {
-  Mail, Lock, ArrowRight, Eye, EyeOff,
-  Building2, Wrench, Sparkles, ShieldCheck,
-  Thermometer, Lightbulb, KeyRound, ClipboardList,
-  Leaf, Wifi, Droplets, Fan,
+  Building2, Lock, Mail, Eye, EyeOff, ShieldCheck, KeyRound,
+  Fingerprint, CheckCircle2, ArrowRight, LifeBuoy, ScrollText,
+  AlertTriangle, BarChart3, Building, Users, Workflow, Globe2,
+  Sparkles,
 } from 'lucide-react'
 import { loginWithPassword, sendOtp } from '@/lib/api/auth'
 
 export default function LoginPage() {
-  const [email,       setEmail]       = useState('')
-  const [password,    setPassword]    = useState('')
-  const [showPassword,setShowPassword]= useState(false)
-  const [loading,     setLoading]     = useState(false)
-  const [magicMode,   setMagicMode]   = useState(false)
-  const [magicSent,   setMagicSent]   = useState(false)
-  const [error,       setError]       = useState('')
+  const [email,        setEmail]        = useState('')
+  const [password,     setPassword]     = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [loading,      setLoading]      = useState(false)
+  const [mode,         setMode]         = useState<'password' | 'magic'>('password')
+  const [magicSent,    setMagicSent]    = useState(false)
+  const [error,        setError]        = useState('')
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      if (magicMode) {
+      if (mode === 'magic') {
         await sendOtp(email)
         setMagicSent(true)
       } else {
@@ -47,336 +47,318 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[var(--brand-surface)] text-[var(--brand-ink)]">
-      <EdgeDecor />
+    <div className="min-h-screen flex flex-col bg-steel-50 font-body text-steel-500">
+      <main className="flex-1">
+        <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 gap-12 px-6 py-12 lg:grid-cols-[1.05fr_minmax(0,460px)] lg:gap-16 lg:py-16">
 
-      {/* Top brand bar */}
-      <header className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-6">
-        <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-[var(--brand)] text-white grid place-items-center font-bold text-base shadow-[0_4px_14px_-2px_oklch(0.62_0.12_175_/_0.45)]">
-            G
-          </div>
-          <span className="font-semibold tracking-tight">Great Wall Gardens</span>
-        </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-[var(--brand-muted)]">
-          <span className="h-2 w-2 rounded-full bg-[var(--brand)] animate-pulse" />
-          All facility systems operational
-        </div>
-      </header>
+          {/* ── LEFT — brand + narrative ─────────────────────────────── */}
+          <section className="flex flex-col justify-between">
+            {/* Brand */}
+            <div>
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-9 place-items-center rounded-lg bg-emerald-600 font-heading text-base font-bold text-white">
+                  G
+                </div>
+                <div className="leading-tight">
+                  <p className="font-heading text-base font-bold tracking-tight text-steel-900">
+                    Great Wall Gardens
+                  </p>
+                  <p className="text-[10px] uppercase tracking-widest text-steel-400">
+                    Facility Operations Platform
+                  </p>
+                </div>
+              </div>
 
-      {/* Centered form */}
-      <main className="relative z-10 flex items-center justify-center px-6 py-10 sm:py-16">
-        <div className="w-full max-w-[400px]">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--brand-soft)] px-3 py-1 text-[11px] font-medium text-[var(--brand-strong)] tracking-wide uppercase">
-            <Building2 className="h-3 w-3" />
-            Facility Management
-          </div>
+              {/* Hero copy */}
+              <div className="mt-12 max-w-xl">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                  Estate management
+                </p>
+                <h1 className="mt-3 font-heading text-4xl font-semibold leading-[1.1] tracking-tight text-steel-900 sm:text-5xl">
+                  Every property, lease and resident — under one roof.
+                </h1>
+                <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-steel-500">
+                  Manage units, tenants, utilities, maintenance, compliance and finance
+                  — with an immutable audit trail baked into every action.
+                </p>
+              </div>
 
-          <h1 className="mt-5 text-[34px] leading-[1.1] font-bold tracking-tight">
-            Welcome back.
-            <br />
-            <span className="text-[var(--brand-strong)]">Run the building.</span>
-          </h1>
-          <p className="mt-3 text-[15px] text-[var(--brand-muted)]">
-            Sign in to manage work orders, tenants, assets and operations across the estate.
-          </p>
+              {/* Value bullets */}
+              <div className="mt-10 grid max-w-xl gap-4 sm:grid-cols-2">
+                <ValueItem
+                  icon={<Building className="size-4" />}
+                  title="Portfolio to unit"
+                  body="Model buildings, units, leases and residents with true multi-entity accounting."
+                />
+                <ValueItem
+                  icon={<Workflow className="size-4" />}
+                  title="Operational workflows"
+                  body="Maintenance, inspections, notices and visitor access — automated end-to-end."
+                />
+                <ValueItem
+                  icon={<Users className="size-4" />}
+                  title="Resident experience"
+                  body="Self-service requests, engagement, and communications in one place."
+                />
+                <ValueItem
+                  icon={<BarChart3 className="size-4" />}
+                  title="Financial control"
+                  body="Rent roll, arrears, service charges and reporting with GL-grade integrity."
+                />
+              </div>
+            </div>
 
-          <form onSubmit={onSubmit} className="mt-8 space-y-4">
-            <Field
-              id="email"
-              label="Email address"
-              icon={<Mail className="h-4 w-4" />}
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={setEmail}
-              placeholder="you@greatwallgardens.estate"
-            />
+            {/* Trust footer under narrative */}
+            <div className="mt-14 max-w-xl">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-steel-400">
+                Trusted controls
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <TrustBadge label="Two-factor auth" />
+                <TrustBadge label="GDPR" />
+                <TrustBadge label="AES-256 encrypted" />
+                <TrustBadge label="Immutable audit" />
+              </div>
+              <p className="mt-4 flex items-center gap-1.5 text-[11px] text-steel-500">
+                <Lock className="size-3 text-emerald-700" />
+                TLS 1.3 in transit · AES-256 at rest · Immutable audit chain
+              </p>
+            </div>
+          </section>
 
-            {!magicMode && (
-              <div>
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <label htmlFor="password" className="block text-xs font-medium">
-                    Password
-                  </label>
-                  <div className="flex items-center gap-3">
+          {/* ── RIGHT — sign-in console ──────────────────────────────── */}
+          <section className="lg:pt-24">
+            <div className="mb-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                Secure workspace access
+              </p>
+              <h2 className="mt-2 font-heading text-2xl font-semibold tracking-tight text-steel-900">
+                Sign in to your portal
+              </h2>
+              <p className="mt-1.5 text-sm text-steel-400">
+                Access is logged and monitored under the estate audit policy.
+              </p>
+            </div>
+
+            {/* Mode toggle */}
+            <div className="mb-5 grid grid-cols-2 rounded-md bg-neutral-100 p-1">
+              <button
+                type="button"
+                onClick={() => { setMode('password'); setMagicSent(false); setError('') }}
+                className={
+                  'inline-flex items-center justify-center gap-1.5 rounded py-1.5 text-xs font-semibold transition ' +
+                  (mode === 'password'
+                    ? 'bg-white text-steel-900 shadow-sm ring-1 ring-steel-200'
+                    : 'text-steel-500 hover:text-steel-900')
+                }
+              >
+                <Mail className="size-3.5" /> Email &amp; password
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('magic'); setMagicSent(false); setError('') }}
+                className={
+                  'inline-flex items-center justify-center gap-1.5 rounded py-1.5 text-xs font-semibold transition ' +
+                  (mode === 'magic'
+                    ? 'bg-white text-steel-900 shadow-sm ring-1 ring-steel-200'
+                    : 'text-steel-500 hover:text-steel-900')
+                }
+              >
+                <Sparkles className="size-3.5" /> Magic link
+              </button>
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+              {/* Email */}
+              <FormField label="Work email">
+                <div className="flex items-stretch rounded-md ring-1 ring-steel-200 bg-white focus-within:ring-2 focus-within:ring-emerald-600/40 transition">
+                  <div className="grid place-items-center pl-3 pr-2 text-steel-400">
+                    <Mail className="size-4" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@greatwallgardens.estate"
+                    className="flex-1 bg-transparent py-2.5 pr-3 text-sm text-steel-900 outline-none placeholder:text-steel-300"
+                  />
+                </div>
+              </FormField>
+
+              {/* Password */}
+              {mode === 'password' && (
+                <FormField
+                  label="Password"
+                  right={
                     <Link
                       href="/reset-password"
-                      className="text-xs font-medium text-[var(--brand-strong)] hover:underline"
+                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
                     >
                       Forgot password?
                     </Link>
+                  }
+                >
+                  <div className="flex items-stretch rounded-md ring-1 ring-steel-200 bg-white focus-within:ring-2 focus-within:ring-emerald-600/40 transition">
+                    <div className="grid place-items-center pl-3 pr-2 text-steel-400">
+                      <Lock className="size-4" />
+                    </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      className="flex-1 bg-transparent py-2.5 text-sm text-steel-900 outline-none placeholder:text-steel-300"
+                    />
                     <button
                       type="button"
-                      onClick={() => { setMagicMode(true); setMagicSent(false); setError('') }}
-                      className="text-xs font-medium text-[var(--brand-muted)] hover:text-[var(--brand-strong)] hover:underline"
+                      onClick={() => setShowPassword(v => !v)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className="px-3 text-steel-400 hover:text-steel-700"
                     >
-                      Send magic link
+                      {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </div>
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--brand-muted)]" />
-                  <input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="w-full h-12 pl-10 pr-10 rounded-xl border border-[var(--brand-border)] bg-white/80 backdrop-blur text-sm placeholder:text-[var(--brand-muted)] outline-none transition focus:border-[var(--brand)] focus:ring-4 focus:ring-[var(--brand-ring)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(v => !v)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--brand-muted)] hover:text-[var(--brand-ink)]"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            )}
+                </FormField>
+              )}
 
-            {magicMode && (
-              <div className="flex items-start justify-between text-xs text-[var(--brand-muted)]">
-                <span className="leading-relaxed">
-                  We'll email you a one-time code to sign in instantly — no password needed.
-                </span>
+              {/* Magic link hint */}
+              {mode === 'magic' && !magicSent && (
+                <p className="text-[12px] leading-relaxed text-steel-400">
+                  We'll email you a one-time sign-in code — no password needed.
+                </p>
+              )}
+
+              {/* Magic sent confirmation */}
+              {magicSent && (
+                <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-[12px] text-emerald-800">
+                  <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+                  <p>
+                    Code sent — check your inbox, then{' '}
+                    <Link
+                      href={`/verify?email=${encodeURIComponent(email)}`}
+                      className="font-semibold underline"
+                    >
+                      enter it here
+                    </Link>.
+                  </p>
+                </div>
+              )}
+
+              {/* Remember me + MFA */}
+              {mode === 'password' && (
+                <div className="flex items-center justify-between pt-1">
+                  <label className="inline-flex items-center gap-2 text-xs text-steel-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="size-3.5 rounded border-steel-300 text-emerald-600 focus:ring-emerald-600/40"
+                    />
+                    Keep me signed in
+                  </label>
+                  <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-steel-400">
+                    <Fingerprint className="size-3" /> MFA protected
+                  </span>
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-[12px] text-red-800">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              {/* Submit */}
+              {!magicSent && (
                 <button
-                  type="button"
-                  onClick={() => { setMagicMode(false); setMagicSent(false); setError('') }}
-                  className="ml-3 shrink-0 font-medium text-[var(--brand-strong)] hover:underline"
+                  type="submit"
+                  disabled={loading}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/40 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Use password
+                  {loading
+                    ? (mode === 'magic' ? 'Sending code…' : 'Signing in…')
+                    : (mode === 'magic' ? 'Send magic link' : 'Continue')}
+                  {!loading && <ArrowRight className="size-4" />}
                 </button>
-              </div>
-            )}
+              )}
+            </form>
 
-            {magicSent && (
-              <div className="rounded-xl border border-[var(--brand)]/20 bg-[var(--brand-soft)]/60 px-4 py-3 text-sm text-[var(--brand-strong)]">
-                Code sent — check your inbox then{' '}
-                <Link
-                  href={`/verify?email=${encodeURIComponent(email)}`}
-                  className="font-semibold underline"
-                >
-                  enter it here
-                </Link>.
-              </div>
-            )}
-
-            {error && (
-              <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-            )}
-
-            {!magicSent && (
-              <button
-                type="submit"
-                disabled={loading}
-                className="group w-full h-12 mt-2 rounded-xl bg-[var(--brand)] text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5 shadow-[0_10px_24px_-10px_oklch(0.62_0.12_175_/_0.65)] transition hover:bg-[var(--brand-strong)] disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {loading
-                  ? magicMode ? 'Sending code…' : 'Signing in…'
-                  : magicMode ? 'Send Code' : 'Sign in to dashboard'}
-                {!loading && (
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                )}
-              </button>
-            )}
-          </form>
+            {/* Security notice */}
+            <div className="mt-6 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/60 p-3 text-[11px] text-amber-900">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <p>
+                This is a private system. Unauthorized use is prohibited and may result in civil or criminal action.
+              </p>
+            </div>
+          </section>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-6 text-xs text-[var(--brand-muted)]">
-        <div className="flex items-center gap-1.5">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Protected by two-factor authentication
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
+      <footer className="border-t border-zinc-950/5 bg-white">
+        <div className="mx-auto max-w-[1280px] px-6 py-5">
+          <div className="flex flex-col gap-3 text-[11px] text-steel-400 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="font-semibold text-steel-500">© {new Date().getFullYear()} Great Wall Gardens</span>
+              <a href="#" className="hover:text-steel-700">Terms</a>
+              <a href="#" className="hover:text-steel-700">Privacy</a>
+              <a href="#" className="hover:text-steel-700">Acceptable use</a>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="relative grid size-1.5 place-items-center">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                  <span className="relative size-1.5 rounded-full bg-emerald-600" />
+                </span>
+                All systems operational
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="size-3.5" /> 2FA protected
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="hidden sm:block">© {new Date().getFullYear()} Great Wall Gardens</div>
       </footer>
     </div>
   )
 }
 
-// ── Reusable field ────────────────────────────────────────────────────────────
-
-function Field({
-  id, label, icon, type, value, onChange, placeholder, autoComplete,
-}: {
-  id: string
-  label: string
-  icon: React.ReactNode
-  type: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  autoComplete?: string
-}) {
+function FormField({
+  label, right, children,
+}: { label: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <label htmlFor={id} className="block text-xs font-medium mb-1.5">
-        {label}
-      </label>
-      <div className="relative">
-        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--brand-muted)]">
-          {icon}
-        </div>
-        <input
-          id={id}
-          type={type}
-          required
-          value={value}
-          autoComplete={autoComplete}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="w-full h-12 pl-10 pr-3 rounded-xl border border-[var(--brand-border)] bg-white/80 backdrop-blur text-sm placeholder:text-[var(--brand-muted)] outline-none transition focus:border-[var(--brand)] focus:ring-4 focus:ring-[var(--brand-ring)]"
-        />
+      <div className="mb-1.5 flex items-center justify-between">
+        <label className="text-xs font-semibold text-steel-700">{label}</label>
+        {right}
       </div>
+      {children}
     </div>
   )
 }
 
-// ── Edge decoration ───────────────────────────────────────────────────────────
-
-function EdgeDecor() {
+function TrustBadge({ label }: { label: string }) {
   return (
-    <>
-      {/* Soft glow blobs */}
-      <div className="pointer-events-none absolute -top-32 -left-32 h-[420px] w-[420px] rounded-full bg-[var(--brand-soft)] blur-3xl opacity-70" />
-      <div className="pointer-events-none absolute -bottom-40 -right-40 h-[480px] w-[480px] rounded-full bg-[oklch(0.94_0.05_200)] blur-3xl opacity-70" />
-
-      {/* Faint blueprint grid */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.35]"
-        style={{
-          backgroundImage:
-            'linear-gradient(to right, oklch(0.85 0.02 200 / 0.35) 1px, transparent 1px), linear-gradient(to bottom, oklch(0.85 0.02 200 / 0.35) 1px, transparent 1px)',
-          backgroundSize: '56px 56px',
-          maskImage:
-            'radial-gradient(ellipse at center, transparent 0%, transparent 35%, black 100%)',
-          WebkitMaskImage:
-            'radial-gradient(ellipse at center, transparent 0%, transparent 35%, black 100%)',
-        }}
-      />
-
-      {/* Left edge: building skyline */}
-      <div className="pointer-events-none hidden md:block absolute left-0 top-0 bottom-0 w-[260px]">
-        <svg viewBox="0 0 260 900" className="h-full w-full" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="skyFade" x1="0" x2="1">
-              <stop offset="0" stopColor="oklch(0.66 0.115 175)" stopOpacity="0.18" />
-              <stop offset="1" stopColor="oklch(0.66 0.115 175)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <rect x="0" y="0" width="260" height="900" fill="url(#skyFade)" />
-          <g fill="oklch(0.55 0.07 200 / 0.18)" stroke="oklch(0.45 0.06 210 / 0.45)" strokeWidth="1">
-            <rect x="10"  y="520" width="60" height="380" />
-            <rect x="78"  y="430" width="44" height="470" />
-            <rect x="128" y="560" width="52" height="340" />
-            <rect x="188" y="470" width="40" height="430" />
-          </g>
-          <g fill="oklch(0.66 0.115 175 / 0.55)">
-            {Array.from({ length: 28 }).map((_, i) => {
-              const cols = [20, 35, 50, 88, 100, 138, 152, 166, 196, 210]
-              const x = cols[i % cols.length]
-              const y = 540 + Math.floor(i / cols.length) * 28
-              return <rect key={i} x={x} y={y} width="8" height="10" rx="1" />
-            })}
-          </g>
-        </svg>
-        <FloatChip className="absolute top-[22%] left-4"  icon={<Thermometer className="h-3.5 w-3.5" />} label="HVAC"     value="72°F"   />
-        <FloatChip className="absolute top-[42%] left-8"  icon={<Lightbulb   className="h-3.5 w-3.5" />} label="Lighting" value="84%"    />
-        <FloatChip className="absolute top-[62%] left-3"  icon={<Droplets    className="h-3.5 w-3.5" />} label="Water"    value="Normal" />
-      </div>
-
-      {/* Right edge: operations panel */}
-      <div className="pointer-events-none hidden lg:block absolute right-0 top-0 bottom-0 w-[280px]">
-        <svg viewBox="0 0 280 900" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="rightFade" x1="1" x2="0">
-              <stop offset="0" stopColor="oklch(0.66 0.115 175)" stopOpacity="0.16" />
-              <stop offset="1" stopColor="oklch(0.66 0.115 175)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <rect width="280" height="900" fill="url(#rightFade)" />
-          <line x1="40" y1="80" x2="40" y2="820" stroke="oklch(0.66 0.115 175 / 0.4)" strokeWidth="1.5" strokeDasharray="2 6" />
-          {[140, 280, 420, 560, 700].map((y, i) => (
-            <g key={i}>
-              <circle cx="40" cy={y} r="6"   fill="white" stroke="oklch(0.66 0.115 175)" strokeWidth="1.5" />
-              <circle cx="40" cy={y} r="2.5" fill="oklch(0.66 0.115 175)" />
-            </g>
-          ))}
-        </svg>
-        <RightTicker className="absolute top-[14%] right-6"  icon={<Wrench        className="h-3.5 w-3.5" />} title="Work order #4821"  sub="Block C · Elevator service" tone="warn" />
-        <RightTicker className="absolute top-[30%] right-10" icon={<Sparkles      className="h-3.5 w-3.5" />} title="Cleaning complete" sub="Lobby · Tower A"             tone="ok"   />
-        <RightTicker className="absolute top-[48%] right-4"  icon={<ClipboardList className="h-3.5 w-3.5" />} title="Inspection due"    sub="Fire panel · 3 days"        tone="info" />
-        <RightTicker className="absolute top-[66%] right-8"  icon={<KeyRound      className="h-3.5 w-3.5" />} title="Access granted"    sub="Vendor · Gate 2"            tone="ok"   />
-        <RightTicker className="absolute top-[82%] right-12" icon={<Fan           className="h-3.5 w-3.5" />} title="AHU-04 tuned"      sub="−0.4 kWh / hr"              tone="info" />
-      </div>
-
-      {/* Bottom stats pill */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-16 hidden sm:flex justify-center">
-        <div className="flex items-center gap-5 rounded-full border border-[var(--brand-border)] bg-white/70 backdrop-blur px-5 py-2 text-[11px] text-[var(--brand-muted)] shadow-sm">
-          <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-[var(--brand)]" /> 12 buildings</span>
-          <span className="h-3 w-px bg-[var(--brand-border)]" />
-          <span className="flex items-center gap-1.5"><Wrench    className="h-3.5 w-3.5 text-[var(--brand)]" /> 38 open WOs</span>
-          <span className="h-3 w-px bg-[var(--brand-border)]" />
-          <span className="flex items-center gap-1.5"><Leaf      className="h-3.5 w-3.5 text-[var(--brand)]" /> 22% energy saved</span>
-          <span className="h-3 w-px bg-[var(--brand-border)]" />
-          <span className="flex items-center gap-1.5"><Wifi      className="h-3.5 w-3.5 text-[var(--brand)]" /> Sensors online</span>
-        </div>
-      </div>
-    </>
+    <div className="inline-flex items-center gap-1.5 rounded-md border border-steel-200 bg-white px-2 py-1.5">
+      <CheckCircle2 className="size-3.5 text-emerald-700" />
+      <span className="text-[11px] font-semibold text-steel-700">{label}</span>
+    </div>
   )
 }
 
-// ── FloatChip ─────────────────────────────────────────────────────────────────
-
-function FloatChip({ className, icon, label, value }: {
-  className?: string
-  icon: React.ReactNode
-  label: string
-  value: string
-}) {
+function ValueItem({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className={`flex items-center gap-2 rounded-xl border border-[var(--brand-border)] bg-white/80 backdrop-blur px-3 py-2 shadow-[0_8px_20px_-12px_rgba(16,24,40,0.15)] ${className ?? ''}`}>
-      <div className="h-6 w-6 rounded-md bg-[var(--brand-soft)] grid place-items-center text-[var(--brand-strong)]">
+    <div className="flex gap-3">
+      <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/15">
         {icon}
       </div>
-      <div className="leading-tight">
-        <div className="text-[10px] uppercase tracking-wide text-[var(--brand-muted)]">{label}</div>
-        <div className="text-xs font-semibold text-[var(--brand-ink)]">{value}</div>
-      </div>
-    </div>
-  )
-}
-
-// ── RightTicker ───────────────────────────────────────────────────────────────
-
-function RightTicker({ className, icon, title, sub, tone }: {
-  className?: string
-  icon: React.ReactNode
-  title: string
-  sub: string
-  tone: 'ok' | 'warn' | 'info'
-}) {
-  const dot =
-    tone === 'ok'   ? 'bg-[oklch(0.72_0.14_155)]' :
-    tone === 'warn' ? 'bg-[oklch(0.78_0.15_70)]'  :
-                      'bg-[var(--brand)]'
-  return (
-    <div className={`w-[230px] rounded-xl border border-[var(--brand-border)] bg-white/85 backdrop-blur px-3 py-2.5 shadow-[0_10px_24px_-14px_rgba(16,24,40,0.18)] ${className ?? ''}`}>
-      <div className="flex items-center gap-2">
-        <div className="h-7 w-7 rounded-md bg-[var(--brand-soft)] grid place-items-center text-[var(--brand-strong)]">
-          {icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-semibold text-[var(--brand-ink)] truncate">{title}</div>
-          <div className="text-[11px] text-[var(--brand-muted)] truncate">{sub}</div>
-        </div>
-        <span className={`h-2 w-2 rounded-full ${dot}`} />
+      <div>
+        <p className="font-heading text-sm font-semibold text-steel-900">{title}</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-steel-500">{body}</p>
       </div>
     </div>
   )

@@ -40,6 +40,17 @@ const config: Config = {
           hover:   '#2a3042',
           muted:   '#3a4158',
         },
+        // Steel palette (Phase 3 design system)
+        steel: {
+          50:  '#f8fafc',
+          100: '#f1f5f9',
+          200: '#e2e8f0',
+          300: '#a0aec0',
+          400: '#718096',
+          500: '#4a5568',
+          700: '#2d3748',
+          900: '#1a202c',
+        },
         // Status colours
         success: { DEFAULT: '#22c55e', light: '#dcfce7' },
         warning: { DEFAULT: '#f59e0b', light: '#fef3c7' },
@@ -47,7 +58,10 @@ const config: Config = {
         info:    { DEFAULT: '#3b82f6', light: '#dbeafe' },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans:    ['var(--font-body)', 'DM Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ['var(--font-heading)', 'Space Grotesk', 'system-ui', 'sans-serif'],
+        body:    ['var(--font-body)', 'DM Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        mono:    ['var(--font-mono)', 'JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
         DEFAULT: '0.5rem',
