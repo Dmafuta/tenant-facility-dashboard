@@ -1,8 +1,13 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
+import {
+  Settings as SettingsIcon, Building2, CreditCard, Bell, Palette,
+  Plug, FileText, Database, ShieldCheck, AlertTriangle, Users as UsersIcon, Shield,
+} from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { IntegrationsPageClient } from '@/app/integrations/IntegrationsPageClient'
 import { ENTRY_POINTS } from '@/lib/mock-data'
@@ -1936,38 +1941,95 @@ function DangerZone() {
 }
 
 // -- Page -----------------------------------------------------------------------
+type SectionKey =
+  | 'general' | 'facility' | 'billing' | 'notifications' | 'roles'
+  | 'users' | 'branding' | 'integrations' | 'documents' | 'data-setup' | 'danger-zone'
+
+const SIDEBAR_SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ className?: string }>; group: string; danger?: boolean }[] = [
+  { key: 'general',      label: 'General',           icon: SettingsIcon, group: 'Workspace' },
+  { key: 'facility',     label: 'Facility Setup',    icon: Building2,    group: 'Workspace' },
+  { key: 'branding',     label: 'Branding',          icon: Palette,      group: 'Workspace' },
+  { key: 'billing',      label: 'Billing & Payments',icon: CreditCard,   group: 'Operations' },
+  { key: 'notifications',label: 'Notifications',     icon: Bell,         group: 'Operations' },
+  { key: 'documents',    label: 'Document Templates',icon: FileText,     group: 'Operations' },
+  { key: 'integrations', label: 'Integrations',      icon: Plug,         group: 'Platform' },
+  { key: 'data-setup',   label: 'Data & Imports',    icon: Database,     group: 'Platform' },
+  { key: 'roles',        label: 'Roles',             icon: Shield,       group: 'Platform' },
+  { key: 'users',        label: 'Users',             icon: UsersIcon,    group: 'Platform' },
+  { key: 'danger-zone',  label: 'Danger Zone',       icon: AlertTriangle,group: 'Platform', danger: true },
+]
+
 export function SettingsPageClient() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const active = (searchParams.get('section') ?? 'general') as SectionKey
+
+  function setSection(key: SectionKey) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('section', key)
+    router.replace(`/settings?${params.toString()}`, { scroll: false })
+  }
+
   return (
     <DashboardLayout>
-      <main className="flex-1 overflow-hidden flex flex-col">
-        <Tabs defaultValue="general" className="flex flex-col flex-1 overflow-hidden min-h-0">
-          <div className="px-6 pt-3 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-            <TabsList>
-              <TabsTrigger value="general">General</TabsTrigger>
-              <TabsTrigger value="facility">Facility Setup</TabsTrigger>
-              <TabsTrigger value="billing">Billing &amp; Payments</TabsTrigger>
-              <TabsTrigger value="notifications">Notifications</TabsTrigger>
-              <TabsTrigger value="roles">Roles</TabsTrigger>
-              <TabsTrigger value="users">Users</TabsTrigger>
-              <TabsTrigger value="branding">Branding</TabsTrigger>
-              <TabsTrigger value="integrations">Integrations</TabsTrigger>
-              <TabsTrigger value="documents">Documents</TabsTrigger>
-              <TabsTrigger value="data-setup">Data Setup</TabsTrigger>
-              <TabsTrigger value="danger-zone">⚠ Danger Zone</TabsTrigger>
-            </TabsList>
+      <main className="flex-1 overflow-hidden flex">
+        {/* Sidebar nav */}
+        <aside className="w-64 shrink-0 border-r border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-surface flex flex-col overflow-y-auto">
+          <div className="px-5 py-5 border-b border-surface-border dark:border-dark-border">
+            <h1 className="text-base font-semibold text-text">Settings</h1>
+            <p className="mt-0.5 text-xs text-text-muted">Workspace configuration</p>
           </div>
-          <TabsContent value="general"       className="flex-1 overflow-y-auto mt-0"><GeneralSettings /></TabsContent>
-          <TabsContent value="facility"      className="flex-1 overflow-y-auto mt-0"><FacilitySetupSettings /></TabsContent>
-          <TabsContent value="billing"       className="flex-1 overflow-y-auto mt-0"><BillingSettings /></TabsContent>
-          <TabsContent value="notifications" className="flex-1 overflow-y-auto mt-0"><NotificationSettings /></TabsContent>
-          <TabsContent value="roles"         className="flex-1 overflow-y-auto mt-0"><RolesSettings /></TabsContent>
-          <TabsContent value="users"         className="flex-1 overflow-y-auto mt-0"><UsersSettings /></TabsContent>
-          <TabsContent value="branding"      className="flex-1 overflow-y-auto mt-0"><BrandingSettings /></TabsContent>
-          <TabsContent value="integrations"  className="flex-1 overflow-y-auto mt-0"><IntegrationsPageClient /></TabsContent>
-          <TabsContent value="documents"     className="flex-1 overflow-y-auto mt-0"><DocumentsSettings /></TabsContent>
-          <TabsContent value="data-setup"    className="flex-1 overflow-y-auto mt-0"><DataSetupSettings /></TabsContent>
-          <TabsContent value="danger-zone"  className="flex-1 overflow-y-auto mt-0"><DangerZone /></TabsContent>
-        </Tabs>
+          <nav className="px-2 py-4 flex-1">
+            {['Workspace', 'Operations', 'Platform'].map(group => (
+              <div key={group} className="mb-4">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  {group}
+                </div>
+                <ul className="space-y-0.5">
+                  {SIDEBAR_SECTIONS.filter(s => s.group === group).map(s => {
+                    const Icon = s.icon
+                    const isActive = active === s.key
+                    return (
+                      <li key={s.key}>
+                        <button
+                          onClick={() => setSection(s.key)}
+                          className={[
+                            'w-full flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors text-left',
+                            isActive
+                              ? s.danger
+                                ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium'
+                                : 'bg-surface dark:bg-dark-card text-text font-medium border border-surface-border dark:border-dark-border shadow-sm'
+                              : s.danger
+                                ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10'
+                                : 'text-text-muted hover:bg-surface dark:hover:bg-dark-card hover:text-text',
+                          ].join(' ')}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span>{s.label}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 overflow-y-auto">
+          {active === 'general'       && <GeneralSettings />}
+          {active === 'facility'      && <FacilitySetupSettings />}
+          {active === 'billing'       && <BillingSettings />}
+          {active === 'notifications' && <NotificationSettings />}
+          {active === 'roles'         && <RolesSettings />}
+          {active === 'users'         && <UsersSettings />}
+          {active === 'branding'      && <BrandingSettings />}
+          {active === 'integrations'  && <IntegrationsPageClient />}
+          {active === 'documents'     && <DocumentsSettings />}
+          {active === 'data-setup'    && <DataSetupSettings />}
+          {active === 'danger-zone'   && <DangerZone />}
+        </div>
       </main>
     </DashboardLayout>
   )
