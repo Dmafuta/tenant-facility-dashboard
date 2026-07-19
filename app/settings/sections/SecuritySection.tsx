@@ -1,5 +1,5 @@
 'use client'
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ShieldCheck, Users as UsersIcon, KeyRound, Scale, Tags, Fingerprint,
   Terminal, ClipboardCheck, Search, Plus, MoreVertical, Download,
@@ -12,6 +12,11 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/cn'
+import {
+  listSystemUsersPaged, inviteUser, updateSystemUser, deactivateSystemUser,
+  listRoles, createRole, updateRole, deleteRole,
+  type SystemUser, type AppRole, type RolePermission,
+} from '@/lib/api/settings'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab =
@@ -222,30 +227,110 @@ type PortalUser = {
   attrs: { scope: string; clearance: string; dept?: string }
 }
 
-const USERS: PortalUser[] = [
-  { name: 'Dennis Simiyu',   email: 'dennis@gwg.co.ke',   role: 'Facility Manager',    status: 'active',   mfa: true,  sso: true,  lastLogin: '2m ago',    linked: 'Dennis Simiyu (Staff)', attrs: { scope: 'All properties', clearance: 'L3', dept: 'Operations' } },
-  { name: 'Stephen Muema',   email: 'stephen@gwg.co.ke',  role: 'Payroll Officer',     status: 'active',   mfa: true,  sso: false, lastLogin: '3h ago',    linked: 'Stephen Muema (Staff)', attrs: { scope: 'All properties', clearance: 'L2', dept: 'Finance' } },
-  { name: 'Barabara Noel',   email: 'barabara@gwg.co.ke', role: 'Finance Officer',      status: 'active',   mfa: false, sso: true,  lastLogin: 'yesterday', linked: 'Barabara N. (Staff)',   attrs: { scope: 'Phase 1, Phase 2', clearance: 'L2', dept: 'Finance' } },
-  { name: 'Raphael Itah',    email: 'raphael@gwg.co.ke',  role: 'Receptionist',        status: 'active',   mfa: false, sso: false, lastLogin: '1h ago',    linked: 'Raphael I. (Staff)',     attrs: { scope: 'Phase 1', clearance: 'L1' } },
-  { name: 'Mike Aketch',     email: 'mike@gwg.co.ke',     role: 'Facility Manager',    status: 'inactive', mfa: true,  sso: true,  lastLogin: '62d ago',   linked: 'Mike A. (Staff)',        attrs: { scope: 'Phase 2', clearance: 'L2', dept: 'Operations' } },
-]
+function mapToPortalUser(u: SystemUser): PortalUser {
+  return {
+    name: u.fullName, email: u.email, role: u.role,
+    status: u.status === 'active' ? 'active' : 'inactive',
+    mfa: false, sso: u.email_verified, lastLogin: '—',
+    linked: u.person_name ?? '—',
+    attrs: { scope: 'All properties', clearance: 'L1' },
+  }
+}
+
+function InviteUserModal({ open, onClose, roles, onSuccess }: {
+  open: boolean; onClose: () => void; roles: AppRole[]; onSuccess: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [roleId, setRoleId] = useState(roles[0]?.id ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (roles.length > 0 && !roleId) setRoleId(roles[0].id)
+  }, [roles, roleId])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email || !fullName || !roleId) return
+    setSaving(true); setError('')
+    try {
+      await inviteUser({ email, full_name: fullName, role_id: roleId })
+      onSuccess(); onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to invite user')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Invite user" size="sm">
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Full name</label>
+          <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Doe" required
+            className="h-9 w-full px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Email</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" required
+            className="h-9 w-full px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Role</label>
+          <select value={roleId} onChange={e => setRoleId(e.target.value)} required
+            className="h-9 w-full px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+            {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </div>
+        {error && <p className="text-[12px] text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1 border-t border-surface-border dark:border-dark-border">
+          <Button variant="outline" size="sm" type="button" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" size="sm" type="submit" disabled={saving}>{saving ? 'Sending…' : 'Send invite'}</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
 
 function UsersPane() {
   const [q, setQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [selected, setSelected] = useState<PortalUser | null>(null)
+  const [users, setUsers] = useState<SystemUser[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(0)
+  const [selected, setSelected] = useState<SystemUser | null>(null)
   const [bulk, setBulk] = useState<Set<string>>(new Set())
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [roles, setRoles] = useState<AppRole[]>([])
 
-  const filtered = useMemo(() => USERS.filter((u) => {
-    if (statusFilter !== 'all' && u.status !== statusFilter) return false
-    if (q && !`${u.name} ${u.email} ${u.role}`.toLowerCase().includes(q.toLowerCase())) return false
-    return true
-  }), [q, statusFilter])
+  const loadRoles = useCallback(async () => {
+    try { setRoles(await listRoles()) } catch {}
+  }, [])
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await listSystemUsersPaged({
+        search: q || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        page, size: 20,
+      })
+      setUsers(data.content)
+      setTotal(data.totalElements)
+    } catch {} finally { setLoading(false) }
+  }, [q, statusFilter, page])
+
+  useEffect(() => { loadRoles() }, [loadRoles])
+  useEffect(() => { setPage(0) }, [q, statusFilter])
+  useEffect(() => { loadUsers() }, [loadUsers])
 
   const toggleAll = () => {
-    if (bulk.size === filtered.length && filtered.length > 0) setBulk(new Set())
-    else setBulk(new Set(filtered.map((u) => u.email)))
+    if (bulk.size === users.length && users.length > 0) setBulk(new Set())
+    else setBulk(new Set(users.map(u => u.id)))
   }
+
+  const portalUsers = useMemo(() => users.map(mapToPortalUser), [users])
 
   return (
     <div>
@@ -255,7 +340,7 @@ function UsersPane() {
         actions={
           <>
             <Button variant="outline" size="sm" className="gap-1.5"><Download className="h-3.5 w-3.5" />Export</Button>
-            <Button variant="primary" size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />Invite user</Button>
+            <Button variant="primary" size="sm" className="gap-1.5" onClick={() => setInviteOpen(true)}><Plus className="h-3.5 w-3.5" />Invite user</Button>
           </>
         }
       />
@@ -291,7 +376,7 @@ function UsersPane() {
               <thead className="bg-surface-hover/40 dark:bg-dark-hover text-[11px] uppercase tracking-wide text-text-muted">
                 <tr>
                   <th className="w-8 px-3 py-2">
-                    <input type="checkbox" checked={bulk.size === filtered.length && filtered.length > 0} onChange={toggleAll} className="size-3.5" />
+                    <input type="checkbox" checked={bulk.size === users.length && users.length > 0} onChange={toggleAll} className="size-3.5" />
                   </th>
                   <th className="text-left px-3 py-2">User</th>
                   <th className="text-left px-3 py-2">Role</th>
@@ -303,55 +388,62 @@ function UsersPane() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border dark:divide-dark-border">
-                {filtered.map((u) => (
-                  <tr key={u.email} className="hover:bg-surface-hover/30 dark:hover:bg-dark-hover/30 cursor-pointer" onClick={() => setSelected(u)}>
-                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={bulk.has(u.email)}
-                        onChange={() => {
-                          const n = new Set(bulk)
-                          if (n.has(u.email)) n.delete(u.email); else n.add(u.email)
-                          setBulk(n)
-                        }}
-                        className="size-3.5"
-                      />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="font-medium text-text">{u.name}</div>
-                      <div className="text-[11.5px] text-text-muted">{u.email}</div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant="default" className="font-normal">{u.role}</Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="text-[12px] text-text">{u.attrs.scope}</span>
-                      <span className="ml-1.5 inline-flex items-center rounded bg-surface-hover dark:bg-dark-hover px-1 py-0.5 text-[10px] font-medium text-text-muted">{u.attrs.clearance}</span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        {u.mfa ? <ShieldCheck className="size-3.5 text-emerald-600" /> : <ShieldAlert className="size-3.5 text-amber-600" />}
-                        <span className="text-[11.5px] text-text-muted">{u.mfa ? 'MFA' : 'No MFA'}</span>
-                        {u.sso && <Badge variant="default" className="ml-1 h-4 px-1 text-[9px]">SSO</Badge>}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className={cn('inline-flex items-center gap-1 text-[12px]', u.status === 'active' ? 'text-emerald-700' : 'text-text-muted')}>
-                        <span className={cn('size-1.5 rounded-full', u.status === 'active' ? 'bg-emerald-500' : 'bg-text-muted/40')} />
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-[12px] text-text-muted">{u.lastLogin}</td>
-                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><MoreVertical className="size-3.5" /></Button>
-                    </td>
-                  </tr>
-                ))}
+                {loading ? (
+                  <tr><td colSpan={8} className="px-3 py-8 text-center text-[12px] text-text-muted">Loading…</td></tr>
+                ) : users.length === 0 ? (
+                  <tr><td colSpan={8} className="px-3 py-8 text-center text-[12px] text-text-muted">No users found.</td></tr>
+                ) : portalUsers.map((u, i) => {
+                  const raw = users[i]
+                  return (
+                    <tr key={raw.id} className="hover:bg-surface-hover/30 dark:hover:bg-dark-hover/30 cursor-pointer" onClick={() => setSelected(raw)}>
+                      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={bulk.has(raw.id)}
+                          onChange={() => {
+                            const n = new Set(bulk)
+                            if (n.has(raw.id)) n.delete(raw.id); else n.add(raw.id)
+                            setBulk(n)
+                          }}
+                          className="size-3.5"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium text-text">{u.name}</div>
+                        <div className="text-[11.5px] text-text-muted">{u.email}</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant="default" className="font-normal">{u.role}</Badge>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-[12px] text-text">{u.attrs.scope}</span>
+                        <span className="ml-1.5 inline-flex items-center rounded bg-surface-hover dark:bg-dark-hover px-1 py-0.5 text-[10px] font-medium text-text-muted">{u.attrs.clearance}</span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1">
+                          {u.mfa ? <ShieldCheck className="size-3.5 text-emerald-600" /> : <ShieldAlert className="size-3.5 text-amber-600" />}
+                          <span className="text-[11.5px] text-text-muted">{u.mfa ? 'MFA' : 'No MFA'}</span>
+                          {u.sso && <Badge variant="default" className="ml-1 h-4 px-1 text-[9px]">SSO</Badge>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className={cn('inline-flex items-center gap-1 text-[12px]', u.status === 'active' ? 'text-emerald-700' : 'text-text-muted')}>
+                          <span className={cn('size-1.5 rounded-full', u.status === 'active' ? 'bg-emerald-500' : 'bg-text-muted/40')} />
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-[12px] text-text-muted">{u.lastLogin}</td>
+                      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><MoreVertical className="size-3.5" /></Button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
           <div className="flex items-center justify-between border-t border-surface-border dark:border-dark-border px-4 py-2 text-[11.5px] text-text-muted">
-            <span>{filtered.length} of {USERS.length} users</span>
+            <span>{total} users</span>
             <span>Attributes drive ABAC policy decisions</span>
           </div>
         </SubCard>
@@ -359,16 +451,49 @@ function UsersPane() {
 
       {/* User drawer */}
       {selected && (
-        <Modal open={!!selected} onClose={() => setSelected(null)} title={selected.name} size="lg">
-          <UserDrawerContent user={selected} />
+        <Modal open={!!selected} onClose={() => setSelected(null)} title={selected.fullName} size="lg">
+          <UserDrawerContent user={mapToPortalUser(selected)} systemUser={selected} roles={roles} onRefresh={() => { loadUsers(); setSelected(null) }} />
         </Modal>
+      )}
+
+      {inviteOpen && (
+        <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} roles={roles} onSuccess={loadUsers} />
       )}
     </div>
   )
 }
 
-function UserDrawerContent({ user }: { user: PortalUser }) {
+function UserDrawerContent({ user, systemUser, roles, onRefresh }: {
+  user: PortalUser; systemUser?: SystemUser; roles?: AppRole[]; onRefresh?: () => void
+}) {
   const [tab, setTab] = useState<'profile' | 'sessions' | 'security'>('profile')
+  const [roleId, setRoleId] = useState(systemUser?.role_id ?? '')
+  const [saving, setSaving] = useState(false)
+  const [deactivating, setDeactivating] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    if (!systemUser) return
+    setSaving(true); setError('')
+    try {
+      await updateSystemUser(systemUser.id, { role_id: roleId || undefined })
+      onRefresh?.()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  async function handleDeactivate() {
+    if (!systemUser) return
+    setDeactivating(true); setError('')
+    try {
+      await deactivateSystemUser(systemUser.id)
+      onRefresh?.()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Deactivate failed')
+    } finally { setDeactivating(false) }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
@@ -390,13 +515,24 @@ function UserDrawerContent({ user }: { user: PortalUser }) {
         ))}
       </div>
       {tab === 'profile' && (
-        <div className="grid grid-cols-2 gap-4">
-          {[['Full name', user.name], ['Email', user.email], ['Linked person', user.linked], ['Role', user.role], ['Department', user.attrs.dept ?? '—'], ['Scope', user.attrs.scope], ['Clearance', user.attrs.clearance], ['Last login', user.lastLogin]].map(([l, v]) => (
-            <div key={l}>
-              <div className="text-[10.5px] uppercase tracking-wide text-text-muted">{l}</div>
-              <div className="mt-0.5 text-sm font-medium text-text">{v}</div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            {[['Full name', user.name], ['Email', user.email], ['Linked person', user.linked], ['Last login', user.lastLogin]].map(([l, v]) => (
+              <div key={l}>
+                <div className="text-[10.5px] uppercase tracking-wide text-text-muted">{l}</div>
+                <div className="mt-0.5 text-sm font-medium text-text">{v}</div>
+              </div>
+            ))}
+          </div>
+          {roles && roles.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Role</label>
+              <select value={roleId} onChange={e => setRoleId(e.target.value)}
+                className="h-9 w-full px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500">
+                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
             </div>
-          ))}
+          )}
         </div>
       )}
       {tab === 'sessions' && (
@@ -441,9 +577,16 @@ function UserDrawerContent({ user }: { user: PortalUser }) {
           })}
         </div>
       )}
+      {error && <p className="text-[12px] text-rose-600">{error}</p>}
       <div className="flex justify-end gap-2 pt-1 border-t border-surface-border dark:border-dark-border mt-4">
-        <Button variant="outline" size="sm">Deactivate</Button>
-        <Button variant="primary" size="sm">Save changes</Button>
+        <Button variant="outline" size="sm" onClick={handleDeactivate} disabled={deactivating}>
+          {deactivating ? 'Deactivating…' : 'Deactivate'}
+        </Button>
+        {tab === 'profile' && (
+          <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -452,18 +595,122 @@ function UserDrawerContent({ user }: { user: PortalUser }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // ROLES PANE
 // ══════════════════════════════════════════════════════════════════════════════
-type RoleDef = { name: string; desc: string; perms: number; users: number; system: boolean; bundle: string[]; clearance: 'L1' | 'L2' | 'L3' }
+const PERM_RESOURCES = ['unit', 'people', 'lease', 'invoice', 'meter', 'report', 'settings', 'hr', 'document', 'notice']
+const PERM_ACTIONS   = ['read', 'write', 'manage']
 
-const ROLES: RoleDef[] = [
-  { name: 'Facility Manager',       desc: 'Full operational access to assigned properties', perms: 285, users: 5, system: true,  clearance: 'L3', bundle: ['*.view', '*.edit', '*.approve', 'users.invite'] },
-  { name: 'Finance Officer',        desc: 'Financials, invoices, receipts and lease billing', perms: 45, users: 2, system: true,  clearance: 'L2', bundle: ['financials.*', 'invoices.*', 'reports.finance'] },
-  { name: 'Maintenance Supervisor', desc: 'Work orders, inspections and vendor management', perms: 9,   users: 3, system: true,  clearance: 'L2', bundle: ['maintenance.*', 'issues.assign'] },
-  { name: 'Security Officer',       desc: 'Access control, visitors and incident reports',  perms: 25,  users: 4, system: true,  clearance: 'L2', bundle: ['access-control.*', 'visitors.*', 'incidents.*'] },
-  { name: 'Receptionist',           desc: 'Front-desk operations — people, units, bookings', perms: 8,  users: 4, system: true,  clearance: 'L1', bundle: ['people.view', 'units.view', 'visitors.create'] },
-  { name: 'Payroll Officer',        desc: 'Staff records, payroll runs and tax filings',    perms: 28,  users: 2, system: false, clearance: 'L2', bundle: ['hr.*', 'payroll.*'] },
-]
+function RoleModal({ open, onClose, existing, onSuccess }: {
+  open: boolean; onClose: () => void; existing?: AppRole; onSuccess: () => void
+}) {
+  const [name, setName] = useState(existing?.name ?? '')
+  const [desc, setDesc] = useState(existing?.description ?? '')
+  const [perms, setPerms] = useState<Set<string>>(
+    new Set((existing?.permissions ?? []).map((p: RolePermission) => `${p.action}:${p.resource}`))
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function togglePerm(action: string, resource: string) {
+    const key = `${action}:${resource}`
+    const next = new Set(perms)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    setPerms(next)
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true); setError('')
+    const permissions: RolePermission[] = Array.from(perms).map(k => {
+      const [action, resource] = k.split(':')
+      return { action, resource }
+    })
+    try {
+      if (existing) {
+        await updateRole(existing.id, { name, description: desc, permissions })
+      } else {
+        await createRole({ name, description: desc, permissions })
+      }
+      onSuccess(); onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save role')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={existing ? 'Edit role' : 'New role'} size="lg">
+      <form onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Finance Officer" required
+              className="h-9 w-full px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Description</label>
+            <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional description"
+              className="h-9 w-full px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-surface dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Permissions</label>
+          <SubCard>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-surface-hover/40 dark:bg-dark-hover text-[10px] uppercase tracking-wide text-text-muted">
+                  <tr>
+                    <th className="text-left px-3 py-2">Resource</th>
+                    {PERM_ACTIONS.map(a => <th key={a} className="px-3 py-2 capitalize">{a}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-border dark:divide-dark-border">
+                  {PERM_RESOURCES.map(res => (
+                    <tr key={res} className="hover:bg-surface-hover/20">
+                      <td className="px-3 py-2 font-medium text-text capitalize">{res}</td>
+                      {PERM_ACTIONS.map(act => (
+                        <td key={act} className="px-3 py-2 text-center">
+                          <input type="checkbox"
+                            checked={perms.has(`${act}:${res}`)}
+                            onChange={() => togglePerm(act, res)}
+                            className="size-3.5" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SubCard>
+        </div>
+        {error && <p className="text-[12px] text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1 border-t border-surface-border dark:border-dark-border">
+          <Button variant="outline" size="sm" type="button" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" size="sm" type="submit" disabled={saving}>
+            {saving ? 'Saving…' : existing ? 'Save changes' : 'Create role'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
 
 function RolesPane() {
+  const [roles, setRoles] = useState<AppRole[]>([])
+  const [loading, setLoading] = useState(true)
+  const [modalRole, setModalRole] = useState<AppRole | undefined>(undefined)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setRoles(await listRoles()) } catch {} finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleDelete(id: string) {
+    setDeleting(id)
+    try { await deleteRole(id); load() } catch {} finally { setDeleting(null) }
+  }
+
   return (
     <div>
       <PaneHeader
@@ -472,7 +719,7 @@ function RolesPane() {
         actions={
           <>
             <Button variant="outline" size="sm" className="gap-1.5"><GitBranch className="mr-1.5 size-3.5" />Compare</Button>
-            <Button variant="primary" size="sm" className="gap-1.5"><Plus className="mr-1.5 size-3.5" />New role</Button>
+            <Button variant="primary" size="sm" className="gap-1.5" onClick={() => { setModalRole(undefined); setModalOpen(true) }}><Plus className="mr-1.5 size-3.5" />New role</Button>
           </>
         }
       />
@@ -486,43 +733,48 @@ function RolesPane() {
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {ROLES.map((r) => (
-            <SubCard key={r.name}>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="text-sm font-semibold truncate text-text">{r.name}</h3>
-                      {r.system && <Badge variant="default" className="h-4 px-1 text-[9px]">System</Badge>}
-                      <Badge variant="default" className="h-4 px-1 text-[9px]">{r.clearance}</Badge>
+        {loading ? (
+          <p className="text-center text-[12px] text-text-muted py-8">Loading…</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {roles.map((r) => (
+              <SubCard key={r.id}>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-sm font-semibold truncate text-text">{r.name}</h3>
+                      </div>
+                      <p className="mt-0.5 text-[12px] text-text-muted">{r.description ?? '—'}</p>
                     </div>
-                    <p className="mt-0.5 text-[12px] text-text-muted">{r.desc}</p>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0"><MoreVertical className="size-3.5" /></Button>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0"><MoreVertical className="size-3.5" /></Button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {r.bundle.slice(0, 4).map((p) => (
-                    <code key={p} className="rounded bg-surface-hover dark:bg-dark-hover px-1.5 py-0.5 text-[10.5px] font-mono text-text">{p}</code>
-                  ))}
-                  {r.bundle.length > 4 && <span className="text-[10.5px] text-text-muted">+{r.bundle.length - 4} more</span>}
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-surface-border dark:border-dark-border pt-2.5">
-                  <div className="flex items-center gap-3 text-[11px] text-text-muted">
-                    <span><span className="font-semibold text-text">{r.perms}</span> perms</span>
-                    <span><span className="font-semibold text-text">{r.users}</span> users</span>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {r.permissions.slice(0, 4).map((p) => (
+                      <code key={`${p.action}:${p.resource}`} className="rounded bg-surface-hover dark:bg-dark-hover px-1.5 py-0.5 text-[10.5px] font-mono text-text">{p.action}:{p.resource}</code>
+                    ))}
+                    {r.permissions.length > 4 && <span className="text-[10.5px] text-text-muted">+{r.permissions.length - 4} more</span>}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" className="h-6 text-[11px]">Edit</Button>
-                    <Button variant="ghost" size="sm" className="h-6 text-[11px]">Duplicate</Button>
-                    {!r.system && <Button variant="ghost" size="sm" className="h-6 text-[11px] text-danger">Delete</Button>}
+                  <div className="mt-3 flex items-center justify-between border-t border-surface-border dark:border-dark-border pt-2.5">
+                    <div className="flex items-center gap-3 text-[11px] text-text-muted">
+                      <span><span className="font-semibold text-text">{r.permissions.length}</span> perms</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" className="h-6 text-[11px]" onClick={() => { setModalRole(r); setModalOpen(true) }}>Edit</Button>
+                      <Button variant="ghost" size="sm" className="h-6 text-[11px] text-danger" onClick={() => handleDelete(r.id)} disabled={deleting === r.id}>
+                        {deleting === r.id ? '…' : 'Delete'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </SubCard>
-          ))}
-        </div>
+              </SubCard>
+            ))}
+          </div>
+        )}
       </div>
+      {modalOpen && (
+        <RoleModal open={modalOpen} onClose={() => setModalOpen(false)} existing={modalRole} onSuccess={load} />
+      )}
     </div>
   )
 }
