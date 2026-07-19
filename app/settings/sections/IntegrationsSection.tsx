@@ -4,7 +4,7 @@ import {
   Mail, MessageSquare, Wallet, Send, Sparkles, Globe, Lock,
   Plug, Activity, AlertTriangle, Check, Plus, ChevronRight, ChevronLeft,
   Search, Building2, Eye, EyeOff, Copy, TestTube2, Pencil, RefreshCw,
-  MoreVertical, GripVertical, History, ExternalLink, Phone, Zap, ArrowUpRight,
+  MoreVertical, GripVertical, History, ExternalLink, Phone, Zap, ArrowUpRight, Trash2,
 } from 'lucide-react'
 import { Database, IdCard } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -102,13 +102,11 @@ const INTEGRATION_CATEGORIES: Category[] = [
     connections: [],
   },
   {
-    key: 'webhooks', name: 'Outbound webhooks', tagline: 'Subscribe partners to platform events',
+    key: 'webhooks', name: 'Webhooks', tagline: 'Outbound event delivery and inbound signed callbacks',
     icon: Globe, tint: 'bg-teal-100 text-teal-700',
     providers: ['Generic HTTPS'],
-    supportsFailover: false, supportsInboundWebhook: false, supportsOutboundWebhook: true,
-    connections: [
-      { id: 'w1', name: 'Partner sync — Accounting', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: false, lastUsed: '2026-07-12', createdBy: 'Finance', meta: { URL: 'https://hooks.partner.co/gwg', Events: 'payment.received, invoice.issued' }, secretPreview: 'whsec_•••••••k9' },
-    ],
+    supportsFailover: false, supportsInboundWebhook: false, supportsOutboundWebhook: false,
+    connections: [],
   },
   {
     key: 'telephony', name: 'Telephony & calls', tagline: 'Click-to-call, call logging, and IVR bridge',
@@ -521,101 +519,268 @@ function AddConnectionDialog({ category, open, onClose }: { category: Category; 
   )
 }
 
-// ── OutboundSubscriptionsTab ───────────────────────────────────────────────────
-type EventSub = { id: string; event: string; endpoint: string; status: 'active' | 'paused'; lastDelivery: string; failures: number }
+// ── WebhooksCategoryDetail ─────────────────────────────────────────────────────
+type OutboundEndpoint = {
+  id: string; url: string; events: string[]; success24h: string
+  lastDelivery: string; secret: string
+}
 
-const MOCK_SUBS: EventSub[] = [
-  { id: 'sub-1', event: 'payment.received',   endpoint: 'https://hooks.partner.co/gwg/payments',  status: 'active', lastDelivery: '2026-07-12 08:14', failures: 0 },
-  { id: 'sub-2', event: 'invoice.issued',     endpoint: 'https://hooks.partner.co/gwg/invoices',  status: 'active', lastDelivery: '2026-07-11 14:02', failures: 0 },
-  { id: 'sub-3', event: 'lease.expiring',     endpoint: 'https://erp.partner.co/webhooks/leases', status: 'paused', lastDelivery: '2026-07-01 09:00', failures: 3 },
-  { id: 'sub-4', event: 'meter.anomaly',      endpoint: 'https://hooks.partner.co/gwg/utilities', status: 'active', lastDelivery: '2026-07-10 11:47', failures: 0 },
+const MOCK_ENDPOINTS: OutboundEndpoint[] = [
+  { id: 'ep-1', url: 'https://hooks.partner.co/gwg', events: ['payment.received', 'invoice.issued'], success24h: '99.4%', lastDelivery: '2026-07-12 08:14', secret: 'whsec_•••••••k9' },
+  { id: 'ep-2', url: 'https://erp.greatwallgardens.estate/hooks', events: ['lease.expiring', 'meter.anomaly'], success24h: '97.1%', lastDelivery: '2026-07-11 14:02', secret: 'whsec_•••••••m3' },
 ]
 
-function OutboundSubscriptionsTab() {
-  const [subs] = useState<EventSub[]>(MOCK_SUBS)
+const INBOUND_URLS = [
+  { label: 'SMS gateways',    key: 'sms',      url: 'https://api.greatwallgardens.estate/webhooks/sms/pw_a83f2e',      description: "Africa's Talking · Afrinet delivery reports & MO SMS" },
+  { label: 'Payments',        key: 'payments', url: 'https://api.greatwallgardens.estate/webhooks/payments/pw_a83f2e', description: 'M-Pesa C2B confirmation · STK push result' },
+  { label: 'Messaging & bots',key: 'messaging',url: 'https://api.greatwallgardens.estate/webhooks/messaging/pw_a83f2e',description: 'Telegram inbound messages · WhatsApp status updates' },
+]
+
+const DELIVERY_LOG = [
+  { at: '2026-07-12 08:14', event: 'payment.received', endpoint: 'https://hooks.partner.co/gwg', status: 'success', ms: 142 },
+  { at: '2026-07-12 07:03', event: 'invoice.issued',   endpoint: 'https://hooks.partner.co/gwg', status: 'success', ms: 198 },
+  { at: '2026-07-11 23:51', event: 'meter.anomaly',    endpoint: 'https://erp.greatwallgardens.estate/hooks', status: 'failed',  ms: 10002 },
+  { at: '2026-07-11 14:02', event: 'lease.expiring',   endpoint: 'https://erp.greatwallgardens.estate/hooks', status: 'success', ms: 211 },
+]
+
+type WebhookSubTab = 'outbound' | 'inbound' | 'deliverylog'
+
+function WebhooksCategoryDetail({ onBack }: { onBack: () => void }) {
+  const [mainTab, setMainTab] = useState<'webhooks' | 'audit'>('webhooks')
+  const [subTab, setSubTab] = useState<WebhookSubTab>('outbound')
+  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({})
+  const [revealedInbound, setRevealedInbound] = useState<Record<string, boolean>>({})
+
+  const toggleSecret = (id: string) => setRevealedSecrets((p) => ({ ...p, [id]: !p[id] }))
+  const toggleInbound = (key: string) => setRevealedInbound((p) => ({ ...p, [key]: !p[key] }))
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+    <div className="max-w-6xl px-8 py-8">
+      <button onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text">
+        <ChevronLeft className="h-3.5 w-3.5" />All integrations
+      </button>
+
+      {/* Header */}
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
+          <Globe className="h-6 w-6" />
+        </div>
         <div>
-          <p className="text-sm font-medium text-text">Event subscriptions</p>
-          <p className="text-xs text-text-muted">Each subscription pushes a signed HTTPS POST to your endpoint when the event fires.</p>
+          <h2 className="text-xl font-semibold tracking-tight text-text">Webhooks</h2>
+          <p className="mt-0.5 text-sm text-text-muted">Outbound event delivery and inbound signed callbacks</p>
+          <div className="mt-2">
+            <Badge variant="default" className="h-5 rounded font-normal text-[10px]">Generic HTTPS</Badge>
+          </div>
         </div>
-        <Button size="sm" variant="primary" className="gap-1.5"><Plus className="h-3.5 w-3.5" />Add subscription</Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card">
-        <table className="w-full text-sm">
-          <thead className="border-b border-surface-border dark:border-dark-border bg-surface-hover/30 dark:bg-dark-hover/30 text-xs text-text-muted">
-            <tr>
-              <th className="px-4 py-2.5 text-left font-medium">Event</th>
-              <th className="px-4 py-2.5 text-left font-medium">Endpoint</th>
-              <th className="px-4 py-2.5 text-left font-medium">Status</th>
-              <th className="px-4 py-2.5 text-left font-medium">Last delivery</th>
-              <th className="px-4 py-2.5 text-right font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-surface-border dark:divide-dark-border">
-            {subs.map((s) => (
-              <tr key={s.id} className="hover:bg-surface-hover/20 dark:hover:bg-dark-hover/20">
-                <td className="px-4 py-3">
-                  <span className="inline-flex items-center gap-1.5 rounded border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-1.5 py-0.5 font-mono text-[11px] text-text">
-                    <Zap className="h-2.5 w-2.5 text-primary-600" />{s.event}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                    <ArrowUpRight className="h-3 w-3 shrink-0" />
-                    <span className="truncate max-w-[220px] font-mono">{s.endpoint}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium',
-                    s.status === 'active'
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                      : 'bg-surface-hover dark:bg-dark-hover border-surface-border dark:border-dark-border text-text-muted',
-                  )}>
-                    <span className={cn('h-1.5 w-1.5 rounded-full', s.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400')} />
-                    {s.status === 'active' ? 'Active' : 'Paused'}
-                    {s.failures > 0 && <span className="ml-0.5 text-rose-600">· {s.failures} fail</span>}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs text-text-muted tabular-nums">{s.lastDelivery}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs"><TestTube2 className="h-3.5 w-3.5" />Test</Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><Pencil className="h-3.5 w-3.5" /></Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-text-muted"><MoreVertical className="h-3.5 w-3.5" /></Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Main tabs */}
+      <div className="mt-6 flex items-center gap-1 border-b border-surface-border dark:border-dark-border">
+        {([
+          { k: 'webhooks' as const, label: 'Webhooks', icon: Globe },
+          { k: 'audit'    as const, label: 'Audit',    icon: History },
+        ]).map(({ k, label, icon: Icon }) => (
+          <button
+            key={k}
+            onClick={() => setMainTab(k)}
+            className={cn(
+              'inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors',
+              mainTab === k ? 'border-primary-600 text-text font-medium' : 'border-transparent text-text-muted hover:text-text',
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />{label}
+          </button>
+        ))}
       </div>
 
-      <div className="rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card p-5">
-        <h3 className="text-sm font-semibold text-text">Delivery settings</h3>
-        <p className="mt-1 text-xs text-text-muted">Retry policy and signing configuration applied to all outbound webhooks.</p>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[
-            { label: 'Retry attempts', value: '5 (exponential back-off)' },
-            { label: 'Timeout', value: '10 seconds' },
-            { label: 'Signing algorithm', value: 'HMAC-SHA256' },
-          ].map(({ label, value }) => (
-            <div key={label} className="rounded-md border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-3 py-2.5">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted">{label}</div>
-              <div className="mt-1 text-sm font-medium text-text">{value}</div>
+      <div className="mt-6">
+        {mainTab === 'audit' && <AuditTab />}
+
+        {mainTab === 'webhooks' && (
+          <div className="space-y-5">
+            {/* Sub-tab segmented control */}
+            <div className="flex items-center gap-1 self-start rounded-md border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-surface p-0.5 text-xs w-fit">
+              {([
+                { k: 'outbound'    as WebhookSubTab, label: 'Outbound',     icon: ArrowUpRight },
+                { k: 'inbound'     as WebhookSubTab, label: 'Inbound',      icon: Zap },
+                { k: 'deliverylog' as WebhookSubTab, label: 'Delivery Log', icon: History },
+              ]).map(({ k, label, icon: Icon }) => (
+                <button
+                  key={k}
+                  onClick={() => setSubTab(k)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded px-3 py-1.5 capitalize transition-colors',
+                    subTab === k ? 'bg-white dark:bg-dark-card font-medium shadow-sm text-text' : 'text-text-muted hover:text-text',
+                  )}
+                >
+                  <Icon className="h-3 w-3" />{label}
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
+
+            {/* Outbound sub-tab */}
+            {subTab === 'outbound' && (
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-text">Outbound endpoints</h3>
+                    <p className="mt-0.5 text-xs text-text-muted">
+                      Deliver signed events to external systems. Each endpoint uses HMAC-SHA256 with per-endpoint signing secret and 3× retry with exponential backoff.
+                    </p>
+                  </div>
+                  <Button size="sm" variant="primary" className="shrink-0 gap-1.5">
+                    <Plus className="h-3.5 w-3.5" />Add endpoint
+                  </Button>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-surface-border dark:border-dark-border bg-surface-hover/30 dark:bg-dark-hover/30 text-[11px] font-medium text-text-muted">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left">Endpoint</th>
+                        <th className="px-4 py-2.5 text-left">Events</th>
+                        <th className="px-4 py-2.5 text-left">Success 24h</th>
+                        <th className="px-4 py-2.5 text-left">Signing secret</th>
+                        <th className="px-4 py-2.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-border dark:divide-dark-border">
+                      {MOCK_ENDPOINTS.map((ep) => (
+                        <tr key={ep.id} className="hover:bg-surface-hover/20 dark:hover:bg-dark-hover/20">
+                          <td className="px-4 py-3">
+                            <div className="font-mono text-xs text-text">{ep.url}</div>
+                            <div className="mt-0.5 text-[11px] text-text-muted">Last: {ep.lastDelivery}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {ep.events.map((ev) => (
+                                <span key={ev} className="inline-flex items-center rounded border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-1.5 py-0.5 font-mono text-[10px] text-text">
+                                  {ev}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="tabular-nums text-sm font-medium text-emerald-700">{ep.success24h}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="inline-flex items-center gap-1.5 rounded border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-1.5 py-0.5 font-mono text-[11px] text-text-muted">
+                              <Lock className="h-2.5 w-2.5" />
+                              <span>{revealedSecrets[ep.id] ? ep.secret.replace(/•/g, 'x') : ep.secret}</span>
+                              <button onClick={() => toggleSecret(ep.id)} className="hover:text-text">
+                                {revealedSecrets[ep.id] ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><Pencil className="h-3.5 w-3.5" /></Button>
+                              <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs"><TestTube2 className="h-3.5 w-3.5" />Test</Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><RefreshCw className="h-3.5 w-3.5" /></Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-danger hover:text-danger"><Trash2 className="h-3.5 w-3.5" /></Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Inbound sub-tab */}
+            {subTab === 'inbound' && (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-text">Inbound callback URLs</h3>
+                  <p className="mt-0.5 text-xs text-text-muted">Paste each URL into your provider's dashboard to receive events. All URLs are signed with HMAC-SHA256.</p>
+                </div>
+                {INBOUND_URLS.map(({ label, key, url, description }) => (
+                  <div key={key} className="rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-text">{label}</div>
+                        <div className="mt-0.5 text-xs text-text-muted">{description}</div>
+                      </div>
+                      <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs shrink-0">
+                        <Copy className="h-3.5 w-3.5" />Copy
+                      </Button>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 rounded-md border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-3 py-2">
+                      <Globe className="h-3 w-3 shrink-0 text-text-muted" />
+                      <span className={cn('flex-1 truncate font-mono text-[11px]', revealedInbound[key] ? 'text-text' : 'text-text-muted')}>
+                        {revealedInbound[key] ? url : url.replace(/\/pw_[a-z0-9]+$/, '/pw_••••••')}
+                      </span>
+                      <button onClick={() => toggleInbound(key)} className="text-text-muted hover:text-text">
+                        {revealedInbound[key] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 rounded-md border border-surface-border dark:border-dark-border bg-surface-hover/20 dark:bg-dark-hover/20 p-3 text-[11px] text-text-muted">
+                  <Lock className="h-3.5 w-3.5 shrink-0" />
+                  Rotate signing secrets per-integration from the connection's actions menu. Rotations take effect immediately.
+                </div>
+              </div>
+            )}
+
+            {/* Delivery log sub-tab */}
+            {subTab === 'deliverylog' && (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-text">Delivery log</h3>
+                  <p className="mt-0.5 text-xs text-text-muted">Last 50 outbound deliveries across all endpoints.</p>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-surface-border dark:border-dark-border bg-surface-hover/30 dark:bg-dark-hover/30 text-[11px] font-medium text-text-muted">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left">Time</th>
+                        <th className="px-4 py-2.5 text-left">Event</th>
+                        <th className="px-4 py-2.5 text-left">Endpoint</th>
+                        <th className="px-4 py-2.5 text-left">Status</th>
+                        <th className="px-4 py-2.5 text-right">Duration</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-border dark:divide-dark-border">
+                      {DELIVERY_LOG.map((d, i) => (
+                        <tr key={i} className="hover:bg-surface-hover/20 dark:hover:bg-dark-hover/20">
+                          <td className="px-4 py-3 tabular-nums text-xs text-text-muted">{d.at}</td>
+                          <td className="px-4 py-3">
+                            <span className="rounded border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-1.5 py-0.5 font-mono text-[10px] text-text">
+                              {d.event}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-[11px] text-text-muted max-w-[200px] truncate">{d.endpoint}</td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                              d.status === 'success'
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-rose-50 border-rose-200 text-rose-700',
+                            )}>
+                              <span className={cn('h-1.5 w-1.5 rounded-full', d.status === 'success' ? 'bg-emerald-500' : 'bg-rose-500')} />
+                              {d.status === 'success' ? 'Delivered' : 'Failed'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-xs text-text-muted">
+                            {d.ms >= 10000 ? 'timeout' : `${d.ms}ms`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 // ── IntegrationDetail ──────────────────────────────────────────────────────────
-type DetailTab = 'connections' | 'routing' | 'webhooks' | 'outbound' | 'audit'
+type DetailTab = 'connections' | 'routing' | 'webhooks' | 'audit'
 
 function IntegrationDetail({ category, onBack }: { category: Category; onBack: () => void }) {
   const [tab, setTab] = useState<DetailTab>('connections')
@@ -626,7 +791,6 @@ function IntegrationDetail({ category, onBack }: { category: Category; onBack: (
     { k: 'connections' as DetailTab, label: 'Connections', icon: Plug },
     ...(category.supportsFailover ? [{ k: 'routing' as DetailTab, label: 'Routing & fallback', icon: Activity }] : []),
     ...(category.supportsInboundWebhook ? [{ k: 'webhooks' as DetailTab, label: 'Inbound webhooks', icon: Globe }] : []),
-    ...(category.supportsOutboundWebhook ? [{ k: 'outbound' as DetailTab, label: 'Subscriptions', icon: Zap }] : []),
     { k: 'audit' as DetailTab, label: 'Audit', icon: History },
   ]
 
@@ -676,7 +840,6 @@ function IntegrationDetail({ category, onBack }: { category: Category; onBack: (
         {tab === 'connections' && <ConnectionsTab category={category} />}
         {tab === 'routing' && <RoutingTab category={category} />}
         {tab === 'webhooks' && <WebhooksTab category={category} />}
-        {tab === 'outbound' && <OutboundSubscriptionsTab />}
         {tab === 'audit' && <AuditTab />}
       </div>
 
@@ -689,6 +852,10 @@ function IntegrationDetail({ category, onBack }: { category: Category; onBack: (
 export function IntegrationsSection() {
   const [activeCategory, setActiveCategory] = useState<CategoryKey | null>(null)
   const category = INTEGRATION_CATEGORIES.find((c) => c.key === activeCategory) ?? null
+
+  if (activeCategory === 'webhooks') {
+    return <WebhooksCategoryDetail onBack={() => setActiveCategory(null)} />
+  }
 
   if (category) {
     return <IntegrationDetail category={category} onBack={() => setActiveCategory(null)} />
