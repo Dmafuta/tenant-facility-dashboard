@@ -1146,7 +1146,7 @@ export function SettingsPageClient() {
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex">
         {/* Sidebar nav */}
-        <aside className="w-64 shrink-0 border-r border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-surface flex flex-col overflow-y-auto">
+        <aside className="w-64 shrink-0 border-r border-surface-border dark:border-dark-border bg-surface-hover/20 dark:bg-dark-surface flex flex-col overflow-y-auto">
           <div className="px-5 py-5">
             <h1 className="text-base font-semibold text-text">Settings</h1>
             <p className="mt-0.5 text-xs text-text-muted">Workspace configuration</p>
