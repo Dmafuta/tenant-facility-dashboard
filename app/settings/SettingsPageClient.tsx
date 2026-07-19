@@ -1147,14 +1147,14 @@ export function SettingsPageClient() {
       <main className="flex-1 overflow-hidden flex">
         {/* Sidebar nav */}
         <aside className="w-64 shrink-0 border-r border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-surface flex flex-col overflow-y-auto">
-          <div className="px-5 py-5 border-b border-surface-border dark:border-dark-border">
+          <div className="px-5 py-5">
             <h1 className="text-base font-semibold text-text">Settings</h1>
             <p className="mt-0.5 text-xs text-text-muted">Workspace configuration</p>
           </div>
           <nav className="px-2 py-4 flex-1">
             {['Workspace', 'Operations', 'Platform'].map(group => (
               <div key={group} className="mb-4">
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
                   {group}
                 </div>
                 <ul className="space-y-0.5">

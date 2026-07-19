@@ -9,7 +9,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [aiOpen, setAiOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
+    <div className="flex h-screen w-full overflow-hidden bg-steel-50 font-body text-steel-500">
       <SidebarV2 />
 
       <div className="flex flex-1 flex-col overflow-hidden">
