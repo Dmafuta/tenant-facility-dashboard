@@ -4,7 +4,7 @@ import {
   Mail, MessageSquare, Wallet, Send, Sparkles, Globe, Lock,
   Plug, Activity, AlertTriangle, Check, Plus, ChevronRight, ChevronLeft,
   Search, Building2, Eye, EyeOff, Copy, TestTube2, Pencil, RefreshCw,
-  MoreVertical, GripVertical, History, ExternalLink,
+  MoreVertical, GripVertical, History, ExternalLink, Phone, Zap, ArrowUpRight,
 } from 'lucide-react'
 import { Database, IdCard } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -23,13 +23,13 @@ type Connection = {
   createdBy: string; meta: Record<string, string>; secretPreview?: string
 }
 
-type CategoryKey = 'email' | 'sms' | 'payments' | 'messaging' | 'kyc' | 'ai' | 'storage' | 'webhooks'
+type CategoryKey = 'email' | 'sms' | 'payments' | 'messaging' | 'kyc' | 'ai' | 'storage' | 'webhooks' | 'telephony'
 
 type Category = {
   key: CategoryKey; name: string; tagline: string
   icon: React.ComponentType<{ className?: string }>
   tint: string; providers: string[]
-  supportsFailover: boolean; supportsInboundWebhook: boolean
+  supportsFailover: boolean; supportsInboundWebhook: boolean; supportsOutboundWebhook: boolean
   connections: Connection[]
 }
 
@@ -39,7 +39,7 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'email', name: 'Email delivery', tagline: 'Transactional and marketing email providers',
     icon: Mail, tint: 'bg-sky-100 text-sky-700',
     providers: ['SMTP (generic)', 'SendGrid', 'Postmark', 'Amazon SES', 'Mailgun'],
-    supportsFailover: true, supportsInboundWebhook: false,
+    supportsFailover: true, supportsInboundWebhook: false, supportsOutboundWebhook: false,
     connections: [
       { id: 'e1', name: 'SendGrid — Primary', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-11', createdBy: 'System Admin', meta: { From: 'no-reply@greatwallgardens.estate', Provider: 'SendGrid', Region: 'eu-west' }, secretPreview: 'SG.•••••••••jK2' },
       { id: 'e2', name: 'Postmark — Transactional', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: false, lastUsed: '2026-07-10', createdBy: 'Ops', meta: { Stream: 'outbound', From: 'billing@greatwallgardens.estate' }, secretPreview: 'pm-•••••4ab' },
@@ -50,7 +50,7 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'sms', name: 'SMS gateways', tagline: 'OTP, notices and reminders',
     icon: MessageSquare, tint: 'bg-violet-100 text-violet-700',
     providers: ["Africa's Talking", 'Afrinet Bulk SMS', 'Twilio', 'Infobip'],
-    supportsFailover: true, supportsInboundWebhook: true,
+    supportsFailover: true, supportsInboundWebhook: true, supportsOutboundWebhook: false,
     connections: [
       { id: 's1', name: "Africa's Talking — KE", env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-12', createdBy: 'System Admin', meta: { 'Sender ID': 'GWG', Username: 'gwg_prod' }, secretPreview: 'at_•••••••e12' },
       { id: 's2', name: 'Afrinet Bulk', env: 'production', scope: { kind: 'property', label: 'Phase 1' }, status: 'degraded', isDefault: false, lastUsed: '2026-07-09', createdBy: 'Ops', meta: { 'Sender ID': 'GWG', Endpoint: 'api.afrinet.co.ke' } },
@@ -60,7 +60,7 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'payments', name: 'Payments', tagline: 'Mobile money, cards, and bank rails',
     icon: Wallet, tint: 'bg-emerald-100 text-emerald-700',
     providers: ['M-Pesa Daraja', 'Stripe', 'Flutterwave', 'Pesapal'],
-    supportsFailover: false, supportsInboundWebhook: true,
+    supportsFailover: false, supportsInboundWebhook: true, supportsOutboundWebhook: false,
     connections: [
       { id: 'p1', name: 'M-Pesa — GWG Paybill', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-12', createdBy: 'Finance', meta: { Shortcode: '247247', Type: 'Paybill', 'Account prefix': 'GWG' }, secretPreview: 'cred_•••••7c9' },
       { id: 'p2', name: 'M-Pesa — Sandbox', env: 'sandbox', scope: { kind: 'global' }, status: 'active', isDefault: false, lastUsed: '2026-07-05', createdBy: 'Dev', meta: { Shortcode: '174379', Type: 'Paybill' } },
@@ -70,7 +70,7 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'messaging', name: 'Messaging & bots', tagline: 'Telegram, WhatsApp Business, Slack',
     icon: Send, tint: 'bg-indigo-100 text-indigo-700',
     providers: ['Telegram Bot', 'WhatsApp Business', 'Slack'],
-    supportsFailover: false, supportsInboundWebhook: true,
+    supportsFailover: false, supportsInboundWebhook: true, supportsOutboundWebhook: false,
     connections: [
       { id: 'm1', name: 'Telegram — Ops channel', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-12', createdBy: 'System Admin', meta: { Bot: '@gwg_ops_bot', 'Chat ID': '-100234•••' }, secretPreview: 'bot•••••:AA' },
     ],
@@ -79,7 +79,7 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'kyc', name: 'Identity & KYC', tagline: 'Verify tenants, staff and visitors',
     icon: IdCard, tint: 'bg-amber-100 text-amber-700',
     providers: ['Prembly', 'Smile ID', 'Onfido'],
-    supportsFailover: true, supportsInboundWebhook: false,
+    supportsFailover: true, supportsInboundWebhook: false, supportsOutboundWebhook: false,
     connections: [
       { id: 'k1', name: 'Prembly — Production', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-11', createdBy: 'Compliance', meta: { Region: 'KE / NG', 'App ID': 'gwg-prod' }, secretPreview: 'pk_•••••••b2' },
     ],
@@ -88,7 +88,7 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'ai', name: 'AI providers', tagline: 'Assistants, summarisation, classification',
     icon: Sparkles, tint: 'bg-fuchsia-100 text-fuchsia-700',
     providers: ['Anthropic', 'OpenAI', 'Google Gemini', 'Mistral'],
-    supportsFailover: true, supportsInboundWebhook: false,
+    supportsFailover: true, supportsInboundWebhook: false, supportsOutboundWebhook: false,
     connections: [
       { id: 'a1', name: 'Anthropic — Primary', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-12', createdBy: 'System Admin', meta: { Model: 'claude-sonnet-4-6', 'Rate limit': '50 rpm' }, secretPreview: 'sk-ant-•••••q4' },
       { id: 'a2', name: 'OpenAI — Fallback', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: false, lastUsed: '2026-07-08', createdBy: 'System Admin', meta: { Model: 'gpt-4o-mini', 'Rate limit': '60 rpm' }, secretPreview: 'sk-•••••••Xf' },
@@ -98,15 +98,26 @@ const INTEGRATION_CATEGORIES: Category[] = [
     key: 'storage', name: 'Storage & documents', tagline: 'Backups and long-term archives',
     icon: Database, tint: 'bg-slate-100 text-slate-700',
     providers: ['Amazon S3', 'Google Cloud Storage', 'Azure Blob'],
-    supportsFailover: false, supportsInboundWebhook: false,
+    supportsFailover: false, supportsInboundWebhook: false, supportsOutboundWebhook: false,
     connections: [],
   },
   {
     key: 'webhooks', name: 'Outbound webhooks', tagline: 'Subscribe partners to platform events',
     icon: Globe, tint: 'bg-teal-100 text-teal-700',
     providers: ['Generic HTTPS'],
-    supportsFailover: false, supportsInboundWebhook: false,
-    connections: [],
+    supportsFailover: false, supportsInboundWebhook: false, supportsOutboundWebhook: true,
+    connections: [
+      { id: 'w1', name: 'Partner sync — Accounting', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: false, lastUsed: '2026-07-12', createdBy: 'Finance', meta: { URL: 'https://hooks.partner.co/gwg', Events: 'payment.received, invoice.issued' }, secretPreview: 'whsec_•••••••k9' },
+    ],
+  },
+  {
+    key: 'telephony', name: 'Telephony & calls', tagline: 'Click-to-call, call logging, and IVR bridge',
+    icon: Phone, tint: 'bg-orange-100 text-orange-700',
+    providers: ['3CX', 'Twilio Voice', 'Vonage'],
+    supportsFailover: false, supportsInboundWebhook: false, supportsOutboundWebhook: false,
+    connections: [
+      { id: 't1', name: '3CX — Self-hosted', env: 'production', scope: { kind: 'global' }, status: 'active', isDefault: true, lastUsed: '2026-07-12', createdBy: 'System Admin', meta: { Host: 'pbx.greatwallgardens.estate', Extensions: '300–399', Mode: 'Click-to-call' } },
+    ],
   },
 ]
 
@@ -158,7 +169,7 @@ function CategoryCard({ category, onOpen }: { category: Category; onOpen: () => 
     <button
       type="button"
       onClick={onOpen}
-      className="group flex flex-col rounded-xl border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card p-5 text-left transition-all hover:border-primary-300 hover:shadow-sm"
+      className="group flex flex-col rounded-xl border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card p-5 text-left transition-all hover:border-primary-400/30 hover:shadow-sm"
     >
       <div className="flex items-start justify-between">
         <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', category.tint)}>
@@ -510,8 +521,101 @@ function AddConnectionDialog({ category, open, onClose }: { category: Category; 
   )
 }
 
+// ── OutboundSubscriptionsTab ───────────────────────────────────────────────────
+type EventSub = { id: string; event: string; endpoint: string; status: 'active' | 'paused'; lastDelivery: string; failures: number }
+
+const MOCK_SUBS: EventSub[] = [
+  { id: 'sub-1', event: 'payment.received',   endpoint: 'https://hooks.partner.co/gwg/payments',  status: 'active', lastDelivery: '2026-07-12 08:14', failures: 0 },
+  { id: 'sub-2', event: 'invoice.issued',     endpoint: 'https://hooks.partner.co/gwg/invoices',  status: 'active', lastDelivery: '2026-07-11 14:02', failures: 0 },
+  { id: 'sub-3', event: 'lease.expiring',     endpoint: 'https://erp.partner.co/webhooks/leases', status: 'paused', lastDelivery: '2026-07-01 09:00', failures: 3 },
+  { id: 'sub-4', event: 'meter.anomaly',      endpoint: 'https://hooks.partner.co/gwg/utilities', status: 'active', lastDelivery: '2026-07-10 11:47', failures: 0 },
+]
+
+function OutboundSubscriptionsTab() {
+  const [subs] = useState<EventSub[]>(MOCK_SUBS)
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-text">Event subscriptions</p>
+          <p className="text-xs text-text-muted">Each subscription pushes a signed HTTPS POST to your endpoint when the event fires.</p>
+        </div>
+        <Button size="sm" variant="primary" className="gap-1.5"><Plus className="h-3.5 w-3.5" />Add subscription</Button>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card">
+        <table className="w-full text-sm">
+          <thead className="border-b border-surface-border dark:border-dark-border bg-surface-hover/30 dark:bg-dark-hover/30 text-xs text-text-muted">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">Event</th>
+              <th className="px-4 py-2.5 text-left font-medium">Endpoint</th>
+              <th className="px-4 py-2.5 text-left font-medium">Status</th>
+              <th className="px-4 py-2.5 text-left font-medium">Last delivery</th>
+              <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-surface-border dark:divide-dark-border">
+            {subs.map((s) => (
+              <tr key={s.id} className="hover:bg-surface-hover/20 dark:hover:bg-dark-hover/20">
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center gap-1.5 rounded border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-1.5 py-0.5 font-mono text-[11px] text-text">
+                    <Zap className="h-2.5 w-2.5 text-primary-600" />{s.event}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                    <ArrowUpRight className="h-3 w-3 shrink-0" />
+                    <span className="truncate max-w-[220px] font-mono">{s.endpoint}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                    s.status === 'active'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : 'bg-surface-hover dark:bg-dark-hover border-surface-border dark:border-dark-border text-text-muted',
+                  )}>
+                    <span className={cn('h-1.5 w-1.5 rounded-full', s.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400')} />
+                    {s.status === 'active' ? 'Active' : 'Paused'}
+                    {s.failures > 0 && <span className="ml-0.5 text-rose-600">· {s.failures} fail</span>}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-text-muted tabular-nums">{s.lastDelivery}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-xs"><TestTube2 className="h-3.5 w-3.5" />Test</Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0"><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-text-muted"><MoreVertical className="h-3.5 w-3.5" /></Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-card p-5">
+        <h3 className="text-sm font-semibold text-text">Delivery settings</h3>
+        <p className="mt-1 text-xs text-text-muted">Retry policy and signing configuration applied to all outbound webhooks.</p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { label: 'Retry attempts', value: '5 (exponential back-off)' },
+            { label: 'Timeout', value: '10 seconds' },
+            { label: 'Signing algorithm', value: 'HMAC-SHA256' },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-md border border-surface-border dark:border-dark-border bg-surface-hover/40 dark:bg-dark-hover px-3 py-2.5">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted">{label}</div>
+              <div className="mt-1 text-sm font-medium text-text">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── IntegrationDetail ──────────────────────────────────────────────────────────
-type DetailTab = 'connections' | 'routing' | 'webhooks' | 'audit'
+type DetailTab = 'connections' | 'routing' | 'webhooks' | 'outbound' | 'audit'
 
 function IntegrationDetail({ category, onBack }: { category: Category; onBack: () => void }) {
   const [tab, setTab] = useState<DetailTab>('connections')
@@ -522,6 +626,7 @@ function IntegrationDetail({ category, onBack }: { category: Category; onBack: (
     { k: 'connections' as DetailTab, label: 'Connections', icon: Plug },
     ...(category.supportsFailover ? [{ k: 'routing' as DetailTab, label: 'Routing & fallback', icon: Activity }] : []),
     ...(category.supportsInboundWebhook ? [{ k: 'webhooks' as DetailTab, label: 'Inbound webhooks', icon: Globe }] : []),
+    ...(category.supportsOutboundWebhook ? [{ k: 'outbound' as DetailTab, label: 'Subscriptions', icon: Zap }] : []),
     { k: 'audit' as DetailTab, label: 'Audit', icon: History },
   ]
 
@@ -571,6 +676,7 @@ function IntegrationDetail({ category, onBack }: { category: Category; onBack: (
         {tab === 'connections' && <ConnectionsTab category={category} />}
         {tab === 'routing' && <RoutingTab category={category} />}
         {tab === 'webhooks' && <WebhooksTab category={category} />}
+        {tab === 'outbound' && <OutboundSubscriptionsTab />}
         {tab === 'audit' && <AuditTab />}
       </div>
 
