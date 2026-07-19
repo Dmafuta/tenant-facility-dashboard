@@ -28,6 +28,10 @@ import { NotificationsSection } from '@/app/settings/sections/NotificationsSecti
 import { BillingSection } from '@/app/settings/sections/BillingSection'
 import { BrandingSection } from '@/app/settings/sections/BrandingSection'
 import { DocumentsSection } from '@/app/settings/sections/DocumentsSection'
+import { GeneralSection } from '@/app/settings/sections/GeneralSection'
+import { DataSection } from '@/app/settings/sections/DataSection'
+import { IntegrationsSection } from '@/app/settings/sections/IntegrationsSection'
+import { SecuritySection } from '@/app/settings/sections/SecuritySection'
 
 // ── Shared design components ───────────────────────────────────────────────────
 function SectionHeader({ title, subtitle, badge }: { title: string; subtitle: string; badge?: React.ReactNode }) {
@@ -1110,21 +1114,21 @@ function DataSetupSettings() {
 
 // -- Page -----------------------------------------------------------------------
 type SectionKey =
-  | 'general' | 'facility' | 'billing' | 'notifications' | 'roles'
-  | 'users' | 'branding' | 'integrations' | 'documents' | 'data-setup' | 'danger-zone'
+  | 'general' | 'facility' | 'branding'
+  | 'billing' | 'notifications' | 'documents'
+  | 'integrations' | 'data' | 'security' | 'danger'
 
 const SIDEBAR_SECTIONS: { key: SectionKey; label: string; icon: React.ComponentType<{ className?: string }>; group: string; danger?: boolean }[] = [
-  { key: 'general',      label: 'General',           icon: SettingsIcon, group: 'Workspace' },
-  { key: 'facility',     label: 'Facility Setup',    icon: Building2,    group: 'Workspace' },
-  { key: 'branding',     label: 'Branding',          icon: Palette,      group: 'Workspace' },
-  { key: 'billing',      label: 'Billing & Payments',icon: CreditCard,   group: 'Operations' },
-  { key: 'notifications',label: 'Notifications',     icon: Bell,         group: 'Operations' },
-  { key: 'documents',    label: 'Document Templates',icon: FileText,     group: 'Operations' },
-  { key: 'integrations', label: 'Integrations',      icon: Plug,         group: 'Platform' },
-  { key: 'data-setup',   label: 'Data & Imports',    icon: Database,     group: 'Platform' },
-  { key: 'roles',        label: 'Roles',             icon: Shield,       group: 'Platform' },
-  { key: 'users',        label: 'Users',             icon: UsersIcon,    group: 'Platform' },
-  { key: 'danger-zone',  label: 'Danger Zone',       icon: AlertTriangle,group: 'Platform', danger: true },
+  { key: 'general',       label: 'General',             icon: SettingsIcon, group: 'Workspace' },
+  { key: 'facility',      label: 'Facility setup',      icon: Building2,    group: 'Workspace' },
+  { key: 'branding',      label: 'Branding',            icon: Palette,      group: 'Workspace' },
+  { key: 'billing',       label: 'Billing & payments',  icon: CreditCard,   group: 'Operations' },
+  { key: 'notifications', label: 'Notifications',       icon: Bell,         group: 'Operations' },
+  { key: 'documents',     label: 'Document templates',  icon: FileText,     group: 'Operations' },
+  { key: 'integrations',  label: 'Integrations',        icon: Plug,         group: 'Platform' },
+  { key: 'data',          label: 'Data & imports',      icon: Database,     group: 'Platform' },
+  { key: 'security',      label: 'Access & security',   icon: ShieldCheck,  group: 'Platform' },
+  { key: 'danger',        label: 'Danger zone',         icon: AlertTriangle,group: 'Platform', danger: true },
 ]
 
 export function SettingsPageClient() {
@@ -1186,17 +1190,16 @@ export function SettingsPageClient() {
 
         {/* Content */}
         <div className="flex-1 min-w-0 overflow-y-auto">
-          {active === 'general'       && <GeneralSettings />}
+          {active === 'general'       && <GeneralSection />}
           {active === 'facility'      && <FacilitySection />}
+          {active === 'branding'      && <BrandingSection />}
           {active === 'billing'       && <BillingSection />}
           {active === 'notifications' && <NotificationsSection />}
-          {active === 'roles'         && <RolesSettings />}
-          {active === 'users'         && <UsersSettings />}
-          {active === 'branding'      && <BrandingSection />}
-          {active === 'integrations'  && <IntegrationsPageClient />}
           {active === 'documents'     && <DocumentsSection />}
-          {active === 'data-setup'    && <DataSetupSettings />}
-          {active === 'danger-zone'   && <DangerSection />}
+          {active === 'integrations'  && <IntegrationsSection />}
+          {active === 'data'          && <DataSection />}
+          {active === 'security'      && <SecuritySection />}
+          {active === 'danger'        && <DangerSection />}
         </div>
       </main>
     </DashboardLayout>
