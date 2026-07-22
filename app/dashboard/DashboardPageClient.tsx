@@ -5,10 +5,8 @@ import { Card } from '@/components/ui/Card'
 import { useCountUp } from '@/hooks/useCountUp'
 import { getMpesaTransactions } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
-import { getAllMeters, getMeterReadings } from '@/lib/api/meters'
-import type { MeterData, MeterReadingData } from '@/lib/api/meters'
-import { getOverdueUtilityCharges } from '@/lib/api/disconnection'
-import type { ChargeData as UtilityChargeData } from '@/lib/api/disconnection'
+import { getMeterReadings } from '@/lib/api/meters'
+import type { MeterReadingData } from '@/lib/api/meters'
 import { getConsumableStock } from '@/lib/api/consumables'
 import type { ConsumableStockData } from '@/lib/api/consumables'
 import { getPendingExitCount } from '@/lib/api/exitRequests'
@@ -91,27 +89,25 @@ const PRIORITY_COLOR: Record<string, string> = {
 export default function DashboardPageClient({ data }: { data: DashboardData | null }) {
   const today = new Date()
 
-  // ── Client-side live data (all fetched in parallel on mount) ─────────────
+  // ── Client-side live data ─────────────────────────────────────────────────
   const [mpesaTxns,     setMpesaTxns]     = useState<MpesaTransactionData[]>([])
-  const [liveMeters,    setLiveMeters]    = useState<MeterData[]>([])
-  const [overdueUtility,setOverdueUtility]= useState<UtilityChargeData[]>([])
   const [liveStock,     setLiveStock]     = useState<ConsumableStockData[]>([])
   const [pendingExits,  setPendingExits]  = useState(0)
   const [recentReadings,setRecentReadings]= useState<MeterReadingData[]>([])
 
   useEffect(() => {
     const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    // since = 6 months ago (covers the revenue trend chart)
+    const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1)
+      .toISOString().slice(0, 10)
+
     Promise.all([
-      getMpesaTransactions().catch(() => [] as MpesaTransactionData[]),
-      getAllMeters({ meterType: 'postpaid' }).catch(() => [] as MeterData[]),
-      getOverdueUtilityCharges().catch(() => [] as UtilityChargeData[]),
+      getMpesaTransactions({ since: sixMonthsAgo }).catch(() => [] as MpesaTransactionData[]),
       getConsumableStock().catch(() => [] as ConsumableStockData[]),
       getPendingExitCount().catch(() => 0),
-      getMeterReadings({ period: currentPeriod }).catch(() => [] as MeterReadingData[]),
-    ]).then(([txns, meters, overdueUtil, stock, exitCount, readings]) => {
+      getMeterReadings({ period: currentPeriod, limit: 8 }).catch(() => [] as MeterReadingData[]),
+    ]).then(([txns, stock, exitCount, readings]) => {
       setMpesaTxns(txns)
-      setLiveMeters(meters)
-      setOverdueUtility(overdueUtil)
       setLiveStock(stock)
       setPendingExits(exitCount)
       setRecentReadings(
@@ -138,9 +134,12 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
   const maintenance = data?.unitStats.maintenance ?? 0
   const occPct      = total > 0 ? Math.round((occupied / total) * 100) : 0
 
-  // ── Overdue rent ──────────────────────────────────────────────────────────
-  const overdueCharges = data?.overdueCharges ?? []
-  const overdueAmt     = overdueCharges.reduce((s, c) => s + c.amount - c.paid_amount, 0)
+  // ── Overdue rent (from SSR stats) ─────────────────────────────────────────
+  const overdueChargesCount  = data?.overdueChargesCount  ?? 0
+  const overdueAmt           = data?.overdueChargesAmount ?? 0
+
+  // ── Disconnection alerts (from SSR stats) ─────────────────────────────────
+  const disconnectionAlerts  = data?.disconnectionAlerts  ?? 0
 
   // ── Open issues ───────────────────────────────────────────────────────────
   const openIssues     = data?.openIssues     ?? []
@@ -193,10 +192,6 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
     })
     .reduce((s, p) => s + p.amount, 0)
 
-  // ── Disconnection alerts (postpaid meters with overdue utility charges) ───
-  const overdueUnitIds    = new Set(overdueUtility.map(c => c.unit_id))
-  const postpaidOverdue   = liveMeters.filter(m => m.status === 'active' && m.unit_id && overdueUnitIds.has(m.unit_id))
-
   // ── Low stock consumables ─────────────────────────────────────────────────
   const lowStock = liveStock.filter(s => s.current_stock < s.reorder_level)
 
@@ -210,18 +205,18 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
 
         {/* ── KPI row ──────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Occupancy"        value={`${occPct}%`}        sub={`${occupied}/${total} units occupied`}   icon="🏢" color="bg-teal-50 dark:bg-teal-900/20"   trend="+2%" />
-          <KPICard label="Overdue Rent"     value={overdueCharges.length} sub={overdueCharges.length > 0 ? fmt(overdueAmt) : 'All clear'} icon="⚠️" color="bg-red-50 dark:bg-red-900/10" />
-          <KPICard label="Open Issues"      value={openIssuesTotal}     sub={urgentIssues > 0 ? `${urgentIssues} urgent` : 'None urgent'} icon="🔧" color="bg-blue-50 dark:bg-blue-900/10" />
-          <KPICard label="M-Pesa Collected" value={collectedThisMonth}  sub="This month"                              icon="💚" color="bg-green-50 dark:bg-green-900/10" trend="+12%" />
+          <KPICard label="Occupancy"        value={`${occPct}%`}         sub={`${occupied}/${total} units occupied`}   icon="🏢" color="bg-teal-50 dark:bg-teal-900/20"   trend="+2%" />
+          <KPICard label="Overdue Rent"     value={overdueChargesCount}  sub={overdueChargesCount > 0 ? fmt(overdueAmt) : 'All clear'} icon="⚠️" color="bg-red-50 dark:bg-red-900/10" />
+          <KPICard label="Open Issues"      value={openIssuesTotal}      sub={urgentIssues > 0 ? `${urgentIssues} urgent` : 'None urgent'} icon="🔧" color="bg-blue-50 dark:bg-blue-900/10" />
+          <KPICard label="M-Pesa Collected" value={collectedThisMonth}   sub="This month"                              icon="💚" color="bg-green-50 dark:bg-green-900/10" trend="+12%" />
         </div>
 
         {/* ── Second KPI row ────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Leases Expiring"      value={expiringLeases.length}    sub="Next 60 days"             icon="📑" color="bg-amber-50" />
-          <KPICard label="Pending Verification" value={pendingVerification}       sub="Awaiting KYC review"      icon="🪪" color="bg-purple-50" />
-          <KPICard label="Disconnection Alerts" value={postpaidOverdue.length}    sub="Postpaid meters overdue"  icon="⚡" color="bg-orange-50" />
-          <KPICard label="Low Stock Items"      value={lowStock.length}           sub="Below minimum threshold"  icon="📦" color="bg-gray-50" />
+          <KPICard label="Leases Expiring"      value={expiringLeases.length}  sub="Next 60 days"             icon="📑" color="bg-amber-50" />
+          <KPICard label="Pending Verification" value={pendingVerification}     sub="Awaiting KYC review"      icon="🪪" color="bg-purple-50" />
+          <KPICard label="Disconnection Alerts" value={disconnectionAlerts}     sub="Postpaid meters overdue"  icon="⚡" color="bg-orange-50" />
+          <KPICard label="Low Stock Items"      value={lowStock.length}         sub="Below minimum threshold"  icon="📦" color="bg-gray-50" />
         </div>
 
         {/* ── Charts row ───────────────────────────────────────────────────── */}
@@ -322,20 +317,20 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
                   </div>
                 </a>
               )}
-              {overdueCharges.length > 0 && (
+              {overdueChargesCount > 0 && (
                 <a href="/financials" className="flex items-center gap-2.5 rounded-lg border border-red-100 bg-red-50 px-3 py-2 hover:bg-red-100 transition-colors">
                   <span>⚠️</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-red-900">{overdueCharges.length} overdue charge{overdueCharges.length !== 1 ? 's' : ''}</p>
+                    <p className="text-xs font-semibold text-red-900">{overdueChargesCount} overdue charge{overdueChargesCount !== 1 ? 's' : ''}</p>
                     <p className="text-[11px] text-red-700">{fmt(overdueAmt)} outstanding</p>
                   </div>
                 </a>
               )}
-              {postpaidOverdue.length > 0 && (
+              {disconnectionAlerts > 0 && (
                 <a href="/utilities" className="flex items-center gap-2.5 rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 hover:bg-orange-100 transition-colors">
                   <span>⚡</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-orange-900">{postpaidOverdue.length} meter{postpaidOverdue.length !== 1 ? 's' : ''} need disconnection notice</p>
+                    <p className="text-xs font-semibold text-orange-900">{disconnectionAlerts} meter{disconnectionAlerts !== 1 ? 's' : ''} need disconnection notice</p>
                     <p className="text-[11px] text-orange-700">Postpaid overdue</p>
                   </div>
                 </a>
@@ -372,7 +367,7 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
                   </span>
                 </a>
               )}
-              {[expiringLeases.length, urgentIssues, overdueCharges.length, postpaidOverdue.length, lowStock.length, pendingVerification, pendingExits].every(n => n === 0) && (
+              {[expiringLeases.length, urgentIssues, overdueChargesCount, disconnectionAlerts, lowStock.length, pendingVerification, pendingExits].every(n => n === 0) && (
                 <div className="py-6 text-center text-sm text-text-muted">
                   <p className="text-2xl mb-1">✅</p>
                   All clear — no pending actions.

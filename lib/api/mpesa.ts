@@ -42,8 +42,9 @@ export async function initiateStkPush(payload: InitiateStkPayload): Promise<StkP
   })
 }
 
-export async function getMpesaTransactions(): Promise<MpesaTransactionData[]> {
-  return apiFetch<MpesaTransactionData[]>('/mpesa/transactions')
+export async function getMpesaTransactions(params?: { since?: string }): Promise<MpesaTransactionData[]> {
+  const qs = params?.since ? `?since=${encodeURIComponent(params.since)}` : ''
+  return apiFetch<MpesaTransactionData[]>(`/mpesa/transactions${qs}`)
 }
 
 export interface RegisterC2bResult {

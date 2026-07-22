@@ -82,10 +82,11 @@ export interface MeterReadingData {
   photo_base64: string | null
 }
 
-export async function getMeterReadings(params?: { period?: string; meterId?: string }): Promise<MeterReadingData[]> {
+export async function getMeterReadings(params?: { period?: string; meterId?: string; limit?: number }): Promise<MeterReadingData[]> {
   const qs = new URLSearchParams()
-  if (params?.period) qs.set('period', params.period)
+  if (params?.period)  qs.set('period',  params.period)
   if (params?.meterId) qs.set('meterId', params.meterId)
+  if (params?.limit)   qs.set('limit',   String(params.limit))
   const query = qs.toString()
   return apiFetch<MeterReadingData[]>(`/meter-readings${query ? '?' + query : ''}`)
 }
