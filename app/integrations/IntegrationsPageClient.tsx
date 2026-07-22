@@ -5,6 +5,7 @@ import {
   getIntegrations, saveEmailIntegration, saveAfricasTalkingIntegration,
   saveAfrinetIntegration,
   saveMpesaIntegration, saveTelegramIntegration, savePremblyIntegration, saveAnthropicIntegration,
+  saveAmrIntegration,
   testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
   listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
   setDefaultMpesaAccount, testMpesaAccount, registerC2bUrls,
@@ -1044,6 +1045,65 @@ function AnthropicCard({ initial, onSave }: { initial: IntegrationSettings['anth
   )
 }
 
+// ── AMR (Smart Meter) card ────────────────────────────────────────────────────
+
+function AmrCard({ initial, onSave }: { initial: IntegrationSettings['amr']; onSave: (s: IntegrationSettings) => void }) {
+  const [apiKey,  setApiKey]  = useState('')
+  const [pollInterval, setPollInterval] = useState(initial.pollIntervalMinutes || '30')
+  const [saving, setSaving]   = useState(false)
+  const [saved, setSaved]     = useState(false)
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: Record<string, string> = { pollIntervalMinutes: pollInterval }
+      if (apiKey) payload.apiKey = apiKey
+      const updated = await saveAmrIntegration(payload)
+      onSave(updated)
+      setApiKey('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Card icon="📡" title={`AMR / Smart Meters — ${initial.configured ? 'Configured' : 'Not configured'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">API key used by IoT devices to push readings via <code className="bg-gray-100 px-1 rounded">POST /api/meters/readings/ingest</code>.</p>
+        <StatusBadge configured={initial.configured} />
+      </div>
+      <div className="rounded-lg bg-sky-50 border border-sky-100 px-3 py-2 text-xs text-sky-700 mb-4">
+        Set this key on each smart meter device. Requests must include <code className="bg-sky-100 px-1 rounded">X-AMR-Api-Key</code> header.
+      </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <Field
+          label="AMR API Key"
+          value={apiKey}
+          onChange={setApiKey}
+          sensitive
+          alreadySet={initial.apiKey === '***'}
+          placeholder="Generate a strong random key"
+        />
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Poll Interval (minutes)</label>
+          <input
+            type="number"
+            min="5"
+            max="1440"
+            value={pollInterval}
+            onChange={e => setPollInterval(e.target.value)}
+            className="w-24 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400"
+          />
+        </div>
+        <div className="flex justify-end pt-1">
+          <SaveBtn loading={saving} saved={saved} />
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function IntegrationsPageClient() {
@@ -1075,6 +1135,7 @@ export function IntegrationsPageClient() {
     settings.telegram.configured,
     settings.prembly.configured,
     settings.anthropic.configured,
+    settings.amr.configured,
   ].filter(Boolean).length
 
   return (
@@ -1099,6 +1160,7 @@ export function IntegrationsPageClient() {
             { icon: '✈️',  label: 'Telegram', ok: settings.telegram.configured },
             { icon: '🪪',  label: 'KYC',      ok: settings.prembly.configured },
             { icon: '🤖',  label: 'AI',       ok: settings.anthropic.configured },
+            { icon: '📡',  label: 'AMR',      ok: settings.amr.configured },
           ].map(({ icon, label, ok }) => (
             <div key={label} className="flex flex-col items-center gap-0.5">
               <span className="text-base">{icon}</span>
@@ -1117,6 +1179,7 @@ export function IntegrationsPageClient() {
       <TelegramCard       initial={settings.telegram}       onSave={handleSave} />
       <PremblCard         initial={settings.prembly}        onSave={handleSave} />
       <AnthropicCard      initial={settings.anthropic}      onSave={handleSave} />
+      <AmrCard            initial={settings.amr}            onSave={handleSave} />
     </div>
   )
 }

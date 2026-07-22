@@ -212,6 +212,12 @@ export interface AnthropicConfig {
   configured: boolean
 }
 
+export interface AmrConfig {
+  apiKey: string           // "***" if set, "" if not
+  pollIntervalMinutes: string
+  configured: boolean
+}
+
 export interface IntegrationSettings {
   email: EmailConfig
   africastalking: AfricasTalkingConfig
@@ -220,6 +226,7 @@ export interface IntegrationSettings {
   telegram: TelegramConfig
   prembly: PremblConfig
   anthropic: AnthropicConfig
+  amr: AmrConfig
 }
 
 export function getIntegrations(): Promise<IntegrationSettings> {
@@ -252,6 +259,10 @@ export function savePremblyIntegration(payload: Record<string, string>): Promise
 
 export function saveAnthropicIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
   return apiFetch('/settings/integrations/anthropic', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export function saveAmrIntegration(payload: Record<string, string>): Promise<IntegrationSettings> {
+  return apiFetch('/settings/integrations/amr', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
 export function testEmailIntegration(email: string): Promise<string> {
