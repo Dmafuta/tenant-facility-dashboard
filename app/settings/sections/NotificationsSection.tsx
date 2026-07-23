@@ -1,11 +1,12 @@
 'use client'
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Bell, Check, Send, Activity, Mail, Smartphone, MessageSquare, Plug, Lock,
   Search, ArrowUpDown, User, Plus, Download, Pencil, ExternalLink, AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
+import { getSettings, updateSettings } from '@/lib/api/settings'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NotifChannel = 'email' | 'sms' | 'push' | 'inapp' | 'webhook'
@@ -505,6 +506,22 @@ export function NotificationsSection() {
   const [events, setEvents]       = useState<NotifEvent[]>(NOTIF_EVENTS)
   const [paused, setPaused]       = useState(false)
   const [tab, setTab]             = useState<'events' | 'rules' | 'recipients' | 'activity'>('events')
+
+  // Load and persist notifications_paused from/to the backend
+  useEffect(() => {
+    getSettings().then(s => {
+      if (s.notifications_paused != null) setPaused(s.notifications_paused)
+    }).catch(() => {})
+  }, [])
+
+  async function handlePauseToggle(value: boolean) {
+    setPaused(value)
+    try {
+      await updateSettings({ notifications_paused: value })
+    } catch {
+      setPaused(!value) // revert on failure
+    }
+  }
   const [query, setQuery]         = useState('')
   const [catFilter, setCatFilter] = useState<NotifCategoryKey | 'all'>('all')
   const [sevFilter, setSevFilter] = useState<NotifSeverity | 'all'>('all')
@@ -579,7 +596,7 @@ export function NotificationsSection() {
         </div>
         <label className="inline-flex cursor-pointer items-center gap-2">
           <span className="text-xs text-text-muted">Pause all</span>
-          <NotifSwitch checked={paused} onChange={setPaused} tone={paused ? 'amber' : 'emerald'} />
+          <NotifSwitch checked={paused} onChange={handlePauseToggle} tone={paused ? 'amber' : 'emerald'} />
         </label>
       </div>
 
