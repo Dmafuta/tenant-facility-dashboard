@@ -48,10 +48,15 @@ async function proxy(
     const refreshToken = refreshMatch?.[1]
 
     if (refreshToken) {
-      const refreshRes = await fetch(`${BACKEND}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { Cookie: `refresh_token=${refreshToken}` },
-      })
+      let refreshRes: Response
+      try {
+        refreshRes = await fetch(`${BACKEND}/api/auth/refresh`, {
+          method: 'POST',
+          headers: { Cookie: `refresh_token=${refreshToken}` },
+        })
+      } catch {
+        return NextResponse.json({ error: 'Backend unavailable' }, { status: 503 })
+      }
       if (refreshRes.ok) {
         const newCookies = refreshRes.headers.getSetCookie()
         const newAccessToken = newCookies
@@ -61,7 +66,12 @@ async function proxy(
         if (newAccessToken) {
           // Retry with refreshed access token
           const retryHeaders = { ...headers, Cookie: withNewAccessToken(incoming, newAccessToken) }
-          const retryRes = await fetch(backendUrl, { method: request.method, headers: retryHeaders, body })
+          let retryRes: Response
+          try {
+            retryRes = await fetch(backendUrl, { method: request.method, headers: retryHeaders, body })
+          } catch {
+            return NextResponse.json({ error: 'Backend unavailable' }, { status: 503 })
+          }
           const retryContentType = retryRes.headers.get('content-type') ?? 'application/json'
           const retryIsBinary = !retryContentType.includes('application/json') && !retryContentType.includes('text/')
           const retryBody = retryIsBinary ? await retryRes.arrayBuffer() : await retryRes.text()
