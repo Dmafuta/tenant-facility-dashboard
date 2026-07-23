@@ -35,7 +35,12 @@ async function proxy(
   const incoming = request.headers.get('cookie') ?? ''
   if (incoming) headers['Cookie'] = incoming
 
-  const backendRes = await fetch(backendUrl, { method: request.method, headers, body })
+  let backendRes: Response
+  try {
+    backendRes = await fetch(backendUrl, { method: request.method, headers, body })
+  } catch {
+    return NextResponse.json({ error: 'Backend unavailable' }, { status: 503 })
+  }
 
   // ── Silent refresh on 401 ──────────────────────────────────────────────────
   if (backendRes.status === 401) {
