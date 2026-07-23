@@ -185,8 +185,8 @@ export async function applyPayment(
     reference_no?: string
     notes?: string
   }
-): Promise<InvoiceData> {
-  return apiFetch<InvoiceData>(`/invoices/${invoiceId}/payments`, {
+): Promise<InvoiceData[]> {
+  return apiFetch<InvoiceData[]>(`/invoices/${invoiceId}/payments`, {
     method: 'POST',
     body: JSON.stringify({
       amount:         payload.amount,

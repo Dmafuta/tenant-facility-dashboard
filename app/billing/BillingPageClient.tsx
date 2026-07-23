@@ -803,17 +803,19 @@ export function BillingPageClient() {
     setPaying(true)
     setError(null)
     try {
-      const updated = await applyPayment(payTarget.id, {
+      const affected = await applyPayment(payTarget.id, {
         amount:         parseFloat(payAmount),
         payment_date:   payDate || undefined,
         payment_method: payMethod || undefined,
         reference_no:   payRef || undefined,
         notes:          payNotes || undefined,
       })
-      setInvoices(prev => prev.map(i => i.id === payTarget.id ? updated : i))
-      if (selected?.id === payTarget.id) {
-        // Reload full detail to get updated payments list
-        const detail = await getInvoice(payTarget.id)
+      // Update all affected invoices in the list (direct payments + cascaded previousBalance updates)
+      const affectedMap = new Map(affected.map(i => [i.id, i]))
+      setInvoices(prev => prev.map(i => affectedMap.get(i.id) ?? i))
+      // Reload full detail for the currently-selected invoice if it was affected
+      if (selected && affectedMap.has(selected.id)) {
+        const detail = await getInvoice(selected.id)
         setSelected(detail)
       }
       setPayTarget(null)
