@@ -389,6 +389,10 @@ export async function syncLastReading(period: string): Promise<{ period: string;
   return apiFetch(`/meter-readings/sync-last-reading?period=${encodeURIComponent(period)}`, { method: 'POST' })
 }
 
+export async function regenerateCharges(period: string): Promise<{ period: string; regenerated: number; skipped: number; skippedUnits: string[] }> {
+  return apiFetch(`/meter-readings/regenerate-charges?period=${encodeURIComponent(period)}`, { method: 'POST' })
+}
+
 export interface ZeroBaselineReading {
   readingId: string
   meterNumber: string

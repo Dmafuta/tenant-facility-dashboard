@@ -12,7 +12,7 @@ import { CanDo } from '@/components/ui/CanDo'
 import { AddMeterModal } from '@/components/utilities/AddMeterModal'
 import { AssignReadingsTab } from '@/components/utilities/AssignReadingsTab'
 import { cn } from '@/lib/cn'
-import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod, clearAnomaly, deleteReading } from '@/lib/api/meters'
+import { getAllMeters, getMeterReadings, getMetersPaged, getMeterReadingsPaged, getMeterReadingRun, getUtilityStats, getReadingsForMeter, createMeterReading, updateReadingStatus, assignMeter, getMeterTypeHistory, recordMeterTypeMigration, patchMeter, deleteGlobalMeter, bulkCreateReadings, generateEstimatedReadings, correctReading, parseMeterImport, bulkImportMeters, swapMeter, syncLastReading, fixZeroBaselines, getActivePeriod, setActivePeriod, clearAnomaly, deleteReading, regenerateCharges } from '@/lib/api/meters'
 import type { ZeroBaselineReading } from '@/lib/api/meters'
 import type { MeterData, MeterReadingData, MeterTypeHistoryData, ImportRowPreview, ReadingRunRow as ReadingRunRowData, UtilityStats } from '@/lib/api/meters'
 import {
@@ -2926,6 +2926,29 @@ function ReadingsTab() {
       setSyncing(false) }
   }
 
+  // Regenerate charges (re-apply updated rounding formula to existing draft invoices)
+  const [showRegenModal, setShowRegenModal]   = useState(false)
+  const [regenPeriod, setRegenPeriod]         = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [regening, setRegening]               = useState(false)
+  const [regenResult, setRegenResult]         = useState<{ regenerated: number; skipped: number; skippedUnits: string[] } | null>(null)
+  const [regenError, setRegenError]           = useState<string | null>(null)
+
+  async function handleRegenerateCharges() {
+    setRegening(true); setRegenResult(null); setRegenError(null)
+    try {
+      const result = await regenerateCharges(regenPeriod)
+      setRegenResult(result)
+      onRefresh()
+    } catch (e: unknown) {
+      setRegenError(e instanceof Error ? e.message : 'Failed to regenerate charges')
+    } finally {
+      setRegening(false)
+    }
+  }
+
   // Fix zero-baseline readings
   const [showFixModal, setShowFixModal]         = useState(false)
   const [fixRunning, setFixRunning]             = useState(false)
@@ -3097,6 +3120,11 @@ function ReadingsTab() {
               Generate Estimated
             </Button>
           </CanDo>
+          <CanDo action="write" resource={{ type: 'utility' }}>
+            <Button size="sm" variant="ghost" onClick={() => { setShowRegenModal(true); setRegenResult(null); setRegenError(null) }}>
+              Recalculate Charges
+            </Button>
+          </CanDo>
           <CanDo action="write" resource={{ type: 'unit' }}>
             <Button size="sm" variant="ghost" onClick={() => { setShowSyncModal(true); setSyncResult(null); setSyncError(null) }}>
               Sync Baselines
@@ -3183,6 +3211,48 @@ function ReadingsTab() {
                 <Button variant="ghost" className="flex-1" onClick={() => setShowEstModal(false)}>Cancel</Button>
                 <Button variant="primary" className="flex-1" disabled={generating || !estPeriod} onClick={handleGenerateEstimated}>
                   {generating ? 'Generating…' : `Generate for ${estPeriod}`}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Recalculate Charges Modal */}
+      <Modal open={showRegenModal} onClose={() => setShowRegenModal(false)} title="Recalculate Draft Charges" size="sm">
+        <div className="p-5 space-y-4">
+          {regenResult ? (
+            <div className="space-y-3">
+              <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
+                <p className="font-semibold mb-1">Done</p>
+                <p>{regenResult.regenerated} draft invoice(s) recalculated. {regenResult.skipped} skipped (already issued or no draft found).</p>
+              </div>
+              {regenResult.skippedUnits.length > 0 && (
+                <div className="text-xs text-text-muted">
+                  <p className="font-medium mb-1">Skipped units:</p>
+                  <p>{regenResult.skippedUnits.join(', ')}</p>
+                </div>
+              )}
+              <Button variant="primary" className="w-full" onClick={() => setShowRegenModal(false)}>Close</Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-text-muted">
+                Re-applies the current billing formula (ceil per-unit rate × consumption) to all water draft invoices for the selected period.
+                Already issued invoices are skipped. Safe to run multiple times.
+              </p>
+              {regenError && <p className="text-sm text-danger">{regenError}</p>}
+              <div>
+                <label className="block text-xs font-medium text-text-muted mb-1">Billing Period</label>
+                <input
+                  type="month" value={regenPeriod} onChange={e => setRegenPeriod(e.target.value)}
+                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" className="flex-1" onClick={() => setShowRegenModal(false)}>Cancel</Button>
+                <Button variant="primary" className="flex-1" disabled={regening || !regenPeriod} onClick={handleRegenerateCharges}>
+                  {regening ? 'Recalculating…' : `Recalculate for ${regenPeriod}`}
                 </Button>
               </div>
             </>
