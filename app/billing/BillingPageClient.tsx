@@ -50,6 +50,7 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'warni
   write_off_requested:  { label: 'Write-Off Requested',  variant: 'warning' },
   voided:          { label: 'Voided',          variant: 'danger' },
   written_off:     { label: 'Written Off',     variant: 'purple' },
+  applied:         { label: 'Applied',         variant: 'success' },
 }
 
 function Pager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
