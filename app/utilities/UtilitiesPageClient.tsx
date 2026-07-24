@@ -2817,7 +2817,8 @@ function ReadingsTab() {
   const [loading, setLoading]       = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
-  const [markingAll, setMarkingAll] = useState(false)
+  const [markingAll, setMarkingAll]   = useState(false)
+  const [exporting, setExporting]     = useState(false)
   const [photoUrl, setPhotoUrl]     = useState<string | null>(null)
 
   function onRefresh() { setRefreshKey(k => k + 1) }
@@ -3040,30 +3041,41 @@ function ReadingsTab() {
     onRefresh()
   }
 
-  function exportCsv() {
-    const headers = ['Unit', 'Meter No', 'Utility', 'Period', 'Prev', 'Current', 'Consumed', 'Unit Cost', 'Amount Due', 'Mgmt Fee', 'Source', 'Read By', 'Date', 'Status']
-    const rows = readings.map(r => [
-      r.unit_label ?? '',
-      r.meter_number,
-      r.utility_type,
-      r.billing_period ?? r.reading_date ?? '',
-      r.previous_value,
-      r.current_value,
-      r.units_consumed,
-      r.unit_cost ?? '',
-      r.amount_due,
-      r.management_fee ?? '',
-      r.source ?? '',
-      r.read_by ?? '',
-      r.reading_date ?? '',
-      r.status,
-    ])
-    const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url
-    a.download = `meter-readings${periodFilter ? `-${periodFilter}` : ''}.csv`
-    a.click(); URL.revokeObjectURL(url)
+  async function exportCsv() {
+    setExporting(true)
+    try {
+      // Fetch ALL records for the period (not just the current page)
+      const all = await getMeterReadings({ period: periodFilter || undefined })
+      // Apply utility type filter client-side if set
+      const filtered = utilityFilter !== 'all'
+        ? all.filter(r => r.utility_type === utilityFilter)
+        : all
+      const headers = ['Unit', 'Meter No', 'Utility', 'Period', 'Prev', 'Current', 'Consumed', 'Unit Cost', 'Amount Due', 'Mgmt Fee', 'Source', 'Read By', 'Date', 'Status']
+      const rows = filtered.map(r => [
+        r.unit_label ?? '',
+        r.meter_number,
+        r.utility_type,
+        r.billing_period ?? r.reading_date ?? '',
+        r.previous_value,
+        r.current_value,
+        r.units_consumed,
+        r.unit_cost ?? '',
+        r.amount_due,
+        r.management_fee ?? '',
+        r.source ?? '',
+        r.read_by ?? '',
+        r.reading_date ?? '',
+        r.status,
+      ])
+      const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url
+      a.download = `meter-readings${periodFilter ? `-${periodFilter}` : '-all'}.csv`
+      a.click(); URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -3135,8 +3147,8 @@ function ReadingsTab() {
               Fix Zero Baselines
             </Button>
           </CanDo>
-          <Button size="sm" variant="outline" onClick={exportCsv} disabled={readings.length === 0}>
-            ⬇ Export CSV
+          <Button size="sm" variant="outline" onClick={exportCsv} disabled={exporting}>
+            {exporting ? 'Exporting…' : '⬇ Export CSV'}
           </Button>
           <CanDo action="write" resource={{ type: 'unit' }}>
             <>
