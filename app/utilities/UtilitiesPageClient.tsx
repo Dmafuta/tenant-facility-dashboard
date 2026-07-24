@@ -180,10 +180,10 @@ function ReadingEntryModal({
   const isPrepaid = meter.meter_type === 'prepaid'
   const isSmart   = meter.meter_type === 'smart'
 
-  // Water meter: use global rates
-  const waterOnly    = isWaterMeter && waterRates ? consumed * waterRates.rate : 0
-  const waterMgmtFee = isWaterMeter && waterRates ? waterOnly * (waterRates.mgmtPct / 100) : 0
-  const sewerage     = isWaterMeter && waterRates ? waterOnly * (waterRates.seweragePct / 100) : 0
+  // Water meter: use global rates — Math.ceil mirrors backend RoundingMode.CEILING
+  const waterOnly    = isWaterMeter && waterRates ? Math.ceil(consumed * waterRates.rate) : 0
+  const waterMgmtFee = isWaterMeter && waterRates ? Math.ceil(waterOnly * (waterRates.mgmtPct / 100)) : 0
+  const sewerage     = isWaterMeter && waterRates ? Math.ceil(waterOnly * (waterRates.seweragePct / 100)) : 0
   const waterTotal   = waterOnly + waterMgmtFee
 
   // Non-water meter: manual rate inputs
