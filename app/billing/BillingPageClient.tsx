@@ -82,6 +82,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   WS: 'Water & Sewerage',
   SC: 'Service Charge',
   OT: 'Other Charges',
+  OB: 'Opening Balances',
 }
 
 const CHARGE_TYPE_LABELS: Record<string, string> = {
@@ -479,7 +480,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
 
 export function BillingPageClient() {
   const { subject } = useAbac()
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments' | 'Plans'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
   const [loading, setLoading]         = useState(true)
@@ -686,7 +687,7 @@ export function BillingPageClient() {
 
   // Main paginated fetch — reruns whenever any filter/sort/page/refresh changes
   useEffect(() => {
-    if (!['WS', 'SC', 'OT'].includes(activeTab)) return
+    if (!['WS', 'SC', 'OT', 'OB'].includes(activeTab)) return
     let cancelled = false
     setLoading(true)
     getInvoicesPaged({
@@ -1124,10 +1125,11 @@ export function BillingPageClient() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT' | 'Reports' | 'Adjustments' | 'Plans'; label: string }[] = [
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans'; label: string }[] = [
     { code: 'WS',          label: 'Water & Sewerage' },
     { code: 'SC',          label: 'Service Charge' },
     { code: 'OT',          label: 'Other Charges' },
+    { code: 'OB',          label: 'Opening Balances' },
     { code: 'Plans',       label: 'Payment Plans' },
     { code: 'Adjustments', label: 'Adjustments' },
     { code: 'Reports',     label: 'Reports' },
