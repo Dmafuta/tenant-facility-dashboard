@@ -3120,7 +3120,7 @@ function ReadingsTab() {
               Generate Estimated
             </Button>
           </CanDo>
-          <CanDo action="write" resource={{ type: 'utility' }}>
+          <CanDo action="write" resource={{ type: 'unit' }}>
             <Button size="sm" variant="ghost" onClick={() => { setShowRegenModal(true); setRegenResult(null); setRegenError(null) }}>
               Recalculate Charges
             </Button>
