@@ -14,7 +14,7 @@ export async function getSubjectFromSession(): Promise<Subject> {
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get('access_token')?.value
-    if (!token) return { id: 'anon', role: 'facility_manager', name: 'Guest' }
+    if (!token) return { id: 'anon', role: 'anon', name: 'Guest' }
 
     const claims = decodeJwtPayload(token)
     const role = (claims.role as string) ?? 'facility_manager'
@@ -33,6 +33,6 @@ export async function getSubjectFromSession(): Promise<Subject> {
       twoFactorEnabled: (claims.twoFactorEnabled as boolean) ?? false,
     }
   } catch {
-    return { id: 'anon', role: 'facility_manager', name: 'Guest' }
+    return { id: 'anon', role: 'anon', name: 'Guest' }
   }
 }

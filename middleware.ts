@@ -82,7 +82,7 @@ export async function middleware(request: NextRequest) {
     })
     if (!res.ok) throw new Error('refresh failed')
 
-    // Parse the new access token out of the Set-Cookie headers the backend issued
+    // Parse Set-Cookie headers from the backend response
     const setCookies = res.headers.getSetCookie()
     let newAccessToken = ''
     for (const c of setCookies) {
@@ -91,13 +91,17 @@ export async function middleware(request: NextRequest) {
     }
     if (!newAccessToken) throw new Error('no access token in refresh response')
 
-    // Apply the route guard with the new token, then forward all Set-Cookie headers to the browser
-    const response = applyRouteGuard(request, newAccessToken)
+    // Redirect to the same URL so the browser sends the new cookies on the next
+    // request — this ensures server components read the fresh token rather than
+    // rendering with the old/missing token and showing "Guest".
+    const response = NextResponse.redirect(request.url)
     for (const c of setCookies) {
       response.headers.append('Set-Cookie', c)
     }
     return response
   } catch {
+    // Clear both cookies so the browser doesn't keep sending an already-consumed
+    // refresh token (which would cause a permanent logout loop).
     const response = NextResponse.redirect(new URL('/login', request.url))
     response.cookies.delete('access_token')
     response.cookies.delete('refresh_token')
