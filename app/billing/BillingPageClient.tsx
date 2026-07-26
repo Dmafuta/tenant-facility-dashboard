@@ -521,6 +521,7 @@ export function BillingPageClient() {
   const [payRef, setPayRef]           = useState('')
   const [payNotes, setPayNotes]       = useState('')
   const [paying, setPaying]           = useState(false)
+  const [payIdempotencyKey, setPayIdempotencyKey] = useState('')
 
   // SC billing run modal
   const [showRunModal, setShowRunModal] = useState(false)
@@ -806,11 +807,12 @@ export function BillingPageClient() {
     setError(null)
     try {
       const affected = await applyPayment(payTarget.id, {
-        amount:         parseFloat(payAmount),
-        payment_date:   payDate || undefined,
-        payment_method: payMethod || undefined,
-        reference_no:   payRef || undefined,
-        notes:          payNotes || undefined,
+        amount:          parseFloat(payAmount),
+        payment_date:    payDate || undefined,
+        payment_method:  payMethod || undefined,
+        reference_no:    payRef || undefined,
+        notes:           payNotes || undefined,
+        idempotencyKey:  payIdempotencyKey || undefined,
       })
       // Update all affected invoices in the list (direct payments + cascaded previousBalance updates)
       const affectedMap = new Map(affected.map(i => [i.id, i]))
@@ -864,6 +866,7 @@ export function BillingPageClient() {
     setPayMethod('mpesa')
     setPayRef('')
     setPayNotes('')
+    setPayIdempotencyKey(crypto.randomUUID())  // fresh key per modal open — retries reuse it
   }
 
   function resetPayForm() {

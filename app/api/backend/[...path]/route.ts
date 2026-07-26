@@ -34,6 +34,9 @@ async function proxy(
   headers['Accept'] = 'application/json'
   const incoming = request.headers.get('cookie') ?? ''
   if (incoming) headers['Cookie'] = incoming
+  // Forward idempotency key so backend can deduplicate retried requests
+  const idempotencyKey = request.headers.get('Idempotency-Key')
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
 
   let backendRes: Response
   try {

@@ -184,10 +184,14 @@ export async function applyPayment(
     payment_method?: string
     reference_no?: string
     notes?: string
+    idempotencyKey?: string
   }
 ): Promise<InvoiceData[]> {
+  const headers: Record<string, string> = {}
+  if (payload.idempotencyKey) headers['Idempotency-Key'] = payload.idempotencyKey
   return apiFetch<InvoiceData[]>(`/invoices/${invoiceId}/payments`, {
     method: 'POST',
+    headers,
     body: JSON.stringify({
       amount:         payload.amount,
       paymentDate:    payload.payment_date,
