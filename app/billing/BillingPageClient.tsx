@@ -19,7 +19,7 @@ import {
   type InvoiceData, type InvoiceCategory, type InvoicePayment, type AgedDebtorRow, type AgedDebtorSummary,
   type BillingSummary, type OutstandingBalanceRow,
   type CollectionSummary, type CollectionSummaryRow,
-  getInvoiceCategories, deleteBulkVoidedInvoices,
+  getInvoiceCategories, deleteBulkVoidedInvoices, reassignInvoice,
 } from '@/lib/api/invoices'
 import {
   getOpeningBalances, createOpeningBalance, updateOpeningBalance, voidOpeningBalance,
@@ -27,6 +27,7 @@ import {
 } from '@/lib/api/opening-balances'
 import { getPaymentPlans, createPaymentPlan, payInstallment, cancelPaymentPlan, type PaymentPlanData, type PaymentPlanInstallment } from '@/lib/api/payment-plans'
 import { apiFetch } from '@/lib/api/fetch'
+import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
 
@@ -620,6 +621,19 @@ export function BillingPageClient() {
   const [issuingCredit, setIssuingCredit]         = useState(false)
   const [creditSuccess, setCreditSuccess]         = useState<string | null>(null)
 
+  // Reassign modal
+  const [reassignTarget, setReassignTarget]       = useState<InvoiceData | null>(null)
+  const [reassignUnits, setReassignUnits]         = useState<UnitData[]>([])
+  const [reassignUnitSearch, setReassignUnitSearch] = useState('')
+  const [reassignUnitId, setReassignUnitId]       = useState('')
+  const [reassignUnitLabel, setReassignUnitLabel] = useState('')
+  const [reassignPersonId, setReassignPersonId]   = useState('')
+  const [reassignPersonName, setReassignPersonName] = useState('')
+  const [reassignPersonEmail, setReassignPersonEmail] = useState('')
+  const [reassignPersonPhone, setReassignPersonPhone] = useState('')
+  const [reassignReason, setReassignReason]       = useState('')
+  const [reassigning, setReassigning]             = useState(false)
+
   // Available credits for selected invoice
   const [availableCredits, setAvailableCredits] = useState<InvoicePayment[]>([])
   const [creditsLoading, setCreditsLoading]     = useState(false)
@@ -747,6 +761,47 @@ export function BillingPageClient() {
       setError(e instanceof Error ? e.message : 'Failed to issue invoice')
     } finally {
       setActioning(null)
+    }
+  }
+
+  function openReassign(inv: InvoiceData) {
+    setReassignTarget(inv)
+    setReassignUnitSearch('')
+    setReassignUnitId('')
+    setReassignUnitLabel('')
+    setReassignPersonId('')
+    setReassignPersonName('')
+    setReassignPersonEmail('')
+    setReassignPersonPhone('')
+    setReassignReason('')
+    // Lazy-load units the first time the modal opens
+    if (reassignUnits.length === 0) {
+      getUnitsFromApi().then(setReassignUnits).catch(() => {})
+    }
+  }
+
+  async function handleReassign() {
+    if (!reassignTarget || !reassignUnitId || !reassignReason) return
+    setReassigning(true)
+    setError(null)
+    try {
+      const updated = await reassignInvoice(reassignTarget.id, {
+        unit_id:      reassignUnitId,
+        unit_label:   reassignUnitLabel,
+        account_no:   reassignUnitLabel,
+        person_id:    reassignPersonId || undefined,
+        person_name:  reassignPersonName || undefined,
+        person_email: reassignPersonEmail || undefined,
+        person_phone: reassignPersonPhone || undefined,
+        reason:       reassignReason,
+      })
+      setInvoices(prev => prev.map(i => i.id === reassignTarget.id ? updated : i))
+      if (selected?.id === reassignTarget.id) setSelected(updated)
+      setReassignTarget(null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to reassign invoice')
+    } finally {
+      setReassigning(false)
     }
   }
 
@@ -2240,6 +2295,14 @@ export function BillingPageClient() {
                     Request Void
                   </Button>
                 )}
+                {['draft', 'issued', 'partial'].includes(selected.status) && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => openReassign(selected)}
+                  >
+                    Reassign Unit
+                  </Button>
+                )}
                 <a
                   href={`/billing/invoice/${selected.id}`}
                   target="_blank"
@@ -2594,6 +2657,142 @@ export function BillingPageClient() {
               onClick={handleVoid}
             >
               {voiding ? 'Requesting…' : 'Request Void'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reassign invoice modal */}
+      <Modal
+        open={!!reassignTarget}
+        onClose={() => setReassignTarget(null)}
+        title={`Reassign Invoice — ${reassignTarget?.statement_no ?? ''}`}
+        size="sm"
+      >
+        <div className="p-5 space-y-4">
+          {/* Current unit summary */}
+          {reassignTarget && (
+            <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Current Unit</span>
+                <span className="font-medium">{reassignTarget.unit_label ?? '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Current Person</span>
+                <span className="font-medium">{reassignTarget.person_name ?? '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Balance</span>
+                <span className="font-semibold text-danger">{fmt(reassignTarget.balance)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Unit search */}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">New Unit *</label>
+            <input
+              type="text"
+              value={reassignUnitSearch}
+              onChange={e => {
+                setReassignUnitSearch(e.target.value)
+                setReassignUnitId('')
+                setReassignUnitLabel('')
+              }}
+              placeholder="Type unit label to search…"
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            {reassignUnitSearch.length >= 1 && !reassignUnitId && (
+              <ul className="mt-1 max-h-40 overflow-y-auto border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-sm divide-y divide-surface-border dark:divide-dark-border">
+                {reassignUnits
+                  .filter(u => u.unit_label.toLowerCase().includes(reassignUnitSearch.toLowerCase()))
+                  .slice(0, 8)
+                  .map(u => (
+                    <li
+                      key={u.id}
+                      className="px-3 py-2 cursor-pointer hover:bg-surface-hover dark:hover:bg-dark-hover flex justify-between"
+                      onClick={() => {
+                        setReassignUnitId(u.id)
+                        setReassignUnitLabel(u.unit_label)
+                        setReassignUnitSearch(u.unit_label)
+                        // Pre-fill person name from unit's current occupant if available
+                        if (u.current_occupant) {
+                          setReassignPersonName(u.current_occupant)
+                        }
+                      }}
+                    >
+                      <span className="font-medium">{u.unit_label}</span>
+                      {u.current_occupant && (
+                        <span className="text-text-muted">{u.current_occupant}</span>
+                      )}
+                    </li>
+                  ))}
+                {reassignUnits.filter(u => u.unit_label.toLowerCase().includes(reassignUnitSearch.toLowerCase())).length === 0 && (
+                  <li className="px-3 py-2 text-text-muted">No units found</li>
+                )}
+              </ul>
+            )}
+            {reassignUnitId && (
+              <p className="mt-1 text-xs text-success">✓ Unit {reassignUnitLabel} selected</p>
+            )}
+          </div>
+
+          {/* Person name */}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Person Name (optional)</label>
+            <input
+              type="text"
+              value={reassignPersonName}
+              onChange={e => setReassignPersonName(e.target.value)}
+              placeholder="Full name of the responsible person"
+              className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          {/* Email + Phone on same row */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Email</label>
+              <input
+                type="email"
+                value={reassignPersonEmail}
+                onChange={e => setReassignPersonEmail(e.target.value)}
+                placeholder="email@example.com"
+                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Phone</label>
+              <input
+                type="tel"
+                value={reassignPersonPhone}
+                onChange={e => setReassignPersonPhone(e.target.value)}
+                placeholder="+254…"
+                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+
+          {/* Reason */}
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Reason *</label>
+            <textarea
+              value={reassignReason}
+              onChange={e => setReassignReason(e.target.value)}
+              rows={2}
+              placeholder="e.g. Tenant moved to unit 1832 on 2026-07-01"
+              className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="ghost" className="flex-1" onClick={() => setReassignTarget(null)}>Cancel</Button>
+            <Button
+              variant="primary" className="flex-1"
+              disabled={reassigning || !reassignUnitId || !reassignReason.trim()}
+              onClick={handleReassign}
+            >
+              {reassigning ? 'Reassigning…' : 'Reassign Invoice'}
             </Button>
           </div>
         </div>

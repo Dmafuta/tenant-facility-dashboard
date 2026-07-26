@@ -54,6 +54,11 @@ export interface InvoiceData {
   write_off_requested_by_name: string | null
   write_off_requested_at: string | null
   write_off_request_notes: string | null
+  reassigned_from_unit_id: string | null
+  reassigned_from_unit_label: string | null
+  reassign_reason: string | null
+  reassigned_by: string | null
+  reassigned_at: string | null
   disputed: boolean
   dispute_reason: string | null
   disputed_at: string | null
@@ -516,6 +521,24 @@ export async function deleteBulkVoidedInvoices(params?: { period?: string; categ
   if (params?.period)       qs.set('period',       params.period)
   if (params?.categoryCode) qs.set('categoryCode', params.categoryCode)
   return apiFetch(`/invoices/bulk-voided?${qs}`, { method: 'DELETE' })
+}
+
+export interface ReassignInvoicePayload {
+  unit_id: string
+  unit_label: string
+  account_no?: string
+  person_id?: string
+  person_name?: string
+  person_email?: string
+  person_phone?: string
+  reason: string
+}
+
+export async function reassignInvoice(id: string, payload: ReassignInvoicePayload): Promise<InvoiceData> {
+  return apiFetch<InvoiceData>(`/invoices/${id}/reassign`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function updateInvoiceCategory(
