@@ -15,6 +15,7 @@ export interface LeaseData {
   billing_cycle: string | null
   next_billing_date: string | null
   pro_rate_first: boolean
+  tenant_pays_sc: boolean
   notes: string | null
   created_at: string | null
 }

@@ -109,10 +109,11 @@ function LeaseModal({ open, onClose, unitId, unitLabel, tenants, initialData, on
   const [startDate,    setStartDate]    = useState(initialData?.start_date ?? '')
   const [endDate,      setEndDate]      = useState(initialData?.end_date ?? '')
   const [status,       setStatus]       = useState(initialData?.status ?? 'draft')
-  const [billingCycle, setBillingCycle] = useState(initialData?.billing_cycle ?? 'monthly')
-  const [notes,        setNotes]        = useState(initialData?.notes ?? '')
-  const [saving,       setSaving]       = useState(false)
-  const [error,        setError]        = useState('')
+  const [billingCycle,  setBillingCycle]  = useState(initialData?.billing_cycle ?? 'monthly')
+  const [tenantPaysSc,  setTenantPaysSc]  = useState(initialData?.tenant_pays_sc ?? false)
+  const [notes,         setNotes]         = useState(initialData?.notes ?? '')
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState('')
 
   useEffect(() => {
     if (open) {
@@ -123,6 +124,7 @@ function LeaseModal({ open, onClose, unitId, unitLabel, tenants, initialData, on
       setEndDate(initialData?.end_date ?? '')
       setStatus(initialData?.status ?? 'draft')
       setBillingCycle(initialData?.billing_cycle ?? 'monthly')
+      setTenantPaysSc(initialData?.tenant_pays_sc ?? false)
       setNotes(initialData?.notes ?? '')
       setError('')
     }
@@ -138,7 +140,7 @@ function LeaseModal({ open, onClose, unitId, unitLabel, tenants, initialData, on
         monthlyRent: monthlyRent ? Number(monthlyRent) : null,
         deposit: deposit ? Number(deposit) : null,
         startDate, endDate: endDate || null, status, billingCycle,
-        notes: notes || null, unitLabel,
+        tenantPaysSc, notes: notes || null, unitLabel,
       }
       const saved = isEdit
         ? await updateLease(unitId, initialData!.id, payload)
@@ -198,6 +200,16 @@ function LeaseModal({ open, onClose, unitId, unitLabel, tenants, initialData, on
             </select>
           </div>
         </div>
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <div
+            onClick={() => setTenantPaysSc(v => !v)}
+            className={`relative w-9 h-5 rounded-full transition-colors ${tenantPaysSc ? 'bg-primary-600' : 'bg-surface-muted dark:bg-dark-hover border border-surface-border dark:border-dark-border'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${tenantPaysSc ? 'translate-x-4' : ''}`} />
+          </div>
+          <span className="text-sm text-text">Tenant pays service charge</span>
+          <span className="text-xs text-text-muted">(owner delegates SC responsibility to tenant)</span>
+        </label>
         <div>
           <label className={LABEL_CLS}>Notes</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={INPUT_CLS} placeholder="Optional notes…" />
