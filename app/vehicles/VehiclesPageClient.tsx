@@ -96,8 +96,8 @@ function VerificationDrive({ vehicles, onClose, onRefresh }: {
     if (trimmed === (v.sticker_number ?? null)) { setEditingStickerId(null); return }
     setSavingSticker(s => new Set(s).add(v.id))
     try {
-      const updated = await updateVehicleSticker(v.id, trimmed)
-      onUpdated(updated)
+      await updateVehicleSticker(v.id, trimmed)
+      onRefresh()
     } catch {}
     finally {
       setSavingSticker(s => { const n = new Set(s); n.delete(v.id); return n })
