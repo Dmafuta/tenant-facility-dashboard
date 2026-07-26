@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useApiData } from '@/lib/hooks/useApiData'
 import { Card } from '@/components/ui/Card'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Button } from '@/components/ui/Button'
@@ -348,23 +349,16 @@ function ReadingEntryModal({
 // ── Consumption Trend Tab (inside drawer) ──────────────────────────────────
 
 function TrendTab({ meterId, utilityType }: { meterId: string; utilityType: string }) {
-  const [rows, setRows]       = useState<ConsumptionTrendRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
-
-  useEffect(() => {
-    setLoading(true); setError(null)
-    getConsumptionTrend({ meterId, months: 12 })
-      .then(setRows)
-      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load trend'))
-      .finally(() => setLoading(false))
-  }, [meterId])
+  const { data: rows, loading, error } = useApiData(
+    () => getConsumptionTrend({ meterId, months: 12 }),
+    [meterId]
+  )
 
   const unit = ['water', 'water_sewer'].includes(utilityType) ? 'm³' : 'units'
 
   if (loading) return <p className="text-sm text-text-muted py-8 text-center">Loading trend data…</p>
   if (error)   return <p className="text-sm text-danger py-4 text-center">{error}</p>
-  if (rows.length === 0) return <p className="text-sm text-text-muted py-8 text-center">No reading history available.</p>
+  if (!rows || rows.length === 0) return <p className="text-sm text-text-muted py-8 text-center">No reading history available.</p>
 
   const maxVal = Math.max(...rows.map(r => Number(r.units_consumed ?? 0)), 1)
 

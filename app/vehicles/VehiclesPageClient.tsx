@@ -1,6 +1,7 @@
 'use client'
 import { cn } from '@/lib/cn'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useApiData } from '@/lib/hooks/useApiData'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
@@ -27,10 +28,10 @@ const daysUntilExpiry = (d: string) => Math.ceil((new Date(d).getTime() - Date.n
 
 // ── Verification Drive ─────────────────────────────────────────────────────────
 
-function VerificationDrive({ vehicles, onClose, onUpdated }: {
+function VerificationDrive({ vehicles, onClose, onRefresh }: {
   vehicles: VehicleData[]
   onClose: () => void
-  onUpdated: (v: VehicleData) => void
+  onRefresh: () => void
 }) {
   const [scanInput, setScanInput]         = useState('')
   const [filter, setFilter]               = useState<'all' | 'unverified' | 'verified'>('unverified')
@@ -73,11 +74,11 @@ function VerificationDrive({ vehicles, onClose, onUpdated }: {
     if (pending.has(v.id)) return
     setPending(p => new Set(p).add(v.id))
     try {
-      const updated = v.verified ? await unverifyVehicle(v.id) : await verifyVehicle(v.id)
-      onUpdated(updated)
+      v.verified ? await unverifyVehicle(v.id) : await verifyVehicle(v.id)
+      onRefresh()
     } catch {}
     finally { setPending(p => { const n = new Set(p); n.delete(v.id); return n }) }
-  }, [pending, onUpdated])
+  }, [pending, onRefresh])
 
   function handleScanKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && filtered.length > 0) toggle(filtered[0])
@@ -429,20 +430,9 @@ function VehicleRegistry({ vehicles, loading }: { vehicles: VehicleData[]; loadi
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function VehiclesPageClient() {
-  const [vehicles, setVehicles]         = useState<VehicleData[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [driveMode, setDriveMode]       = useState(false)
-
-  useEffect(() => {
-    getAllVehicles()
-      .then(setVehicles)
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  function handleUpdated(updated: VehicleData) {
-    setVehicles(prev => prev.map(v => v.id === updated.id ? updated : v))
-  }
+  const { data, loading, error, refetch } = useApiData(getAllVehicles)
+  const vehicles = data ?? []
+  const [driveMode, setDriveMode] = useState(false)
 
   const active   = vehicles.filter(v => v.status === 'active').length
   const verified = vehicles.filter(v => v.verified).length
@@ -452,6 +442,9 @@ export function VehiclesPageClient() {
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
 
+        {error && (
+          <p className="mx-6 mt-4 text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>
+        )}
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
           {[
             { label: 'Registered',          value: vehicles.length, color: 'text-text' },
@@ -482,7 +475,7 @@ export function VehiclesPageClient() {
         <VerificationDrive
           vehicles={vehicles}
           onClose={() => setDriveMode(false)}
-          onUpdated={handleUpdated}
+          onRefresh={refetch}
         />
       )}
     </DashboardLayout>
