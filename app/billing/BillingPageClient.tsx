@@ -662,6 +662,7 @@ export function BillingPageClient() {
   // Opening balances (Adjustments tab)
   const [openingBals, setOpeningBals]         = useState<OpeningBalance[]>([])
   const [obLoading, setObLoading]             = useState(false)
+  const [obCategoryFilter, setObCategoryFilter] = useState<'WS' | 'SC' | 'OT' | ''>('')
   const [obSortCol, setObSortCol]             = useState<'unit_label'|'category_code'|'amount'|'as_of_date'|'status'>('unit_label')
   const [obSortDir, setObSortDir]             = useState<'asc'|'desc'>('asc')
   const [showAddOb, setShowAddOb]             = useState(false)
@@ -1163,9 +1164,9 @@ export function BillingPageClient() {
     }
   }
 
-  async function loadOpeningBalances() {
+  async function loadOpeningBalances(categoryCode?: string) {
     setObLoading(true)
-    try { setOpeningBals(await getOpeningBalances()) }
+    try { setOpeningBals(await getOpeningBalances(categoryCode || undefined)) }
     catch { /* silent */ }
     finally { setObLoading(false) }
   }
@@ -1216,7 +1217,7 @@ export function BillingPageClient() {
             key={t.code}
             onClick={() => {
               setActiveTab(t.code); setPage(1)
-              if (t.code === 'Adjustments') { loadOpeningBalances(); loadCreditNotes() }
+              if (t.code === 'Adjustments') { loadOpeningBalances(obCategoryFilter || undefined); loadCreditNotes() }
             }}
             className={cn(
               'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
@@ -1669,7 +1670,21 @@ export function BillingPageClient() {
                 <h3 className="font-semibold text-text">Opening Balances</h3>
                 <p className="text-xs text-text-muted mt-0.5">Carry-forward balances applied once on the next issued invoice. Cannot be edited once applied.</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <select
+                  value={obCategoryFilter}
+                  onChange={e => {
+                    const val = e.target.value as 'WS' | 'SC' | 'OT' | ''
+                    setObCategoryFilter(val)
+                    loadOpeningBalances(val || undefined)
+                  }}
+                  className="h-8 px-2 text-xs border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">All Categories</option>
+                  <option value="WS">Water &amp; Sewerage</option>
+                  <option value="SC">Service Charge</option>
+                  <option value="OT">Other</option>
+                </select>
                 <a
                   href="/api/backend/opening-balances/template"
                   download="opening-balances-template.xlsx"
