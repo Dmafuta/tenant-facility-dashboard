@@ -36,6 +36,15 @@ export function getActiveExitRequest(personId: string): Promise<ExitRequest | nu
   return apiFetch<ExitRequest | null>(`/lease-exit-requests/person/${personId}/active`)
 }
 
+export interface BalancePreview {
+  ws_balance: number
+  sc_balance: number
+}
+
+export function getBalancePreview(unitId: string): Promise<BalancePreview> {
+  return apiFetch<BalancePreview>(`/lease-exit-requests/balance-preview?unitId=${encodeURIComponent(unitId)}`)
+}
+
 export function getPendingExitCount(): Promise<number> {
   return apiFetch<number>('/lease-exit-requests/count/pending')
 }

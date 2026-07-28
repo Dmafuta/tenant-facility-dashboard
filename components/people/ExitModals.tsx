@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import {
   getActiveExitRequest, initiateExitRequest, completeExitRequest,
-  cancelExitRequest, type ExitRequest,
+  cancelExitRequest, getBalancePreview, type ExitRequest,
 } from '@/lib/api/exitRequests'
 
 // ── Shared primitives ──────────────────────────────────────────────────────
@@ -360,7 +360,6 @@ export function TenantExitModal({ open, onClose, onComplete, personId, personNam
             {/* Step 1 — Bill Check (shows live outstanding balance) */}
             {step === 1 && (
               <BillCheckStep
-                personId={personId}
                 unitId={unitId}
                 onBack={() => setStep(0)}
                 onNext={() => { setStep(2) }}
@@ -590,34 +589,32 @@ export function TenantExitModal({ open, onClose, onComplete, personId, personNam
 
 // ── Bill check sub-component (fetches live balance) ───────────────────────
 
-function BillCheckStep({ personId, unitId, onBack, onNext }: {
-  personId: string
+function BillCheckStep({ unitId, onBack, onNext }: {
   unitId: string
   onBack: () => void
   onNext: () => void
 }) {
   const [loading, setLoading] = useState(true)
-  const [balance, setBalance] = useState(0)
+  const [wsBalance, setWsBalance] = useState(0)
+  const [scBalance, setScBalance] = useState(0)
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
-    getActiveExitRequest(personId)
-      .catch(() => null)
-      .finally(() => {
-        // We fetch the balance directly via the exit request preview
-        // by calling initiateExitRequest with a dry-run — instead, we use
-        // a simpler approach: fetch from the API with a temp check
-        setLoading(false)
-        setBalance(0) // will be populated by the actual request creation
-      })
-    // Simulate a short load to show the checking animation
-    setTimeout(() => setLoading(false), 600)
-  }, [personId, unitId])
+    setLoading(true)
+    setFetchError(false)
+    getBalancePreview(unitId)
+      .then(p => { setWsBalance(p.ws_balance); setScBalance(p.sc_balance) })
+      .catch(() => setFetchError(true))
+      .finally(() => setLoading(false))
+  }, [unitId])
+
+  const totalOutstanding = wsBalance + scBalance
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-1">
         <div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center text-primary-600 text-xs font-bold">2</div>
-        <p className="text-sm font-semibold text-text">Water & Sewerage Bill Check</p>
+        <p className="text-sm font-semibold text-text">Outstanding Balance Check</p>
       </div>
 
       {loading ? (
@@ -625,12 +622,71 @@ function BillCheckStep({ personId, unitId, onBack, onNext }: {
           <div className="w-5 h-5 border-2 border-primary-600/30 border-t-primary-600 rounded-full animate-spin" />
           <span className="text-sm text-text-muted">Checking outstanding bills…</span>
         </div>
+      ) : fetchError ? (
+        <div className="p-3 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-xs text-danger">
+          Could not load balance — check your connection. You can still proceed; billing will verify.
+        </div>
       ) : (
-        <BillStatusCard balance={balance} />
+        <div className="space-y-3">
+          {/* WS */}
+          <div className={cn(
+            'rounded-xl border p-4',
+            wsBalance === 0
+              ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
+              : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20'
+          )}>
+            <div className="flex items-center gap-3">
+              <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0',
+                wsBalance === 0 ? 'bg-green-100 dark:bg-green-900/40' : 'bg-amber-100 dark:bg-amber-900/40'
+              )}>
+                {wsBalance === 0 ? '✅' : '⚠️'}
+              </div>
+              <div className="flex-1">
+                <p className={cn('font-semibold text-sm', wsBalance === 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                  Water & Sewerage
+                </p>
+                <p className={cn('text-xs mt-0.5', wsBalance === 0 ? 'text-green-600 dark:text-green-500' : 'text-amber-600 dark:text-amber-500')}>
+                  {wsBalance === 0 ? 'No outstanding W&S invoices' : `KES ${wsBalance.toLocaleString()} outstanding`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* SC */}
+          <div className={cn(
+            'rounded-xl border p-4',
+            scBalance === 0
+              ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
+              : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20'
+          )}>
+            <div className="flex items-center gap-3">
+              <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0',
+                scBalance === 0 ? 'bg-green-100 dark:bg-green-900/40' : 'bg-amber-100 dark:bg-amber-900/40'
+              )}>
+                {scBalance === 0 ? '✅' : '⚠️'}
+              </div>
+              <div className="flex-1">
+                <p className={cn('font-semibold text-sm', scBalance === 0 ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                  Service Charge
+                </p>
+                <p className={cn('text-xs mt-0.5', scBalance === 0 ? 'text-green-600 dark:text-green-500' : 'text-amber-600 dark:text-amber-500')}>
+                  {scBalance === 0 ? 'No outstanding SC balance' : `KES ${scBalance.toLocaleString()} outstanding (invoices + arrears)`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {totalOutstanding > 0 && (
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-surface-muted dark:bg-dark-hover text-sm font-semibold text-text">
+              <span>Total Outstanding</span>
+              <span>KES {totalOutstanding.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="p-3 rounded-xl bg-surface-muted dark:bg-dark-hover text-xs text-text-muted">
-        The billing team will see the exact outstanding balance when they review your request. You can proceed even if bills are outstanding — billing will decide whether to clear, waive, or reject.
+        You can proceed even with an outstanding balance — billing will decide whether to clear, waive, or reject each amount before the move-out is finalised.
       </div>
 
       <FooterNav>
