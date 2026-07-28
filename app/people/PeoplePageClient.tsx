@@ -1856,7 +1856,8 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
   const isResident = ['resident_owner','tenant'].includes(person.type)
   const isTenant   = person.type === 'tenant'
   const isOwner    = person.type === 'resident_owner' || person.type === 'non_resident_owner'
-  const hasCrb     = isTenant || isOwner
+  const hasCrb         = isTenant || isOwner
+  const isFormerTenant = person.status === 'former'
 
   const [revealTarget, setRevealTarget]     = useState<{ field: MaskableFieldType; label: string } | null>(null)
   const [revealedFields, setRevealedFields] = useState<Set<MaskableFieldType>>(new Set())
@@ -1993,7 +1994,7 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <Badge variant={TYPE_BADGE[person.type].variant}>{TYPE_BADGE[person.type].label}</Badge>
-              <Badge variant={person.status === 'active' ? 'primary' : person.status === 'suspended' ? 'danger' : 'default'}>{person.status.replace('_', ' ')}</Badge>
+              <Badge variant={person.status === 'active' ? 'primary' : person.status === 'suspended' ? 'danger' : person.status === 'former' ? 'default' : 'warning'}>{person.status.replace('_', ' ')}</Badge>
               <KycBadge status={person.kyc_status ?? 'not_started'} />
             </div>
           </div>
@@ -2176,17 +2177,17 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
               )}
 
               <CanDo action="write" resource={{ type: 'person', id: person.id }} fallback={null}>
-                {isTenant && (
+                {isTenant && !isFormerTenant && (
                   <button onClick={onExit} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors">
                     Move Out / Transfer Unit
                   </button>
                 )}
-                {isOwner && (
+                {isOwner && !isFormerTenant && (
                   <button onClick={onExit} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors">
                     Sell / Transfer Unit
                   </button>
                 )}
-                {(isTenant || isOwner) && person.email && (
+                {(isTenant || isOwner) && !isFormerTenant && person.email && (
                   <ResendWelcomeEmailButton personId={person.id} />
                 )}
               </CanDo>
