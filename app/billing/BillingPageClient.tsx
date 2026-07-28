@@ -30,6 +30,7 @@ import { apiFetch } from '@/lib/api/fetch'
 import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
+import { PrepaidTab } from './PrepaidTab'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -482,7 +483,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
 
 export function BillingPageClient() {
   const { subject } = useAbac()
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
   const [loading, setLoading]         = useState(true)
@@ -1185,11 +1186,12 @@ export function BillingPageClient() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans'; label: string }[] = [
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid'; label: string }[] = [
     { code: 'WS',          label: 'Water & Sewerage' },
     { code: 'SC',          label: 'Service Charge' },
     { code: 'OT',          label: 'Other Charges' },
     { code: 'OB',          label: 'Opening Balances' },
+    { code: 'Prepaid',     label: 'Prepaid Loads' },
     { code: 'Plans',       label: 'Payment Plans' },
     { code: 'Adjustments', label: 'Adjustments' },
     { code: 'Reports',     label: 'Reports' },
@@ -1236,8 +1238,13 @@ export function BillingPageClient() {
         <PlansTab categoryCode="WS" />
       )}
 
+      {/* Prepaid Loads tab */}
+      {activeTab === 'Prepaid' && (
+        <PrepaidTab />
+      )}
+
       {/* Stats row */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && activeTab !== 'Prepaid' && (
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted mb-1">Outstanding</p>
@@ -1255,7 +1262,7 @@ export function BillingPageClient() {
       )}
 
       {/* Toolbar */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && activeTab !== 'Prepaid' && (
       <div className="flex flex-wrap gap-2 items-center">
         <SearchInput
           value={search}
