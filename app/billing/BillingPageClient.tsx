@@ -1671,20 +1671,20 @@ export function BillingPageClient() {
                 <p className="text-xs text-text-muted mt-0.5">Carry-forward balances applied once on the next issued invoice. Cannot be edited once applied.</p>
               </div>
               <div className="flex gap-2 items-center">
-                <select
-                  value={obCategoryFilter}
-                  onChange={e => {
-                    const val = e.target.value as 'WS' | 'SC' | 'OT' | ''
-                    setObCategoryFilter(val)
-                    loadOpeningBalances(val || undefined)
-                  }}
-                  className="h-8 px-2 text-xs border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">All Categories</option>
-                  <option value="WS">Water &amp; Sewerage</option>
-                  <option value="SC">Service Charge</option>
-                  <option value="OT">Other</option>
-                </select>
+                <div className="flex rounded-lg border border-surface-border dark:border-dark-border overflow-hidden text-xs">
+                  {([['', 'All'], ['WS', 'Water & Sewer'], ['SC', 'Service Charge'], ['OT', 'Other']] as [string, string][]).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => { setObCategoryFilter(val as 'WS' | 'SC' | 'OT' | ''); loadOpeningBalances(val || undefined) }}
+                      className={cn(
+                        'px-3 py-1.5 font-medium transition-colors whitespace-nowrap',
+                        obCategoryFilter === val
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-white dark:bg-dark-surface text-text-muted hover:text-text hover:bg-surface-hover dark:hover:bg-dark-hover'
+                      )}
+                    >{label}</button>
+                  ))}
+                </div>
                 <a
                   href="/api/backend/opening-balances/template"
                   download="opening-balances-template.xlsx"
@@ -1763,7 +1763,7 @@ export function BillingPageClient() {
                               <button
                                 onClick={async () => {
                                   if (!confirm('Void this opening balance?')) return
-                                  try { await voidOpeningBalance(ob.id); await loadOpeningBalances() }
+                                  try { await voidOpeningBalance(ob.id); await loadOpeningBalances(obCategoryFilter || undefined) }
                                   catch { setObError('Failed to void') }
                                 }}
                                 className="text-xs text-danger hover:underline"
@@ -3347,7 +3347,7 @@ export function BillingPageClient() {
                     notes:        obNotes || undefined,
                   })
                   setShowAddOb(false)
-                  await loadOpeningBalances()
+                  await loadOpeningBalances(obCategoryFilter || undefined)
                 } catch (e) {
                   setObError(e instanceof Error ? e.message : 'Failed to save')
                 } finally {
@@ -3432,7 +3432,7 @@ export function BillingPageClient() {
                 try {
                   await updateOpeningBalance(editOb.id, { amount: Number(editObAmount), notes: editObNotes || undefined })
                   setEditOb(null)
-                  await loadOpeningBalances()
+                  await loadOpeningBalances(obCategoryFilter || undefined)
                 } catch (e) {
                   setObError(e instanceof Error ? e.message : 'Failed to update')
                 } finally {
