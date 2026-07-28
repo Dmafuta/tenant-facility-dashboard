@@ -41,6 +41,7 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   '📊': BarChart3,
   '🕵': History,
   '⚙': Settings,
+  '📋': ClipboardCheck,
 }
 
 const STORAGE_KEY = 'sidebar-collapsed'
