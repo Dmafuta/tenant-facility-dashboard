@@ -72,7 +72,11 @@ function meterRoleBadge(role: string | undefined | null) {
   return <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-medium', s.cls)}>{s.label}</span>
 }
 function statusDot(s: string) {
-  return <span className={cn('inline-block w-2 h-2 rounded-full mr-1.5', s === 'active' ? 'bg-success' : 'bg-text-muted')} />
+  return <span className={cn('inline-block w-2 h-2 rounded-full mr-1.5',
+    s === 'active' ? 'bg-success' :
+    s === 'under_investigation' ? 'bg-amber-500' :
+    'bg-text-muted'
+  )} />
 }
 function lossColor(pct: number) {
   if (pct >= 15) return 'text-danger'
@@ -614,10 +618,30 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
   }
 
   if (!meter) return null
-  const isReplaced = meter.status === 'replaced'
+  const isReplaced          = meter.status === 'replaced'
+  const isUnderInvestigation = meter.status === 'under_investigation'
   return (
     <Drawer open={open} onClose={onClose} title={`${utilityLabel(meter.utility_type)} — ${meter.meter_number}`}>
       <div className="p-4 space-y-4">
+
+        {/* Under investigation banner */}
+        {isUnderInvestigation && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm">
+            <span className="mt-0.5 shrink-0 text-base">⚠</span>
+            <div className="flex-1">
+              <p className="font-semibold text-amber-800 dark:text-amber-300">Meter Under Investigation</p>
+              {meter.investigation_reason && (
+                <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">{meter.investigation_reason}</p>
+              )}
+              {meter.flagged_at && (
+                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-500">
+                  Flagged {new Date(meter.flagged_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              )}
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400 font-medium">Billing is paused — readings are still collected for evidence.</p>
+            </div>
+          </div>
+        )}
 
         {/* Replaced meter — read-only banner */}
         {isReplaced && (
@@ -684,7 +708,7 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
             <TabsTrigger value="readings">Readings</TabsTrigger>
             <TabsTrigger value="trend">Trend</TabsTrigger>
             <TabsTrigger value="history">Migration History{history.length > 0 ? ` (${history.length})` : ''}</TabsTrigger>
-            {meter.status === 'active' && (
+            {(meter.status === 'active' || meter.status === 'under_investigation') && (
               <TabsTrigger value="swap">Swap Meter</TabsTrigger>
             )}
           </TabsList>
@@ -1080,7 +1104,8 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
   const [billingArr, setBillingArr]     = useState('billed_to_occupant')
   const [mgmtFee, setMgmtFee]           = useState('')
   const [ratePerUnit, setRatePerUnit]   = useState('')
-  const [status, setStatus]             = useState('active')
+  const [status, setStatus]                       = useState('active')
+  const [investigationReason, setInvestigationReason] = useState('')
   const [lastReading, setLastReading]   = useState('')
   const [lastReadingDate, setLastReadingDate] = useState('')
   const [notes, setNotes]               = useState('')
@@ -1096,6 +1121,7 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
       setMgmtFee(meter.management_fee_pct?.toString() ?? '')
       setRatePerUnit(meter.rate_per_unit?.toString() ?? '')
       setStatus(meter.status)
+      setInvestigationReason(meter.investigation_reason ?? '')
       setLastReading(meter.last_reading?.toString() ?? '')
       setLastReadingDate(meter.last_reading_date ?? '')
       setNotes(meter.notes ?? '')
@@ -1118,6 +1144,7 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
         managementFeePct: mgmtFee ? Number(mgmtFee) : null,
         ratePerUnit: ratePerUnit ? Number(ratePerUnit) : null,
         status,
+        investigationReason: status === 'under_investigation' ? (investigationReason || null) : null,
         lastReading: lastReading !== '' ? Number(lastReading) : null,
         lastReadingDate: lastReadingDate || null,
         notes: notes || null,
@@ -1158,8 +1185,20 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
             <select className={INPUT} value={status} onChange={e => setStatus(e.target.value)}>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
+              <option value="under_investigation">Under Investigation</option>
             </select>
           </div>
+          {status === 'under_investigation' && (
+            <div className="col-span-2">
+              <label className={LABEL}>Investigation Reason *</label>
+              <input
+                className={INPUT}
+                value={investigationReason}
+                onChange={e => setInvestigationReason(e.target.value)}
+                placeholder="e.g. Suspected bypass — consumption dropped 80% without explanation"
+              />
+            </div>
+          )}
           <div className="col-span-2">
             <label className={LABEL}>Billing Arrangement</label>
             <select className={INPUT} value={billingArr} onChange={e => setBillingArr(e.target.value)}>
@@ -3580,7 +3619,7 @@ function DisconnectionTab({
 
   const candidates = useMemo((): DisconnectionCandidate[] => {
     const postpaidMeters = meters.filter(m =>
-      m.meter_type === 'postpaid' && m.status === 'active' && m.unit_id
+      m.meter_type === 'postpaid' && (m.status === 'active' || m.status === 'under_investigation') && m.unit_id
     )
 
     return postpaidMeters.map(meter => {

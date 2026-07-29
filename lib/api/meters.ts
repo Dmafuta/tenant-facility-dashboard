@@ -18,6 +18,8 @@ export interface MeterData {
   meter_role: string | null
   rate_per_unit: number | null
   notes: string | null
+  investigation_reason: string | null
+  flagged_at: string | null
   created_at: string | null
 }
 
