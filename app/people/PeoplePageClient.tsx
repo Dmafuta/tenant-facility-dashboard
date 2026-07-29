@@ -1510,6 +1510,7 @@ function EditPersonModal({ person, onClose, onSaved }: {
     phone:       person.phone ?? '',
     national_id: person.national_id ?? '',
     notes:       '',
+    status:      person.status,
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -1536,7 +1537,10 @@ function EditPersonModal({ person, onClose, onSaved }: {
         // Only include phone if not verified — verified phone is immutable
         ...(person.phone_verified_at ? {} : { phone: form.phone || null }),
       }
-      const data = await apiUpdatePerson(person.id, payload)
+      let data = await apiUpdatePerson(person.id, payload)
+      if (form.status !== person.status) {
+        data = await apiUpdatePersonStatus(person.id, form.status)
+      }
       onSaved(apiPersonToPerson(data))
       onClose()
     } catch (e) {
@@ -1591,6 +1595,22 @@ function EditPersonModal({ person, onClose, onSaved }: {
         <FormField label="Notes">
           <textarea value={form.notes} onChange={field('notes')} rows={2} className={INPUT_CLS + ' resize-none'} placeholder="Optional notes…" />
         </FormField>
+
+        <FormSection title="Account Status">
+          <FormField label="Status">
+            <select
+              value={form.status}
+              onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+              className={INPUT_CLS}
+            >
+              <option value="pending_verification">Pending Verification</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="suspended">Suspended</option>
+              <option value="former">Former Tenant</option>
+            </select>
+          </FormField>
+        </FormSection>
 
         {error && <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>}
       </div>
