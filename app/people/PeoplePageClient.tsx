@@ -2001,6 +2001,17 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
         </div>
       </div>
 
+      {/* Former tenant banner */}
+      {isFormerTenant && (
+        <div className="mx-0 mt-3 flex items-start gap-3 rounded-lg border border-surface-border dark:border-dark-border bg-surface-muted dark:bg-dark-card px-4 py-3 text-sm">
+          <span className="mt-0.5 shrink-0 text-base">🏠</span>
+          <div>
+            <p className="font-semibold text-text">Former Tenant</p>
+            <p className="text-xs text-text-muted mt-0.5">This person has vacated their unit. Their record is kept for billing history and reference. Unit assignments, move-out actions, and welcome emails are disabled.</p>
+          </div>
+        </div>
+      )}
+
       {/* OTP Reveal modal */}
       <OtpRevealModal
         open={!!revealTarget}
