@@ -20,6 +20,10 @@ export interface MeterData {
   notes: string | null
   investigation_reason: string | null
   flagged_at: string | null
+  flagged_by: string | null
+  investigation_resolved_at: string | null
+  investigation_resolved_by: string | null
+  investigation_resolved_reason: string | null
   created_at: string | null
 }
 
@@ -278,6 +282,7 @@ export async function getMetersPaged(params: {
   meterRole?: string
   deployed?: boolean
   inventory?: boolean
+  status?: string
   page?: number
   size?: number
   sortBy?: string
@@ -288,6 +293,7 @@ export async function getMetersPaged(params: {
   if (params.utilityType) qs.set('utilityType', params.utilityType)
   if (params.meterType)   qs.set('meterType',   params.meterType)
   if (params.meterRole)   qs.set('meterRole',   params.meterRole)
+  if (params.status)      qs.set('status',      params.status)
   if (params.deployed  != null) qs.set('deployed',  String(params.deployed))
   if (params.inventory != null) qs.set('inventory', String(params.inventory))
   qs.set('page',    String(params.page    ?? 0))

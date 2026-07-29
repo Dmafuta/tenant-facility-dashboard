@@ -633,11 +633,18 @@ function MeterDetailDrawer({ meter, open, onClose, onMeterUpdated }: {
               {meter.investigation_reason && (
                 <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">{meter.investigation_reason}</p>
               )}
-              {meter.flagged_at && (
-                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-500">
-                  Flagged {new Date(meter.flagged_at).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </p>
-              )}
+              {meter.flagged_at && (() => {
+                const flagDate = new Date(meter.flagged_at)
+                const ageDays = Math.floor((Date.now() - flagDate.getTime()) / 86400000)
+                return (
+                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-500">
+                    Flagged {flagDate.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {meter.flagged_by ? ` by ${meter.flagged_by}` : ''}
+                    {ageDays > 0 ? ` · ${ageDays} day${ageDays !== 1 ? 's' : ''} ago` : ' · today'}
+                    {ageDays >= 14 && <span className="ml-1 font-semibold text-amber-700 dark:text-amber-400">(review overdue)</span>}
+                  </p>
+                )
+              })()}
               <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400 font-medium">Billing is paused — readings are still collected for evidence.</p>
             </div>
           </div>
@@ -1106,6 +1113,7 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
   const [ratePerUnit, setRatePerUnit]   = useState('')
   const [status, setStatus]                       = useState('active')
   const [investigationReason, setInvestigationReason] = useState('')
+  const [resolveReason, setResolveReason]         = useState('')
   const [lastReading, setLastReading]   = useState('')
   const [lastReadingDate, setLastReadingDate] = useState('')
   const [notes, setNotes]               = useState('')
@@ -1122,6 +1130,7 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
       setRatePerUnit(meter.rate_per_unit?.toString() ?? '')
       setStatus(meter.status)
       setInvestigationReason(meter.investigation_reason ?? '')
+      setResolveReason('')
       setLastReading(meter.last_reading?.toString() ?? '')
       setLastReadingDate(meter.last_reading_date ?? '')
       setNotes(meter.notes ?? '')
@@ -1144,7 +1153,8 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
         managementFeePct: mgmtFee ? Number(mgmtFee) : null,
         ratePerUnit: ratePerUnit ? Number(ratePerUnit) : null,
         status,
-        investigationReason: status === 'under_investigation' ? (investigationReason || null) : null,
+        investigationReason: status === 'under_investigation' ? (investigationReason || null) : undefined,
+        resolveReason: (meter.status === 'under_investigation' && status !== 'under_investigation') ? (resolveReason || null) : undefined,
         lastReading: lastReading !== '' ? Number(lastReading) : null,
         lastReadingDate: lastReadingDate || null,
         notes: notes || null,
@@ -1198,6 +1208,22 @@ function EditMeterModal({ meter, open, onClose, onSaved }: {
                 placeholder="e.g. Suspected bypass — consumption dropped 80% without explanation"
               />
             </div>
+          )}
+          {meter.status === 'under_investigation' && status !== 'under_investigation' && (
+            <>
+              <div className="col-span-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                <strong>Billing gap notice:</strong> Readings taken during the investigation period were not billed. Review these in the Readings tab and create manual charges if consumption was legitimate.
+              </div>
+              <div className="col-span-2">
+                <label className={LABEL}>Resolution Notes</label>
+                <input
+                  className={INPUT}
+                  value={resolveReason}
+                  onChange={e => setResolveReason(e.target.value)}
+                  placeholder="e.g. False alarm — faulty sensor replaced; or Confirmed tamper — meter swapped and tenant notified"
+                />
+              </div>
+            </>
           )}
           <div className="col-span-2">
             <label className={LABEL}>Billing Arrangement</label>
@@ -1415,6 +1441,7 @@ function MetersTab({
   const [utility, setUtility] = useState('all')
   const [type, setType]       = useState('all')
   const [role, setRole]       = useState('all')
+  const [meterStatus, setMeterStatus] = useState('all')
   const [page, setPage]       = useState(1)
   const [meters, setMeters]   = useState<MeterData[]>([])
   const [totalPages, setTotalPages] = useState(1)
@@ -1440,6 +1467,7 @@ function MetersTab({
       utilityType: utility !== 'all' ? utility : undefined,
       meterType:   type    !== 'all' ? type    : undefined,
       meterRole:   role    !== 'all' ? role    : undefined,
+      status:      meterStatus !== 'all' ? meterStatus : undefined,
       deployed:    true,
       page:        page - 1,
       size:        PAGE_SIZE,
@@ -1447,7 +1475,7 @@ function MetersTab({
       if (!cancelled) { setMeters(r.content); setTotalPages(r.totalPages); setTotalElements(r.totalElements) }
     }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [debouncedSearch, utility, type, role, page, refreshKey, externalRefreshKey])
+  }, [debouncedSearch, utility, type, role, meterStatus, page, refreshKey, externalRefreshKey])
 
   function refresh() { setRefreshKey(k => k + 1) }
 
@@ -1473,6 +1501,18 @@ function MetersTab({
         <Select value={utility} onChange={v => { setUtility(v); setPage(1) }} options={UTILITY_FILTERS} className="w-44" />
         <Select value={type}    onChange={v => { setType(v);    setPage(1) }} options={METER_TYPE_FILTERS} className="w-36" />
         <Select value={role}    onChange={v => { setRole(v);    setPage(1) }} options={ROLE_FILTERS} className="w-44" />
+        <Select
+          value={meterStatus}
+          onChange={v => { setMeterStatus(v); setPage(1) }}
+          options={[
+            { value: 'all',                label: 'All Statuses' },
+            { value: 'active',             label: 'Active' },
+            { value: 'under_investigation', label: '⚠ Under Investigation' },
+            { value: 'inactive',           label: 'Inactive' },
+            { value: 'replaced',           label: 'Replaced' },
+          ]}
+          className="w-48"
+        />
         <div className="ml-auto flex items-center gap-2">
           {!loading && <span className="text-xs text-text-muted">{totalElements.toLocaleString()} meters</span>}
           <CanDo action="write" resource={{ type: 'unit' }}>
@@ -4813,7 +4853,9 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
                     last_reading: r.lastReading, last_reading_date: r.lastReadingDate,
                     current_billing_person: null, meter_role: 'consumer',
                     rate_per_unit: null, notes: null,
-                    investigation_reason: null, flagged_at: null, created_at: null,
+                    investigation_reason: null, flagged_at: null, flagged_by: null,
+                    investigation_resolved_at: null, investigation_resolved_by: null, investigation_resolved_reason: null,
+                    created_at: null,
                   }
                   return (
                     <tr
