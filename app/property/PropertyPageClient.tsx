@@ -20,6 +20,7 @@ import type { ChargeData } from '@/lib/api/charges'
 import { deleteUnit, patchUnitStatus, patchUnitType } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
 import { addUnitToPerson, removeUnitFromPerson } from '@/lib/api/people'
+import { ApiError } from '@/lib/api/fetch'
 
 const USE_BADGE: Record<UnitUseType, { variant: 'primary'|'purple'|'blue'|'orange'|'default'; label: string }> = {
   residential: { variant: 'primary',  label: 'Residential' },
@@ -518,8 +519,9 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
   const [assignShare,     setAssignShare]     = useState('')
   const [assignPrimary,   setAssignPrimary]   = useState(false)
   const [assignResident,  setAssignResident]  = useState(false)
-  const [assigning,       setAssigning]       = useState(false)
-  const [assignError,     setAssignError]     = useState('')
+  const [assigning,         setAssigning]         = useState(false)
+  const [assignError,       setAssignError]       = useState('')
+  const [occupancyWarning,  setOccupancyWarning]  = useState<string | null>(null)
 
   // ── Quick status change ──────────────────────────────────────────────────────
   const [pendingOccupied,   setPendingOccupied]   = useState(false)
@@ -668,16 +670,22 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
     ? availableOwners.filter(p => `${p.first_name} ${p.last_name}`.toLowerCase().includes(ownerSearch.toLowerCase()))
     : availableOwners
 
-  async function handleAssignOwner() {
+  async function handleAssignOwner(force = false) {
     if (!assignee || !selected) return
     const share = Number(assignShare)
     if (!share || share <= 0 || share > remainingShare) return
     setAssigning(true)
     setAssignError('')
+    setOccupancyWarning(null)
     try {
-      await addUnitToPerson(assignee.id, selected.id, assignResident || assignee.type === 'tenant')
-    } catch {
-      // Non-fatal
+      await addUnitToPerson(assignee.id, selected.id, assignResident || assignee.type === 'tenant', force)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setOccupancyWarning(e.message)
+        setAssigning(false)
+        return
+      }
+      // Other errors: non-fatal, continue
     }
     // If this owner lives here, update the unit status to occupied in the DB
     if (assignResident) {
@@ -712,6 +720,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
     setAssignPrimary(false)
     setAssignResident(false)
     setAssigning(false)
+    setOccupancyWarning(null)
   }
 
   async function handleQuickStatusChange(newStatus: string, occupantName?: string) {
@@ -1341,16 +1350,37 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
                         </div>
                       )}
 
+                      {occupancyWarning && (
+                        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5 space-y-2">
+                          <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">⚠ {occupancyWarning}</p>
+                          <p className="text-xs text-amber-700 dark:text-amber-400">Do you want to replace the current occupant?</p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setOccupancyWarning(null)}
+                              className="flex-1 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                            >
+                              No, cancel
+                            </button>
+                            <button
+                              onClick={() => handleAssignOwner(true)}
+                              className="flex-1 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors"
+                            >
+                              Yes, replace
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2">
                         <button
-                          onClick={() => { setShowAssignOwner(false); setOwnerSearch(''); setAssignee(null); setAssignShare(''); setAssignPrimary(false) }}
+                          onClick={() => { setShowAssignOwner(false); setOwnerSearch(''); setAssignee(null); setAssignShare(''); setAssignPrimary(false); setOccupancyWarning(null) }}
                           className="flex-1 py-2 rounded-lg border border-surface-border dark:border-dark-border text-sm text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
                         >
                           Cancel
                         </button>
                         <button
                           disabled={assigning || !assignee || !assignShare || Number(assignShare) <= 0 || Number(assignShare) > remainingShare}
-                          onClick={handleAssignOwner}
+                          onClick={() => handleAssignOwner()}
                           className="flex-1 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
                         >
                           {assigning && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}

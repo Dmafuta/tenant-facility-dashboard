@@ -1,5 +1,12 @@
 const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/backend'
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function tryRefresh(): Promise<boolean> {
   try {
     const res = await fetch(`${API}/auth/refresh`, { method: 'POST' })
@@ -48,7 +55,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const json = await parseJson(res)
 
   if (!res.ok) {
-    throw new Error(json.message ?? `Request failed (${res.status})`)
+    throw new ApiError(json.message ?? `Request failed (${res.status})`, res.status)
   }
 
   return json.data as T

@@ -72,11 +72,12 @@ export async function createPerson(payload: Record<string, unknown>): Promise<Pe
   return apiFetch<PersonData>('/people', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export async function addUnitToPerson(personId: string, unitId: string, resident = false): Promise<PersonData> {
-  const url = resident
-    ? `/people/${personId}/units/${unitId}?resident=true`
-    : `/people/${personId}/units/${unitId}`
-  return apiFetch<PersonData>(url, { method: 'POST' })
+export async function addUnitToPerson(personId: string, unitId: string, resident = false, force = false): Promise<PersonData> {
+  const params = new URLSearchParams()
+  if (resident) params.set('resident', 'true')
+  if (force)    params.set('force', 'true')
+  const qs = params.toString()
+  return apiFetch<PersonData>(`/people/${personId}/units/${unitId}${qs ? '?' + qs : ''}`, { method: 'POST' })
 }
 
 export async function removeUnitFromPerson(personId: string, unitId: string): Promise<PersonData> {
