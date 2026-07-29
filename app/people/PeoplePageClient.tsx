@@ -1600,7 +1600,7 @@ function EditPersonModal({ person, onClose, onSaved }: {
           <FormField label="Status">
             <select
               value={form.status}
-              onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+              onChange={e => setForm(f => ({ ...f, status: e.target.value as typeof person.status }))}
               className={INPUT_CLS}
             >
               <option value="pending_verification">Pending Verification</option>
