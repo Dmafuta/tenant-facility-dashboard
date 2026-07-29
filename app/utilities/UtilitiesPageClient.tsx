@@ -4812,7 +4812,8 @@ function ReadingRunTab({ onRefreshMeters }: { onRefreshMeters: () => void }) {
                     billing_arrangement: 'billed_to_occupant', management_fee_pct: null,
                     last_reading: r.lastReading, last_reading_date: r.lastReadingDate,
                     current_billing_person: null, meter_role: 'consumer',
-                    rate_per_unit: null, notes: null, created_at: null,
+                    rate_per_unit: null, notes: null,
+                    investigation_reason: null, flagged_at: null, created_at: null,
                   }
                   return (
                     <tr
