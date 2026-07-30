@@ -43,7 +43,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
         const retry = await doFetch()
         if (retry.ok) {
           const json = await parseJson(retry)
-          return json.data as T
+          if (json.success !== undefined || json.data !== undefined) {
+            return json.data as T
+          }
         }
         // Retry still failed — fall through to redirect
       }
@@ -56,6 +58,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!res.ok) {
     throw new ApiError(json.message ?? `Request failed (${res.status})`, res.status)
+  }
+
+  // If the response is 200 OK but doesn't look like our API envelope
+  // (e.g. middleware redirected to /login and fetch followed to an HTML page),
+  // throw so callers' .catch() handlers fire instead of receiving undefined.
+  if (json.success === undefined && json.data === undefined) {
+    throw new ApiError('Unexpected response — possible auth redirect', res.status)
   }
 
   return json.data as T
