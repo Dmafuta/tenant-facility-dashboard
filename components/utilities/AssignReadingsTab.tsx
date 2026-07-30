@@ -115,7 +115,7 @@ function BlockRow({ block, period, readers, onRefresh }: BlockRowProps) {
           <option value="">
             {block.readers.length > 1 ? 'Multiple readers…' : block.total_meters === 0 ? 'No meters' : 'Assign reader…'}
           </option>
-          {readers.map(r => (
+          {(readers ?? []).map(r => (
             <option key={r.id} value={r.id}>{r.full_name}</option>
           ))}
         </select>
@@ -251,7 +251,7 @@ export function AssignReadingsTab() {
 
   useEffect(() => {
     getReaders()
-      .then(setReaders)
+      .then(data => { if (Array.isArray(data)) setReaders(data) })
       .catch((err: unknown) => {
         setError(`Readers failed: ${err instanceof Error ? err.message : String(err)}`)
       })
