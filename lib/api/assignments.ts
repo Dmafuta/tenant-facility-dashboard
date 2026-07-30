@@ -26,8 +26,7 @@ export interface AssignmentUser {
   id: string
   full_name: string
   email: string
-  role_name: string
-  status: string
+  role: string
 }
 
 export function getAssignmentSummary(period: string): Promise<PhaseSummary[]> {
@@ -53,6 +52,6 @@ export function clearBlock(period: string, block: string): Promise<void> {
   )
 }
 
-export function getUsers(): Promise<AssignmentUser[]> {
-  return apiFetch('/settings/users')
+export function getReaders(): Promise<AssignmentUser[]> {
+  return apiFetch('/reading-assignments/readers')
 }

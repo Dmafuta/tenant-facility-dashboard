@@ -4,12 +4,9 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import {
-  getAssignmentSummary, assignBlock, clearBlock, getUsers,
+  getAssignmentSummary, assignBlock, clearBlock, getReaders,
   type PhaseSummary, type BlockSummary, type AssignmentUser,
 } from '@/lib/api/assignments'
-
-// Reader roles that appear in the dropdown
-const READER_ROLES = ['meter reader', 'bulk meter reader', 'field technician', 'meter supervisor', 'supervisor']
 
 function progressBar(assigned: number, total: number) {
   const pct = total === 0 ? 0 : Math.round((assigned / total) * 100)
@@ -253,10 +250,8 @@ export function AssignReadingsTab() {
   }, [period])
 
   useEffect(() => {
-    getUsers()
-      .then(users => setReaders(users.filter(u =>
-        READER_ROLES.includes((u.role_name ?? '').toLowerCase()) && u.status === 'active'
-      )))
+    getReaders()
+      .then(setReaders)
       .catch(() => {/* non-fatal */})
   }, [])
 
