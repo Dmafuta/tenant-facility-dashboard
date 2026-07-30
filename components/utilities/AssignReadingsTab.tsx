@@ -252,7 +252,9 @@ export function AssignReadingsTab() {
   useEffect(() => {
     getReaders()
       .then(setReaders)
-      .catch(() => {/* non-fatal */})
+      .catch((err: unknown) => {
+        setError(`Readers failed: ${err instanceof Error ? err.message : String(err)}`)
+      })
   }, [])
 
   useEffect(() => { loadSummary() }, [loadSummary])
