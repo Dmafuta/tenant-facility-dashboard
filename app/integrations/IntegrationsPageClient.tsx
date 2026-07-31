@@ -340,8 +340,8 @@ function AfrinetCard({ initial, onSave }: { initial: IntegrationSettings['afrine
           <Field label="Partner ID" value={form.partnerId} onChange={f('partnerId')} placeholder="Your partner ID" />
           <Field label="Shortcode / Sender ID" value={form.shortcode} onChange={f('shortcode')} placeholder="e.g. FacilityOS" />
         </div>
-        <Field label="Send Endpoint" value={form.baseUrl} onChange={f('baseUrl')} placeholder="https://sms.imarabiz.com/api/services/sendsms/"
-          hint="Full endpoint URL — leave blank to use the default" />
+        <Field label="API Base URL" value={form.baseUrl} onChange={f('baseUrl')} placeholder="https://bulksms.afrinettelecom.co.ke/api/services/"
+          hint="Base URL (trailing slash required) — sendotp and sendsms/ are derived automatically" />
         <div className="flex justify-end pt-2">
           <SaveBtn loading={saving} saved={saved} />
         </div>
