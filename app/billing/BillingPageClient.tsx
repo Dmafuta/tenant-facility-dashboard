@@ -732,9 +732,9 @@ export function BillingPageClient() {
     return () => { cancelled = true }
   }, [activeTab, statusFilter, periodFilter, debouncedSearch, page, sortCol, sortDir, refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch unallocated credits when an issued/partial invoice is selected
+  // Fetch unallocated credits when an issued/partial/paid invoice is selected
   useEffect(() => {
-    if (!selected || !['issued', 'partial'].includes(selected.status)) {
+    if (!selected || !['issued', 'partial', 'paid'].includes(selected.status)) {
       setAvailableCredits([])
       return
     }
@@ -2247,13 +2247,13 @@ export function BillingPageClient() {
               )}
 
               {/* Available credits */}
-              {['issued', 'partial'].includes(selected.status) && (
+              {['issued', 'partial', 'paid'].includes(selected.status) && availableCredits.length > 0 && (
                 <div className="border-t border-surface-border dark:border-dark-border pt-3 space-y-2">
-                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">Available Credits</p>
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wide">
+                    {selected.status === 'paid' ? 'Pending Credits' : 'Available Credits'}
+                  </p>
                   {creditsLoading ? (
                     <p className="text-xs text-text-muted">Loading…</p>
-                  ) : availableCredits.length === 0 ? (
-                    <p className="text-xs text-text-muted">No unallocated credits for this unit.</p>
                   ) : (
                     <div className="space-y-1">
                       {availableCredits.map(cr => (
@@ -2263,27 +2263,32 @@ export function BillingPageClient() {
                             <span className="text-text-muted ml-2">{cr.notes ?? cr.payment_method}</span>
                             {cr.payment_date && <span className="text-text-muted ml-2">{fmtDate(cr.payment_date)}</span>}
                           </div>
-                          <Button
-                            size="sm" variant="ghost"
-                            disabled={applyingCredit === cr.id}
-                            onClick={async () => {
-                              setApplyingCredit(cr.id)
-                              try {
-                                const updated = await applyCredit(selected.id, cr.id)
-                                setInvoices(prev => prev.map(i => i.id === updated.id ? updated : i))
-                                setSelected(updated)
-                                setAvailableCredits(prev => prev.filter(c => c.id !== cr.id))
-                              } catch (e: unknown) {
-                                setError(e instanceof Error ? e.message : 'Failed to apply credit')
-                              } finally {
-                                setApplyingCredit(null)
-                              }
-                            }}
-                          >
-                            {applyingCredit === cr.id ? 'Applying…' : 'Apply'}
-                          </Button>
+                          {selected.status !== 'paid' && (
+                            <Button
+                              size="sm" variant="ghost"
+                              disabled={applyingCredit === cr.id}
+                              onClick={async () => {
+                                setApplyingCredit(cr.id)
+                                try {
+                                  const updated = await applyCredit(selected.id, cr.id)
+                                  setInvoices(prev => prev.map(i => i.id === updated.id ? updated : i))
+                                  setSelected(updated)
+                                  setAvailableCredits(prev => prev.filter(c => c.id !== cr.id))
+                                } catch (e: unknown) {
+                                  setError(e instanceof Error ? e.message : 'Failed to apply credit')
+                                } finally {
+                                  setApplyingCredit(null)
+                                }
+                              }}
+                            >
+                              {applyingCredit === cr.id ? 'Applying…' : 'Apply'}
+                            </Button>
+                          )}
                         </div>
                       ))}
+                      {selected.status === 'paid' && (
+                        <p className="text-xs text-text-muted italic">Will carry forward to next invoice.</p>
+                      )}
                     </div>
                   )}
                 </div>
