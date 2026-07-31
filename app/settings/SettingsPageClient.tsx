@@ -1196,7 +1196,7 @@ export function SettingsPageClient() {
           {active === 'billing'       && <BillingSection />}
           {active === 'notifications' && <NotificationsSection />}
           {active === 'documents'     && <DocumentsSection />}
-          {active === 'integrations'  && <IntegrationsSection />}
+          {active === 'integrations'  && <IntegrationsPageClient />}
           {active === 'data'          && <DataSection />}
           {active === 'security'      && <SecuritySection />}
           {active === 'danger'        && <DangerSection />}
