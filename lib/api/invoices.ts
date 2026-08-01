@@ -541,6 +541,50 @@ export async function reassignInvoice(id: string, payload: ReassignInvoicePayloa
   })
 }
 
+// ── Arrears ───────────────────────────────────────────────────────────────────
+
+export interface ArrearsBucket {
+  label: '0-30' | '31-60' | '61-90' | '90+'
+  count: number
+  amount: number
+}
+
+export interface ArrearsInvoice {
+  id: string
+  statement_no: string
+  unit_label: string
+  person_name: string | null
+  phone: string | null
+  balance: number
+  period: string
+  issue_date: string
+  days_overdue: number
+  bucket: '0-30' | '31-60' | '61-90' | '90+'
+  has_phone: boolean
+}
+
+export interface ArrearsData {
+  total_count: number
+  total_balance: number
+  with_phone: number
+  buckets: ArrearsBucket[]
+  invoices: ArrearsInvoice[]
+}
+
+export async function getArrears(category = 'WS'): Promise<ArrearsData> {
+  return apiFetch<ArrearsData>(`/invoices/arrears?category=${category}`)
+}
+
+export async function notifyArrears(
+  invoiceIds: string[],
+  messageTemplate?: string
+): Promise<{ queued: number; skipped_no_phone: number }> {
+  return apiFetch<{ queued: number; skipped_no_phone: number }>('/invoices/arrears/notify', {
+    method: 'POST',
+    body: JSON.stringify({ invoice_ids: invoiceIds, message_template: messageTemplate }),
+  })
+}
+
 export async function updateInvoiceCategory(
   id: string,
   payload: Partial<Pick<InvoiceCategory, 'name' | 'tagline' | 'bank_name' | 'bank_account' | 'bank_branch' | 'active'>>

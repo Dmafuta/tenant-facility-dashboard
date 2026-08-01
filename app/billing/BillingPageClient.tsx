@@ -31,6 +31,7 @@ import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
 import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
 import { PrepaidTab } from './PrepaidTab'
+import { ArrearsTab } from './ArrearsTab'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -483,7 +484,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
 
 export function BillingPageClient() {
   const { subject } = useAbac()
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'>('WS')
   const [invoices, setInvoices]       = useState<InvoiceData[]>([])
   const [categories, setCategories]   = useState<InvoiceCategory[]>([])
   const [loading, setLoading]         = useState(true)
@@ -705,7 +706,7 @@ export function BillingPageClient() {
 
   // Main paginated fetch — reruns whenever any filter/sort/page/refresh changes
   useEffect(() => {
-    if (!['WS', 'SC', 'OT', 'OB'].includes(activeTab)) return
+    if (!['WS', 'SC', 'OT', 'OB'].includes(activeTab as string)) return
     let cancelled = false
     setLoading(true)
     getInvoicesPaged({
@@ -1186,7 +1187,7 @@ export function BillingPageClient() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid'; label: string }[] = [
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'; label: string }[] = [
     { code: 'WS',          label: 'Water & Sewerage' },
     { code: 'SC',          label: 'Service Charge' },
     { code: 'OT',          label: 'Other Charges' },
@@ -1194,6 +1195,7 @@ export function BillingPageClient() {
     { code: 'Prepaid',     label: 'Prepaid Loads' },
     { code: 'Plans',       label: 'Payment Plans' },
     { code: 'Adjustments', label: 'Adjustments' },
+    { code: 'Arrears',     label: 'Arrears' },
     { code: 'Reports',     label: 'Reports' },
   ]
 
@@ -1243,8 +1245,13 @@ export function BillingPageClient() {
         <PrepaidTab />
       )}
 
+      {/* Arrears tab */}
+      {activeTab === 'Arrears' && (
+        <ArrearsTab category="WS" />
+      )}
+
       {/* Stats row */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && activeTab !== 'Prepaid' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && activeTab !== 'Prepaid' && activeTab !== 'Arrears' && (
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted mb-1">Outstanding</p>
