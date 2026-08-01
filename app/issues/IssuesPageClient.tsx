@@ -8,11 +8,23 @@ import { getIssues, createIssue, updateIssue, updateIssueStatus, deleteIssue, ty
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const CATEGORIES = ['maintenance', 'noise', 'security', 'cleanliness', 'utility', 'neighbor', 'common_area', 'other'] as const
+const CATEGORIES = [
+  'billing_dispute', 'payment', 'complaint',
+  'maintenance', 'noise', 'security', 'cleanliness',
+  'utility', 'neighbor', 'common_area', 'other',
+] as const
+
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 const STATUSES   = ['open', 'acknowledged', 'in_progress', 'on_hold', 'resolved', 'closed'] as const
 
+const CATEGORY_LABEL: Record<string, string> = {
+  billing_dispute: 'Billing Dispute', payment: 'Payment Issue', complaint: 'General Complaint',
+  maintenance: 'Maintenance', noise: 'Noise', security: 'Security', cleanliness: 'Cleanliness',
+  utility: 'Utility', neighbor: 'Neighbour', common_area: 'Common Area', other: 'Other',
+}
+
 const CATEGORY_ICON: Record<string, string> = {
+  billing_dispute: '💳', payment: '💰', complaint: '📢',
   maintenance: '🔧', noise: '🔊', security: '🔐', cleanliness: '🧹',
   utility: '💧', neighbor: '👥', common_area: '🏢', other: '⚠️',
 }
@@ -60,32 +72,35 @@ function timeAgo(iso: string | null): string {
 
 // ── Input styles ───────────────────────────────────────────────────────────────
 
-const INPUT = 'w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-xl bg-white dark:bg-dark-surface text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500'
+const INPUT  = 'w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-xl bg-white dark:bg-dark-surface text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500'
 const SELECT = INPUT + ' cursor-pointer'
 const LABEL  = 'block text-xs font-medium text-text-muted mb-1'
 
-// ── Issue Modal ────────────────────────────────────────────────────────────────
+// ── Occurrence Modal ───────────────────────────────────────────────────────────
 
 type IForm = {
-  title: string; description: string; category: string; priority: string
-  status: string; unit_label: string; reported_by_name: string; assigned_to: string; resolution_notes: string
+  title: string; description: string; category: string; priority: string; status: string
+  unit_label: string; reported_by_name: string; caller_phone: string
+  linked_reference: string; assigned_to: string; resolution_notes: string
 }
 
-function IssueModal({ item, onClose, onSaved }: {
+function OccurrenceModal({ item, onClose, onSaved }: {
   item: IssueData | null
   onClose: () => void
   onSaved: (v: IssueData) => void
 }) {
   const [form, setForm] = useState<IForm>({
-    title:              item?.title              ?? '',
-    description:        item?.description        ?? '',
-    category:           item?.category           ?? 'other',
-    priority:           item?.priority           ?? 'medium',
-    status:             item?.status             ?? 'open',
-    unit_label:         item?.unit_label         ?? '',
-    reported_by_name:   item?.reported_by_name   ?? '',
-    assigned_to:        item?.assigned_to        ?? '',
-    resolution_notes:   item?.resolution_notes   ?? '',
+    title:            item?.title            ?? '',
+    description:      item?.description      ?? '',
+    category:         item?.category         ?? 'complaint',
+    priority:         item?.priority         ?? 'medium',
+    status:           item?.status           ?? 'open',
+    unit_label:       item?.unit_label       ?? '',
+    reported_by_name: item?.reported_by_name ?? '',
+    caller_phone:     item?.caller_phone     ?? '',
+    linked_reference: item?.linked_reference ?? '',
+    assigned_to:      item?.assigned_to      ?? '',
+    resolution_notes: item?.resolution_notes ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -95,19 +110,21 @@ function IssueModal({ item, onClose, onSaved }: {
       setForm(p => ({ ...p, [k]: e.target.value }))
 
   async function handleSave() {
-    if (!form.title.trim()) { setError('Title is required.'); return }
+    if (!form.title.trim()) { setError('Summary is required.'); return }
     setSaving(true); setError('')
     try {
       const payload = {
         title:            form.title.trim(),
-        description:      form.description   || null,
+        description:      form.description      || null,
         category:         form.category,
         priority:         form.priority,
         status:           form.status,
-        unit_label:       form.unit_label    || null,
-        reported_by_name: form.reported_by_name || null,
-        assigned_to:      form.assigned_to   || null,
-        resolution_notes: form.resolution_notes || null,
+        unit_label:       form.unit_label        || null,
+        reported_by_name: form.reported_by_name  || null,
+        caller_phone:     form.caller_phone       || null,
+        linked_reference: form.linked_reference  || null,
+        assigned_to:      form.assigned_to        || null,
+        resolution_notes: form.resolution_notes   || null,
       }
       const result = item ? await updateIssue(item.id, payload) : await createIssue(payload)
       onSaved(result); onClose()
@@ -115,13 +132,17 @@ function IssueModal({ item, onClose, onSaved }: {
     finally { setSaving(false) }
   }
 
+  const isNew = !item
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
           <span className="text-xl">{CATEGORY_ICON[form.category] ?? '⚠️'}</span>
-          <h2 className="flex-1 text-base font-semibold text-text">{item ? 'Edit Issue' : 'Report Issue'}</h2>
+          <h2 className="flex-1 text-base font-semibold text-text">
+            {isNew ? 'Log Occurrence' : 'Edit Occurrence'}
+          </h2>
           <button onClick={onClose} className="p-1 text-text-muted hover:text-text">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -131,16 +152,18 @@ function IssueModal({ item, onClose, onSaved }: {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+          {/* Summary */}
           <div>
-            <label className={LABEL}>Title <span className="text-danger">*</span></label>
-            <input className={INPUT} value={form.title} onChange={f('title')} placeholder="Briefly describe the issue" />
+            <label className={LABEL}>Summary <span className="text-danger">*</span></label>
+            <input className={INPUT} value={form.title} onChange={f('title')} placeholder="Brief description of the complaint or issue" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={LABEL}>Category</label>
               <select className={SELECT} value={form.category} onChange={f('category')}>
-                {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_ICON[c]} {c.replace('_', ' ')}</option>)}
+                {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_ICON[c]} {CATEGORY_LABEL[c]}</option>)}
               </select>
             </div>
             <div>
@@ -151,39 +174,64 @@ function IssueModal({ item, onClose, onSaved }: {
             </div>
           </div>
 
+          {/* Unit */}
+          <div>
+            <label className={LABEL}>Unit (House Number)</label>
+            <input className={INPUT} value={form.unit_label} onChange={f('unit_label')} placeholder="e.g. A-101" />
+          </div>
+
+          {/* Caller details — manual entry */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={LABEL}>Status</label>
-              <select className={SELECT} value={form.status} onChange={f('status')}>
-                {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-              </select>
+              <label className={LABEL}>Caller Name</label>
+              <input className={INPUT} value={form.reported_by_name} onChange={f('reported_by_name')} placeholder="Name of person calling" />
             </div>
             <div>
-              <label className={LABEL}>Unit</label>
-              <input className={INPUT} value={form.unit_label} onChange={f('unit_label')} placeholder="e.g. A-101" />
+              <label className={LABEL}>Caller Phone</label>
+              <input className={INPUT} value={form.caller_phone} onChange={f('caller_phone')} placeholder="e.g. 0712 345 678" type="tel" />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={LABEL}>Reported By</label>
-              <input className={INPUT} value={form.reported_by_name} onChange={f('reported_by_name')} placeholder="Name" />
-            </div>
-            <div>
-              <label className={LABEL}>Assigned To</label>
-              <input className={INPUT} value={form.assigned_to} onChange={f('assigned_to')} placeholder="Person or team" />
-            </div>
-          </div>
-
+          {/* Linked reference */}
           <div>
-            <label className={LABEL}>Description</label>
-            <textarea className={INPUT + ' resize-none'} rows={3} value={form.description} onChange={f('description')} placeholder="Detailed description of the issue…" />
+            <label className={LABEL}>Linked Reference <span className="text-text-muted font-normal">(optional — invoice no., M-Pesa ref, etc.)</span></label>
+            <input className={INPUT} value={form.linked_reference} onChange={f('linked_reference')} placeholder="e.g. WS-2026-00123 or QA9XYZ12" />
           </div>
 
+          {/* Description */}
           <div>
-            <label className={LABEL}>Resolution Notes</label>
-            <textarea className={INPUT + ' resize-none'} rows={2} value={form.resolution_notes} onChange={f('resolution_notes')} placeholder="Notes on how this was resolved…" />
+            <label className={LABEL}>Details</label>
+            <textarea className={INPUT + ' resize-none'} rows={3} value={form.description} onChange={f('description')} placeholder="Full details of what was reported…" />
           </div>
+
+          {/* Assigned to + Status (edit mode only) */}
+          {!isNew && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={LABEL}>Assigned To</label>
+                <input className={INPUT} value={form.assigned_to} onChange={f('assigned_to')} placeholder="Person or team" />
+              </div>
+              <div>
+                <label className={LABEL}>Status</label>
+                <select className={SELECT} value={form.status} onChange={f('status')}>
+                  {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {!isNew && (
+            <div>
+              <label className={LABEL}>Resolution Notes</label>
+              <textarea className={INPUT + ' resize-none'} rows={2} value={form.resolution_notes} onChange={f('resolution_notes')} placeholder="Notes on how this was resolved…" />
+            </div>
+          )}
+
+          {isNew && (
+            <p className="text-xs text-text-muted bg-surface dark:bg-dark-hover border border-surface-border dark:border-dark-border rounded-xl px-4 py-3">
+              A reference number will be generated automatically and an SMS sent to the caller's phone.
+            </p>
+          )}
 
           {error && <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>}
         </div>
@@ -198,7 +246,7 @@ function IssueModal({ item, onClose, onSaved }: {
             disabled={saving}
             className="px-4 py-2 text-sm rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
-            {saving ? 'Saving…' : item ? 'Save Changes' : 'Report Issue'}
+            {saving ? 'Saving…' : isNew ? 'Log Occurrence' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -232,15 +280,13 @@ function StatusActions({ issue, onUpdated }: { issue: IssueData; onUpdated: (v: 
   return (
     <div className="space-y-2">
       {showNotes && (
-        <div className="space-y-2">
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Add resolution notes (optional)…"
-            className={INPUT + ' resize-none text-xs'}
-            rows={3}
-          />
-        </div>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="Add resolution notes (optional — will be included in SMS to caller)…"
+          className={INPUT + ' resize-none text-xs'}
+          rows={3}
+        />
       )}
       <div className="flex flex-wrap gap-2">
         {nextStatuses.map(s => (
@@ -272,31 +318,34 @@ function StatusActions({ issue, onUpdated }: { issue: IssueData; onUpdated: (v: 
   )
 }
 
-// ── Issue Detail ───────────────────────────────────────────────────────────────
+// ── Occurrence Detail ──────────────────────────────────────────────────────────
 
-function IssueDetail({ issue, onUpdated, onDeleted, onEdit }: {
+function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit }: {
   issue: IssueData
   onUpdated: (v: IssueData) => void
   onDeleted: (id: string) => void
   onEdit: () => void
 }) {
   async function handleDelete() {
-    if (!window.confirm(`Delete issue "${issue.title}"?`)) return
+    if (!window.confirm(`Delete occurrence ${issue.reference_no ?? issue.id}?`)) return
     try { await deleteIssue(issue.id); onDeleted(issue.id) }
     catch {}
   }
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-5">
-      {/* Title row */}
+      {/* Header row */}
       <div className="flex items-start gap-3">
         <span className="text-3xl flex-shrink-0 leading-none mt-0.5">{CATEGORY_ICON[issue.category] ?? '⚠️'}</span>
         <div className="flex-1 min-w-0">
+          {issue.reference_no && (
+            <p className="text-xs font-mono font-semibold text-primary-600 dark:text-primary-400 mb-0.5">{issue.reference_no}</p>
+          )}
           <h2 className="text-lg font-bold text-text leading-tight">{issue.title}</h2>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {statusBadge(issue.status)}
             {priorityBadge(issue.priority)}
-            <Badge variant="default">{issue.category.replace('_', ' ')}</Badge>
+            <Badge variant="default">{CATEGORY_LABEL[issue.category] ?? issue.category}</Badge>
           </div>
         </div>
         <div className="flex gap-1.5 flex-shrink-0">
@@ -312,15 +361,17 @@ function IssueDetail({ issue, onUpdated, onDeleted, onEdit }: {
       {/* Meta grid */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          { label: 'Unit',          value: issue.unit_label       ?? '—' },
-          { label: 'Reported By',   value: issue.reported_by_name ?? '—' },
-          { label: 'Assigned To',   value: issue.assigned_to      ?? '—' },
-          { label: 'Reported',      value: timeAgo(issue.created_at) },
+          { label: 'Unit',             value: issue.unit_label       ?? '—' },
+          { label: 'Caller',           value: issue.reported_by_name ?? '—' },
+          { label: 'Phone',            value: issue.caller_phone     ?? '—' },
+          { label: 'Assigned To',      value: issue.assigned_to      ?? '—' },
+          { label: 'Logged',           value: timeAgo(issue.created_at) },
           ...(issue.resolved_at ? [{ label: 'Resolved', value: timeAgo(issue.resolved_at) }] : []),
+          ...(issue.linked_reference ? [{ label: 'Linked Ref', value: issue.linked_reference }] : []),
         ].map(f => (
           <div key={f.label} className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-xl p-3">
             <p className="text-xs text-text-muted">{f.label}</p>
-            <p className="text-sm font-medium text-text mt-0.5">{f.value}</p>
+            <p className="text-sm font-medium text-text mt-0.5 break-all">{f.value}</p>
           </div>
         ))}
       </div>
@@ -328,7 +379,7 @@ function IssueDetail({ issue, onUpdated, onDeleted, onEdit }: {
       {/* Description */}
       {issue.description && (
         <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-xl p-4">
-          <p className="text-xs font-medium text-text-muted mb-1.5">Description</p>
+          <p className="text-xs font-medium text-text-muted mb-1.5">Details</p>
           <p className="text-sm text-text whitespace-pre-wrap">{issue.description}</p>
         </div>
       )}
@@ -361,14 +412,14 @@ export function IssuesPageClient() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState<IssueData | null>(null)
 
-  const [search, setSearch]           = useState('')
+  const [search, setSearch]                 = useState('')
   const [statusFilter, setStatusFilter]     = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
 
   useEffect(() => {
     getIssues()
-      .then(setIssues)
+      .then(data => setIssues(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -391,10 +442,10 @@ export function IssuesPageClient() {
   }
 
   // ── Stats ──
-  const openCount      = issues.filter(i => i.status === 'open').length
+  const openCount       = issues.filter(i => i.status === 'open').length
   const inProgressCount = issues.filter(i => i.status === 'in_progress').length
-  const urgentCount    = issues.filter(i => i.priority === 'urgent' && !['resolved','closed'].includes(i.status)).length
-  const resolvedToday  = issues.filter(i => {
+  const urgentCount     = issues.filter(i => i.priority === 'urgent' && !['resolved','closed'].includes(i.status)).length
+  const resolvedToday   = issues.filter(i => {
     if (!i.resolved_at) return false
     return new Date(i.resolved_at).toDateString() === new Date().toDateString()
   }).length
@@ -405,9 +456,11 @@ export function IssuesPageClient() {
     return issues.filter(i => {
       const matchSearch = !q
         || i.title.toLowerCase().includes(q)
+        || (i.reference_no      ?? '').toLowerCase().includes(q)
         || (i.unit_label        ?? '').toLowerCase().includes(q)
         || (i.reported_by_name  ?? '').toLowerCase().includes(q)
-        || (i.assigned_to       ?? '').toLowerCase().includes(q)
+        || (i.caller_phone      ?? '').toLowerCase().includes(q)
+        || (i.linked_reference  ?? '').toLowerCase().includes(q)
         || (i.description       ?? '').toLowerCase().includes(q)
       const matchStatus   = statusFilter   === 'all' || i.status   === statusFilter
       const matchPriority = priorityFilter === 'all' || i.priority === priorityFilter
@@ -420,20 +473,28 @@ export function IssuesPageClient() {
     <DashboardLayout>
       <main className="flex-1 overflow-hidden flex flex-col">
 
-        {/* Stats */}
-        <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-          {[
-            { label: 'Total',           value: issues.length,   color: 'text-text' },
-            { label: 'Open',            value: openCount,       color: openCount      > 0 ? 'text-danger'  : 'text-green-600' },
-            { label: 'In Progress',     value: inProgressCount, color: inProgressCount > 0 ? 'text-warning' : 'text-text-muted' },
-            { label: 'Urgent',          value: urgentCount,     color: urgentCount    > 0 ? 'text-danger'  : 'text-green-600' },
-            { label: 'Resolved Today',  value: resolvedToday,   color: resolvedToday  > 0 ? 'text-green-600' : 'text-text-muted' },
-          ].map(k => (
-            <div key={k.label} className="flex-1 bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl p-4">
-              <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
-              <p className="text-xs text-text-muted mt-0.5">{k.label}</p>
-            </div>
-          ))}
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+          <div className="flex gap-4 flex-1">
+            {[
+              { label: 'Total',          value: issues.length,   color: 'text-text' },
+              { label: 'Open',           value: openCount,       color: openCount       > 0 ? 'text-danger'    : 'text-green-600' },
+              { label: 'In Progress',    value: inProgressCount, color: inProgressCount > 0 ? 'text-warning'   : 'text-text-muted' },
+              { label: 'Urgent',         value: urgentCount,     color: urgentCount     > 0 ? 'text-danger'    : 'text-green-600' },
+              { label: 'Resolved Today', value: resolvedToday,   color: resolvedToday   > 0 ? 'text-green-600' : 'text-text-muted' },
+            ].map(k => (
+              <div key={k.label} className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl px-4 py-3">
+                <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
+                <p className="text-xs text-text-muted mt-0.5">{k.label}</p>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => { setEditing(null); setShowForm(true) }}
+            className="ml-4 flex-shrink-0 px-4 py-2 text-sm rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700 transition-colors"
+          >
+            + Log Occurrence
+          </button>
         </div>
 
         {/* Body: list + detail */}
@@ -444,7 +505,7 @@ export function IssuesPageClient() {
 
             {/* Filters */}
             <div className="p-3 space-y-2 border-b border-surface-border dark:border-dark-border">
-              <SearchInput value={search} onChange={setSearch} placeholder="Search issues…" />
+              <SearchInput value={search} onChange={setSearch} placeholder="Search by ref, unit, caller…" />
               <div className="grid grid-cols-3 gap-1.5">
                 <select value={statusFilter}   onChange={e => setStatusFilter(e.target.value)}   className="text-xs px-2 py-1.5 rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface text-text">
                   <option value="all">All Status</option>
@@ -456,12 +517,12 @@ export function IssuesPageClient() {
                 </select>
                 <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="text-xs px-2 py-1.5 rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface text-text">
                   <option value="all">All Category</option>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_ICON[c]} {c.replace('_',' ')}</option>)}
+                  {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_ICON[c]} {CATEGORY_LABEL[c]}</option>)}
                 </select>
               </div>
             </div>
 
-            {/* Issue list */}
+            {/* List */}
             <div className="flex-1 overflow-y-auto divide-y divide-surface-border dark:divide-dark-border">
               {loading && (
                 <div className="py-12 flex justify-center">
@@ -469,7 +530,7 @@ export function IssuesPageClient() {
                 </div>
               )}
               {!loading && filtered.length === 0 && (
-                <p className="py-10 text-sm text-text-muted text-center">No issues found.</p>
+                <p className="py-10 text-sm text-text-muted text-center">No occurrences found.</p>
               )}
               {!loading && filtered.map(i => (
                 <button
@@ -483,10 +544,14 @@ export function IssuesPageClient() {
                   <div className="flex items-start gap-2.5">
                     <span className="text-lg leading-none mt-0.5 flex-shrink-0">{CATEGORY_ICON[i.category] ?? '⚠️'}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1 mb-1">
-                        <p className="text-sm font-semibold text-text leading-snug line-clamp-1">{i.title}</p>
-                        <span className="text-[10px] text-text-muted flex-shrink-0 mt-0.5">{timeAgo(i.created_at)}</span>
+                      <div className="flex items-start justify-between gap-1 mb-0.5">
+                        {i.reference_no
+                          ? <span className="text-[10px] font-mono font-semibold text-primary-600 dark:text-primary-400">{i.reference_no}</span>
+                          : <span />
+                        }
+                        <span className="text-[10px] text-text-muted flex-shrink-0">{timeAgo(i.created_at)}</span>
                       </div>
+                      <p className="text-sm font-semibold text-text leading-snug line-clamp-1 mb-1">{i.title}</p>
                       <div className="flex flex-wrap gap-1 mb-1">
                         {statusBadge(i.status)}
                         {i.priority !== 'low' && priorityBadge(i.priority)}
@@ -514,7 +579,7 @@ export function IssuesPageClient() {
               </div>
             )}
             {selected ? (
-              <IssueDetail
+              <OccurrenceDetail
                 key={selected.id}
                 issue={selected}
                 onUpdated={onUpdated}
@@ -523,7 +588,7 @@ export function IssuesPageClient() {
               />
             ) : (
               <div className="flex items-center justify-center h-full text-sm text-text-muted">
-                Select an issue to view details
+                Select an occurrence to view details
               </div>
             )}
           </div>
@@ -531,7 +596,7 @@ export function IssuesPageClient() {
       </main>
 
       {(showForm || editing !== null) && (
-        <IssueModal
+        <OccurrenceModal
           item={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
           onSaved={v => { onSaved(v); setShowForm(false); setEditing(null) }}

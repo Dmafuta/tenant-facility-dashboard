@@ -2,6 +2,7 @@ import { apiFetch } from './fetch'
 
 export interface IssueData {
   id: string
+  reference_no: string | null
   title: string
   description: string | null
   category: string
@@ -11,6 +12,8 @@ export interface IssueData {
   unit_label: string | null
   reported_by_id: string | null
   reported_by_name: string | null
+  caller_phone: string | null
+  linked_reference: string | null
   assigned_to: string | null
   resolution_notes: string | null
   resolved_at: string | null
