@@ -25,7 +25,7 @@ const DEFAULT_TEMPLATE =
   'Dear {name}, your water bill for {period} (Acc: {unit}) is KES {balance} overdue. Pay via M-Pesa Paybill 522533, Acc {unit}. Queries: 0700000000.'
 
 export function ArrearsTab({ category = 'WS' }: { category?: string }) {
-  const [data,          setData]          = useState<ReturnType<typeof getArrears> extends Promise<infer T> ? T : never | null>(null)
+  const [data,          setData]          = useState<import('@/lib/api/invoices').ArrearsData | null>(null)
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState('')
   const [bucketFilter,  setBucketFilter]  = useState<string>('all')
