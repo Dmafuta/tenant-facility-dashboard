@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import {
-  getAssignmentSummary, assignBlock, clearBlock, getReaders,
+  getAssignmentSummary, assignBlock, clearBlock, clearBlockReader, getReaders,
   type PhaseSummary, type BlockSummary, type AssignmentUser,
 } from '@/lib/api/assignments'
 
@@ -31,13 +31,12 @@ interface BlockRowProps {
 }
 
 function BlockRow({ block, period, readers, onRefresh }: BlockRowProps) {
-  const [saving, setSaving] = useState(false)
-  const [clearing, setClearing] = useState(false)
-  const [error, setError]   = useState<string | null>(null)
+  const [saving,   setSaving]   = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null) // reader_user_id being removed
+  const [error,    setError]    = useState<string | null>(null)
 
-  // Current assignment: if a single reader covers the whole block show that; otherwise show "Multiple"
-  const primaryReader = block.readers.length === 1 ? block.readers[0] : null
-  const currentReaderId = primaryReader?.reader_user_id ?? ''
+  const isFullyAssigned = block.assigned_meters === block.total_meters && block.total_meters > 0
+  const isPartial       = block.assigned_meters > 0 && block.assigned_meters < block.total_meters
 
   async function handleAssign(e: React.ChangeEvent<HTMLSelectElement>) {
     const readerId = e.target.value
@@ -61,78 +60,82 @@ function BlockRow({ block, period, readers, onRefresh }: BlockRowProps) {
     }
   }
 
-  async function handleClear() {
-    setClearing(true)
+  async function handleRemoveReader(readerId: string) {
+    setRemoving(readerId)
     setError(null)
     try {
-      await clearBlock(period, block.block)
+      await clearBlockReader(period, block.block, readerId)
       onRefresh()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to clear')
+      setError(err instanceof Error ? err.message : 'Failed to remove reader')
     } finally {
-      setClearing(false)
+      setRemoving(null)
     }
   }
 
-  const isFullyAssigned = block.assigned_meters === block.total_meters && block.total_meters > 0
-  const isPartial = block.assigned_meters > 0 && block.assigned_meters < block.total_meters
-
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 px-4 border-b border-surface-border dark:border-dark-border last:border-0">
-      {/* Block label */}
-      <div className="flex items-center gap-2 min-w-[90px]">
-        <span className="font-semibold text-sm text-text">Block {block.block}</span>
-        {isFullyAssigned && (
-          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success/10 text-success">Full</span>
-        )}
-        {isPartial && (
-          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning/10 text-warning">Partial</span>
-        )}
-      </div>
+    <div className="flex flex-col gap-2 py-3 px-4 border-b border-surface-border dark:border-dark-border last:border-0">
+      <div className="flex flex-wrap sm:flex-nowrap sm:items-center gap-3">
+        {/* Block label */}
+        <div className="flex items-center gap-2 min-w-[90px]">
+          <span className="font-semibold text-sm text-text">Block {block.block}</span>
+          {isFullyAssigned && (
+            <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success/10 text-success">Full</span>
+          )}
+          {isPartial && (
+            <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning/10 text-warning">Partial</span>
+          )}
+        </div>
 
-      {/* Progress */}
-      <div className="flex-1 min-w-[120px]">
-        {progressBar(block.assigned_meters, block.total_meters)}
-        {block.readers.length > 1 && (
-          <p className="text-[10px] text-text-muted mt-0.5">
-            {block.readers.map(r => r.reader_name).join(' · ')}
-          </p>
-        )}
-      </div>
+        {/* Progress */}
+        <div className="flex-1 min-w-[120px]">
+          {progressBar(block.assigned_meters, block.total_meters)}
+        </div>
 
-      {/* Reader select */}
-      <div className="flex items-center gap-2">
+        {/* Assign reader dropdown */}
         <select
           className={cn(
             'text-sm rounded-lg border px-2 py-1.5 bg-surface dark:bg-dark-surface text-text',
             'border-surface-border dark:border-dark-border focus:outline-none focus:ring-2 focus:ring-primary-500',
             saving && 'opacity-50 cursor-not-allowed'
           )}
-          value={currentReaderId}
+          value=""
           onChange={handleAssign}
           disabled={saving || block.total_meters === 0}
         >
           <option value="">
-            {block.readers.length > 1 ? 'Multiple readers…' : block.total_meters === 0 ? 'No meters' : 'Assign reader…'}
+            {block.total_meters === 0 ? 'No meters' : '＋ Assign reader…'}
           </option>
           {(readers ?? []).map(r => (
             <option key={r.id} value={r.id}>{r.full_name}</option>
           ))}
         </select>
-
-        {block.assigned_meters > 0 && (
-          <button
-            onClick={handleClear}
-            disabled={clearing}
-            className="text-xs text-text-muted hover:text-danger transition-colors disabled:opacity-50"
-            title="Clear assignments for this block"
-          >
-            {clearing ? '…' : 'Clear'}
-          </button>
-        )}
       </div>
 
-      {error && <p className="text-xs text-danger w-full sm:w-auto">{error}</p>}
+      {/* Assigned reader badges */}
+      {block.readers.length > 0 && (
+        <div className="flex flex-wrap gap-2 pl-1">
+          {block.readers.map(r => (
+            <span
+              key={r.reader_user_id}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-primary-50 text-primary-700 border border-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:border-primary-800"
+            >
+              {r.reader_name}
+              <span className="text-xs text-text-muted">({r.meter_count}m)</span>
+              <button
+                onClick={() => handleRemoveReader(r.reader_user_id)}
+                disabled={removing === r.reader_user_id}
+                className="ml-0.5 rounded-full hover:bg-danger/20 hover:text-danger transition-colors disabled:opacity-40 leading-none p-0.5"
+                title={`Remove ${r.reader_name} from Block ${block.block}`}
+              >
+                {removing === r.reader_user_id ? '…' : '×'}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   )
 }

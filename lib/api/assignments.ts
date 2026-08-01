@@ -52,6 +52,13 @@ export function clearBlock(period: string, block: string): Promise<void> {
   )
 }
 
+export function clearBlockReader(period: string, block: string, readerId: string): Promise<void> {
+  return apiFetch(
+    `/reading-assignments/by-block?period=${encodeURIComponent(period)}&block=${encodeURIComponent(block)}&readerId=${encodeURIComponent(readerId)}`,
+    { method: 'DELETE' }
+  )
+}
+
 export function getReaders(): Promise<AssignmentUser[]> {
   return apiFetch('/reading-assignments/readers')
 }
