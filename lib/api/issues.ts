@@ -50,6 +50,13 @@ export async function updateIssueStatus(
   })
 }
 
+export async function escalateIssue(id: string, note?: string): Promise<IssueData> {
+  return apiFetch<IssueData>(`/issues/${id}/escalate`, {
+    method: 'POST',
+    body: JSON.stringify(note ? { note } : {}),
+  })
+}
+
 export async function deleteIssue(id: string): Promise<void> {
   await apiFetch<unknown>(`/issues/${id}`, { method: 'DELETE' })
 }

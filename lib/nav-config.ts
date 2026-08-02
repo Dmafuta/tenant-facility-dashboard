@@ -41,6 +41,7 @@ export const NAV: NavGroup[] = [
       { label: 'People',      href: '/people',      icon: '👥', roles: [FM, SEC, RECEP] },
       { label: 'Utilities',   href: '/utilities',   icon: '💧', roles: [FM, MAINT] },
       { label: 'Consumables', href: '/consumables', icon: '📦', roles: [FM, MAINT, RECEP] },
+      { label: 'Help Desk',   href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
     ],
   },
   {
@@ -59,7 +60,6 @@ export const NAV: NavGroup[] = [
       { label: 'Billing', href: '/billing', icon: '🧾', roles: [FM, FIN] },
       { label: 'Move-Out Clearances', href: '/billing/clearances', icon: '📋', roles: [FM, FIN, RECEP] },
       { label: 'Maintenance', href: '/maintenance', icon: '🔧', roles: [FM, MAINT] },
-      { label: 'Issues',      href: '/issues',      icon: '⚠️',  roles: [FM, MAINT, RECEP] },
       { label: 'HR & Staff',  href: '/hr',          icon: '💼', roles: [FM] },
       { label: 'Payroll',     href: '/payroll',     icon: '💵', roles: [FM, PAYRLL] },
     ],

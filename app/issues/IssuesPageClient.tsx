@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Badge } from '@/components/ui/Badge'
-import { getIssues, createIssue, updateIssue, updateIssueStatus, deleteIssue, type IssueData } from '@/lib/api/issues'
+import { getIssues, createIssue, updateIssue, updateIssueStatus, escalateIssue, deleteIssue, type IssueData } from '@/lib/api/issues'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -72,9 +72,9 @@ function timeAgo(iso: string | null): string {
 
 // ── Input styles ───────────────────────────────────────────────────────────────
 
-const INPUT  = 'w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-xl bg-white dark:bg-dark-surface text-text placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500'
+const INPUT  = 'w-full px-3 py-2 text-sm border border-zinc-950/10 rounded-lg bg-white text-steel-900 placeholder:text-steel-400 focus:outline-none focus:ring-2 focus:ring-primary-500'
 const SELECT = INPUT + ' cursor-pointer'
-const LABEL  = 'block text-xs font-medium text-text-muted mb-1'
+const LABEL  = 'block text-xs font-medium text-steel-500 mb-1'
 
 // ── Occurrence Modal ───────────────────────────────────────────────────────────
 
@@ -136,14 +136,14 @@ function OccurrenceModal({ item, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-950/5 flex-shrink-0">
           <span className="text-xl">{CATEGORY_ICON[form.category] ?? '⚠️'}</span>
-          <h2 className="flex-1 text-base font-semibold text-text">
+          <h2 className="flex-1 font-heading text-base font-semibold text-steel-900">
             {isNew ? 'Log Occurrence' : 'Edit Occurrence'}
           </h2>
-          <button onClick={onClose} className="p-1 text-text-muted hover:text-text">
+          <button onClick={onClose} className="p-1 text-steel-400 hover:text-steel-900">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -228,25 +228,93 @@ function OccurrenceModal({ item, onClose, onSaved }: {
           )}
 
           {isNew && (
-            <p className="text-xs text-text-muted bg-surface dark:bg-dark-hover border border-surface-border dark:border-dark-border rounded-xl px-4 py-3">
+            <p className="text-xs text-steel-500 bg-steel-50 border border-zinc-950/5 rounded-lg px-4 py-3">
               A reference number will be generated automatically and an SMS sent to the caller's phone.
             </p>
           )}
 
-          {error && <p className="text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>}
+          {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-4 py-3">{error}</p>}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-surface-border dark:border-dark-border flex-shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-xl border border-surface-border dark:border-dark-border text-text-muted hover:text-text transition-colors">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-zinc-950/5 flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-zinc-950/10 text-steel-500 hover:text-steel-900 transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 text-sm rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : isNew ? 'Log Occurrence' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Escalate Modal ─────────────────────────────────────────────────────────────
+
+function EscalateModal({ issue, onClose, onUpdated }: {
+  issue: IssueData
+  onClose: () => void
+  onUpdated: (v: IssueData) => void
+}) {
+  const [note, setNote]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+
+  async function handleEscalate() {
+    setLoading(true); setError('')
+    try {
+      const updated = await escalateIssue(issue.id, note.trim() || undefined)
+      onUpdated(updated)
+      onClose()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to escalate') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-950/5 flex-shrink-0">
+          <span className="text-xl">🚨</span>
+          <h2 className="flex-1 font-heading text-base font-semibold text-steel-900">Escalate Occurrence</h2>
+          <button onClick={onClose} className="p-1 text-steel-400 hover:text-steel-900">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-sm text-steel-500">
+            This will mark <strong className="text-steel-900">{issue.reference_no ?? 'this occurrence'}</strong> as{' '}
+            <strong className="text-rose-600">Urgent</strong> and move it to{' '}
+            <strong className="text-steel-900">In Progress</strong>. A Telegram alert will be sent immediately.
+          </p>
+          <div>
+            <label className={LABEL}>Escalation note <span className="font-normal text-steel-400">(optional)</span></label>
+            <textarea
+              className={INPUT + ' resize-none'}
+              rows={3}
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Reason for escalation or additional context…"
+            />
+          </div>
+          {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-4 py-3">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-zinc-950/5 flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-zinc-950/10 text-steel-500 hover:text-steel-900 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleEscalate}
+            disabled={loading}
+            className="px-4 py-2 text-sm rounded-lg bg-rose-600 text-white font-medium hover:bg-rose-700 disabled:opacity-50 transition-colors"
+          >
+            {loading ? 'Escalating…' : '🚨 Escalate to Urgent'}
           </button>
         </div>
       </div>
@@ -300,7 +368,7 @@ function StatusActions({ issue, onUpdated }: { issue: IssueData; onUpdated: (v: 
                 ? 'bg-green-600 text-white hover:bg-green-700'
                 : s === 'in_progress'
                 ? 'bg-primary-600 text-white hover:bg-primary-700'
-                : 'bg-gray-100 dark:bg-dark-hover text-text hover:bg-gray-200 dark:hover:bg-dark-border'
+                : 'bg-steel-100 text-steel-700 hover:bg-steel-200'
             )}
           >
             {loading === s
@@ -309,7 +377,7 @@ function StatusActions({ issue, onUpdated }: { issue: IssueData; onUpdated: (v: 
           </button>
         ))}
         {showNotes && (
-          <button onClick={() => setShowNotes(false)} className="px-3 py-1.5 rounded-lg text-xs text-text-muted hover:text-text">
+          <button onClick={() => setShowNotes(false)} className="px-3 py-1.5 rounded-lg text-xs text-steel-400 hover:text-steel-700">
             Cancel
           </button>
         )}
@@ -320,17 +388,20 @@ function StatusActions({ issue, onUpdated }: { issue: IssueData; onUpdated: (v: 
 
 // ── Occurrence Detail ──────────────────────────────────────────────────────────
 
-function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit }: {
+function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit, onEscalate }: {
   issue: IssueData
   onUpdated: (v: IssueData) => void
   onDeleted: (id: string) => void
   onEdit: () => void
+  onEscalate: () => void
 }) {
   async function handleDelete() {
     if (!window.confirm(`Delete occurrence ${issue.reference_no ?? issue.id}?`)) return
     try { await deleteIssue(issue.id); onDeleted(issue.id) }
     catch {}
   }
+
+  const canEscalate = issue.priority !== 'urgent' && !['resolved', 'closed'].includes(issue.status)
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -339,20 +410,25 @@ function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit }: {
         <span className="text-3xl flex-shrink-0 leading-none mt-0.5">{CATEGORY_ICON[issue.category] ?? '⚠️'}</span>
         <div className="flex-1 min-w-0">
           {issue.reference_no && (
-            <p className="text-xs font-mono font-semibold text-primary-600 dark:text-primary-400 mb-0.5">{issue.reference_no}</p>
+            <p className="text-xs font-mono font-semibold text-primary-600 mb-0.5">{issue.reference_no}</p>
           )}
-          <h2 className="text-lg font-bold text-text leading-tight">{issue.title}</h2>
+          <h2 className="font-heading text-lg font-bold text-steel-900 leading-tight">{issue.title}</h2>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {statusBadge(issue.status)}
             {priorityBadge(issue.priority)}
             <Badge variant="default">{CATEGORY_LABEL[issue.category] ?? issue.category}</Badge>
           </div>
         </div>
-        <div className="flex gap-1.5 flex-shrink-0">
-          <button onClick={onEdit} className="px-3 py-1.5 text-xs rounded-lg border border-surface-border dark:border-dark-border text-text-muted hover:text-text transition-colors">
+        <div className="flex gap-1.5 flex-shrink-0 flex-wrap justify-end">
+          {canEscalate && (
+            <button onClick={onEscalate} className="px-3 py-1.5 text-xs rounded-lg text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors font-medium">
+              🚨 Escalate
+            </button>
+          )}
+          <button onClick={onEdit} className="px-3 py-1.5 text-xs rounded-lg border border-zinc-950/10 text-steel-500 hover:text-steel-900 transition-colors">
             Edit
           </button>
-          <button onClick={handleDelete} className="px-3 py-1.5 text-xs rounded-lg text-danger border border-danger/30 hover:bg-danger/5 transition-colors">
+          <button onClick={handleDelete} className="px-3 py-1.5 text-xs rounded-lg text-rose-600 border border-rose-200 hover:bg-rose-50 transition-colors">
             Delete
           </button>
         </div>
@@ -369,33 +445,33 @@ function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit }: {
           ...(issue.resolved_at ? [{ label: 'Resolved', value: timeAgo(issue.resolved_at) }] : []),
           ...(issue.linked_reference ? [{ label: 'Linked Ref', value: issue.linked_reference }] : []),
         ].map(f => (
-          <div key={f.label} className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-xl p-3">
-            <p className="text-xs text-text-muted">{f.label}</p>
-            <p className="text-sm font-medium text-text mt-0.5 break-all">{f.value}</p>
+          <div key={f.label} className="bg-steel-50 border border-zinc-950/5 rounded-lg p-3">
+            <p className="text-xs text-steel-400">{f.label}</p>
+            <p className="text-sm font-medium text-steel-900 mt-0.5 break-all">{f.value}</p>
           </div>
         ))}
       </div>
 
       {/* Description */}
       {issue.description && (
-        <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-xl p-4">
-          <p className="text-xs font-medium text-text-muted mb-1.5">Details</p>
-          <p className="text-sm text-text whitespace-pre-wrap">{issue.description}</p>
+        <div className="bg-white border border-zinc-950/5 rounded-lg p-4">
+          <p className="text-xs font-medium text-steel-400 mb-1.5">Details</p>
+          <p className="text-sm text-steel-700 whitespace-pre-wrap">{issue.description}</p>
         </div>
       )}
 
       {/* Resolution notes */}
       {issue.resolution_notes && (
-        <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-xl p-4">
-          <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1.5">Resolution Notes</p>
-          <p className="text-sm text-green-800 dark:text-green-300 whitespace-pre-wrap">{issue.resolution_notes}</p>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <p className="text-xs font-medium text-green-700 mb-1.5">Resolution Notes</p>
+          <p className="text-sm text-green-800 whitespace-pre-wrap">{issue.resolution_notes}</p>
         </div>
       )}
 
       {/* Status workflow */}
       {issue.status !== 'closed' && (
-        <div className="border border-surface-border dark:border-dark-border rounded-xl p-4">
-          <p className="text-xs font-medium text-text-muted mb-3">Move to…</p>
+        <div className="border border-zinc-950/5 rounded-lg p-4">
+          <p className="text-xs font-medium text-steel-400 mb-3">Move to…</p>
           <StatusActions issue={issue} onUpdated={onUpdated} />
         </div>
       )}
@@ -406,11 +482,12 @@ function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit }: {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export function IssuesPageClient() {
-  const [issues, setIssues]     = useState<IssueData[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [selected, setSelected] = useState<IssueData | null>(null)
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing]   = useState<IssueData | null>(null)
+  const [issues, setIssues]         = useState<IssueData[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [selected, setSelected]     = useState<IssueData | null>(null)
+  const [showForm, setShowForm]     = useState(false)
+  const [editing, setEditing]       = useState<IssueData | null>(null)
+  const [showEscalate, setShowEscalate] = useState(false)
 
   const [search, setSearch]                 = useState('')
   const [statusFilter, setStatusFilter]     = useState('all')
@@ -474,24 +551,24 @@ export function IssuesPageClient() {
       <main className="flex-1 overflow-hidden flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-          <div className="flex gap-4 flex-1">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-950/5 flex-shrink-0 bg-white">
+          <div className="flex gap-3 flex-1 flex-wrap">
             {[
-              { label: 'Total',          value: issues.length,   color: 'text-text' },
-              { label: 'Open',           value: openCount,       color: openCount       > 0 ? 'text-danger'    : 'text-green-600' },
-              { label: 'In Progress',    value: inProgressCount, color: inProgressCount > 0 ? 'text-warning'   : 'text-text-muted' },
-              { label: 'Urgent',         value: urgentCount,     color: urgentCount     > 0 ? 'text-danger'    : 'text-green-600' },
-              { label: 'Resolved Today', value: resolvedToday,   color: resolvedToday   > 0 ? 'text-green-600' : 'text-text-muted' },
+              { label: 'Total',          value: issues.length,   color: 'text-steel-900' },
+              { label: 'Open',           value: openCount,       color: openCount       > 0 ? 'text-rose-600'   : 'text-green-600' },
+              { label: 'In Progress',    value: inProgressCount, color: inProgressCount > 0 ? 'text-amber-600'  : 'text-steel-400' },
+              { label: 'Urgent',         value: urgentCount,     color: urgentCount     > 0 ? 'text-rose-600'   : 'text-green-600' },
+              { label: 'Resolved Today', value: resolvedToday,   color: resolvedToday   > 0 ? 'text-green-600'  : 'text-steel-400' },
             ].map(k => (
-              <div key={k.label} className="bg-surface border border-surface-border dark:border-dark-border dark:bg-dark-surface rounded-xl px-4 py-3">
-                <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
-                <p className="text-xs text-text-muted mt-0.5">{k.label}</p>
+              <div key={k.label} className="bg-steel-50 border border-zinc-950/5 rounded-lg px-4 py-3">
+                <p className={`font-heading text-2xl font-bold ${k.color}`}>{k.value}</p>
+                <p className="text-xs text-steel-400 mt-0.5">{k.label}</p>
               </div>
             ))}
           </div>
           <button
             onClick={() => { setEditing(null); setShowForm(true) }}
-            className="ml-4 flex-shrink-0 px-4 py-2 text-sm rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700 transition-colors"
+            className="ml-4 flex-shrink-0 px-4 py-2 text-sm rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700 transition-colors"
           >
             + Log Occurrence
           </button>
@@ -501,21 +578,21 @@ export function IssuesPageClient() {
         <div className="flex flex-1 overflow-hidden min-h-0">
 
           {/* Left: list */}
-          <div className={cn('flex-shrink-0 border-r border-surface-border dark:border-dark-border flex flex-col', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
+          <div className={cn('flex-shrink-0 border-r border-zinc-950/5 flex flex-col bg-white', selected ? 'hidden lg:flex lg:w-80' : 'flex w-full lg:w-80')}>
 
             {/* Filters */}
-            <div className="p-3 space-y-2 border-b border-surface-border dark:border-dark-border">
+            <div className="p-3 space-y-2 border-b border-zinc-950/5">
               <SearchInput value={search} onChange={setSearch} placeholder="Search by ref, unit, caller…" />
               <div className="grid grid-cols-3 gap-1.5">
-                <select value={statusFilter}   onChange={e => setStatusFilter(e.target.value)}   className="text-xs px-2 py-1.5 rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface text-text">
+                <select value={statusFilter}   onChange={e => setStatusFilter(e.target.value)}   className="text-xs px-2 py-1.5 rounded-lg border border-zinc-950/10 bg-white text-steel-700">
                   <option value="all">All Status</option>
                   {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </select>
-                <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="text-xs px-2 py-1.5 rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface text-text">
+                <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="text-xs px-2 py-1.5 rounded-lg border border-zinc-950/10 bg-white text-steel-700">
                   <option value="all">All Priority</option>
                   {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
                 </select>
-                <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="text-xs px-2 py-1.5 rounded-lg border border-surface-border dark:border-dark-border bg-white dark:bg-dark-surface text-text">
+                <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="text-xs px-2 py-1.5 rounded-lg border border-zinc-950/10 bg-white text-steel-700">
                   <option value="all">All Category</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_ICON[c]} {CATEGORY_LABEL[c]}</option>)}
                 </select>
@@ -523,22 +600,22 @@ export function IssuesPageClient() {
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto divide-y divide-surface-border dark:divide-dark-border">
+            <div className="flex-1 overflow-y-auto divide-y divide-zinc-950/5">
               {loading && (
                 <div className="py-12 flex justify-center">
                   <span className="w-6 h-6 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
                 </div>
               )}
               {!loading && filtered.length === 0 && (
-                <p className="py-10 text-sm text-text-muted text-center">No occurrences found.</p>
+                <p className="py-10 text-sm text-steel-400 text-center">No occurrences found.</p>
               )}
               {!loading && filtered.map(i => (
                 <button
                   key={i.id}
                   onClick={() => setSelected(i)}
                   className={cn(
-                    'w-full text-left px-4 py-3 transition-colors hover:bg-surface-hover dark:hover:bg-dark-hover',
-                    selected?.id === i.id && 'bg-primary-50 dark:bg-primary-900/20'
+                    'w-full text-left px-4 py-3 transition-colors hover:bg-steel-50',
+                    selected?.id === i.id && 'bg-primary-50'
                   )}
                 >
                   <div className="flex items-start gap-2.5">
@@ -546,17 +623,17 @@ export function IssuesPageClient() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-1 mb-0.5">
                         {i.reference_no
-                          ? <span className="text-[10px] font-mono font-semibold text-primary-600 dark:text-primary-400">{i.reference_no}</span>
+                          ? <span className="text-[10px] font-mono font-semibold text-primary-600">{i.reference_no}</span>
                           : <span />
                         }
-                        <span className="text-[10px] text-text-muted flex-shrink-0">{timeAgo(i.created_at)}</span>
+                        <span className="text-[10px] text-steel-400 flex-shrink-0">{timeAgo(i.created_at)}</span>
                       </div>
-                      <p className="text-sm font-semibold text-text leading-snug line-clamp-1 mb-1">{i.title}</p>
+                      <p className="text-sm font-semibold text-steel-900 leading-snug line-clamp-1 mb-1">{i.title}</p>
                       <div className="flex flex-wrap gap-1 mb-1">
                         {statusBadge(i.status)}
                         {i.priority !== 'low' && priorityBadge(i.priority)}
                       </div>
-                      <p className="text-xs text-text-muted">
+                      <p className="text-xs text-steel-400">
                         {i.unit_label ?? '—'}{i.reported_by_name ? ` · ${i.reported_by_name}` : ''}
                       </p>
                     </div>
@@ -567,10 +644,10 @@ export function IssuesPageClient() {
           </div>
 
           {/* Right: detail */}
-          <div className={cn('flex-1 flex flex-col overflow-hidden', !selected && 'hidden lg:flex')}>
+          <div className={cn('flex-1 flex flex-col overflow-hidden bg-steel-50', !selected && 'hidden lg:flex')}>
             {selected && (
-              <div className="lg:hidden flex items-center px-4 pt-3 pb-2 border-b border-surface-border dark:border-dark-border flex-shrink-0">
-                <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text">
+              <div className="lg:hidden flex items-center px-4 pt-3 pb-2 border-b border-zinc-950/5 bg-white flex-shrink-0">
+                <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-steel-500 hover:text-steel-900">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
                   </svg>
@@ -585,9 +662,10 @@ export function IssuesPageClient() {
                 onUpdated={onUpdated}
                 onDeleted={onDeleted}
                 onEdit={() => { setEditing(selected); setShowForm(true) }}
+                onEscalate={() => setShowEscalate(true)}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-sm text-text-muted">
+              <div className="flex items-center justify-center h-full text-sm text-steel-400">
                 Select an occurrence to view details
               </div>
             )}
@@ -600,6 +678,14 @@ export function IssuesPageClient() {
           item={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
           onSaved={v => { onSaved(v); setShowForm(false); setEditing(null) }}
+        />
+      )}
+
+      {showEscalate && selected && (
+        <EscalateModal
+          issue={selected}
+          onClose={() => setShowEscalate(false)}
+          onUpdated={v => { onUpdated(v); setShowEscalate(false) }}
         />
       )}
     </DashboardLayout>

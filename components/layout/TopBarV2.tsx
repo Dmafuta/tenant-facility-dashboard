@@ -28,7 +28,7 @@ const ROUTE_META: Record<string, { title: string; section: string }> = {
   '/financials': { title: 'Financials', section: 'Operations' },
   '/billing': { title: 'Billing', section: 'Operations' },
   '/maintenance': { title: 'Maintenance', section: 'Operations' },
-  '/issues': { title: 'Issues', section: 'Operations' },
+  '/issues': { title: 'Help Desk', section: 'Facility' },
   '/hr': { title: 'HR & Staff', section: 'Operations' },
   '/payroll': { title: 'Payroll', section: 'Operations' },
   '/rules': { title: 'Rules & Breaches', section: 'Compliance' },
