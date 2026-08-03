@@ -8,6 +8,23 @@ import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import { getSettings, updateSettings } from '@/lib/api/settings'
 
+// ── Event key → settings API field mapping ────────────────────────────────────
+// Keys not listed here have no backend field yet (toggle is UI-only for now)
+const EVENT_API_FIELD: Partial<Record<string, string>> = {
+  welcome_email:      'send_welcome_email',
+  invoice_issued:     'notify_invoice_issued',
+  rent_overdue:       'notify_rent_overdue',
+  payment_received:   'notify_payment_received',
+  arrears_escalation: 'notify_arrears_escalation',
+  wo_new:             'notify_new_work_order',
+  wo_overdue:         'notify_work_order_overdue',
+  pm_due:             'notify_preventive_maintenance',
+  rule_breach:        'notify_breach_recorded',
+  doc_expiry:         'notify_document_expiry',
+  meter_anomaly:      'notify_water_loss',
+  reading_missing:    'notify_meter_reading_due',
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NotifChannel = 'email' | 'sms' | 'push' | 'inapp' | 'webhook'
 type NotifSeverity = 'info' | 'warning' | 'critical'
@@ -507,10 +524,16 @@ export function NotificationsSection() {
   const [paused, setPaused]       = useState(false)
   const [tab, setTab]             = useState<'events' | 'rules' | 'recipients' | 'activity'>('events')
 
-  // Load and persist notifications_paused from/to the backend
+  // Load notifications_paused + per-event states from the backend on mount
   useEffect(() => {
     getSettings().then(s => {
       if (s.notifications_paused != null) setPaused(s.notifications_paused)
+      setEvents(prev => prev.map(e => {
+        const field = EVENT_API_FIELD[e.key]
+        if (!field) return e
+        const value = (s as unknown as Record<string, unknown>)[field]
+        return value != null ? { ...e, enabled: Boolean(value) } : e
+      }))
     }).catch(() => {})
   }, [])
 
@@ -520,6 +543,18 @@ export function NotificationsSection() {
       await updateSettings({ notifications_paused: value })
     } catch {
       setPaused(!value) // revert on failure
+    }
+  }
+
+  async function handleEventToggle(key: string, value: boolean) {
+    patch(key, x => ({ ...x, enabled: value }))
+    const field = EVENT_API_FIELD[key]
+    if (field) {
+      try {
+        await updateSettings({ [field]: value })
+      } catch {
+        patch(key, x => ({ ...x, enabled: !value })) // revert on failure
+      }
     }
   }
   const [query, setQuery]         = useState('')
@@ -675,7 +710,7 @@ export function NotificationsSection() {
                       key={e.key}
                       event={e}
                       dimmed={paused}
-                      onToggle={(v) => patch(e.key, (x) => ({ ...x, enabled: v }))}
+                      onToggle={(v) => handleEventToggle(e.key, v)}
                       onChannel={(ch, v) => patch(e.key, (x) => ({ ...x, channels: { ...x.channels, [ch]: v } }))}
                     />
                   ))}
