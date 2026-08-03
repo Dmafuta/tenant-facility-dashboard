@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import * as XLSX from 'xlsx'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -35,6 +36,7 @@ import {
   getPersonById,
   apiPersonToPerson,
   getPeoplePaged,
+  getPeopleFromApi,
   type PersonData,
 } from '@/lib/api/people'
 import type {
@@ -2443,6 +2445,7 @@ export function PeoplePageClient({ allUnits = [] }: { allUnits?: Unit[] } = {}) 
   const [showCorporate, setShowCorporate] = useState(false)
   const [showRegMenu,   setShowRegMenu]   = useState(false)
   const [showExit,      setShowExit]      = useState(false)
+  const [exporting,     setExporting]     = useState(false)
 
   // Debounce search to avoid firing on every keystroke
   useEffect(() => {
@@ -2453,20 +2456,42 @@ export function PeoplePageClient({ allUnits = [] }: { allUnits?: Unit[] } = {}) 
   const owners  = useTabPeople('owner',  search)
   const tenants = useTabPeople('tenant', search)
 
-  function exportCsv() {
-    const list = activeTab === 'owners' ? owners.items : tenants.items
-    const headers = ['First Name','Last Name','Email','Phone','National ID','Type','Status','KYC Status','Joined Date']
-    const rows = list.map(p => [
-      p.first_name, p.last_name, p.email ?? '', p.phone ?? '',
-      p.national_id ?? '', p.type, p.status, p.kyc_status ?? '',
-      p.joined_date ?? '',
-    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href = url; a.download = 'people.csv'; a.click()
-    URL.revokeObjectURL(url)
+  async function exportExcel() {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const all = await getPeopleFromApi()
+      const OWNER_TYPES  = new Set(['resident_owner', 'non_resident_owner'])
+      const TENANT_TYPES = new Set(['tenant', 'short_stay_guest'])
+
+      const toRow = (p: PersonData) => ({
+        'First Name':  p.first_name,
+        'Last Name':   p.last_name,
+        'Email':       p.email ?? '',
+        'Phone':       p.phone ?? '',
+        'National ID': p.national_id ?? '',
+        'Type':        p.person_type,
+        'Unit':        p.home_unit_label ?? '',
+        'Status':      p.status,
+        'KYC Status':  p.kyc_status ?? '',
+        'Joined Date': p.joined_date ?? '',
+        'Notes':       p.notes ?? '',
+      })
+
+      const tenantRows = all.filter(p => TENANT_TYPES.has(p.person_type)).map(toRow)
+      const ownerRows  = all.filter(p => OWNER_TYPES.has(p.person_type)).map(toRow)
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tenantRows), 'Tenants')
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ownerRows),  'Owners')
+
+      const date = new Date().toISOString().slice(0, 10)
+      XLSX.writeFile(wb, `contacts_${date}.xlsx`)
+    } catch (e) {
+      console.error('Export failed', e)
+    } finally {
+      setExporting(false)
+    }
   }
 
   function addPerson(p: Person) {
@@ -2520,13 +2545,18 @@ export function PeoplePageClient({ allUnits = [] }: { allUnits?: Unit[] } = {}) 
           <div className="flex gap-2">
             <SearchInput placeholder="Search by name, email, phone or ID number..." value={searchInput} onChange={setSearchInput} />
             <button
-              onClick={exportCsv}
-              title="Export current page to CSV"
-              className="flex-shrink-0 px-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
+              onClick={exportExcel}
+              disabled={exporting}
+              title="Download all contacts as Excel (Tenants + Owners tabs)"
+              className="flex-shrink-0 px-2.5 rounded-lg border border-surface-border dark:border-dark-border bg-surface dark:bg-dark-card text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              {exporting ? (
+                <div className="w-4 h-4 border-2 border-text-muted/30 border-t-text-muted rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              )}
             </button>
           </div>
           <div className="relative">
