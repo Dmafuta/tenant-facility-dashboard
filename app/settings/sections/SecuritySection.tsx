@@ -15,9 +15,10 @@ import { cn } from '@/lib/cn'
 import {
   listSystemUsersPaged, inviteUser, updateSystemUser, deactivateSystemUser,
   listRoles, createRole, updateRole, deleteRole,
-  type SystemUser, type AppRole, type RolePermission,
+  getUserSessions, adminRevokeSession, adminToggle2fa,
+  type SystemUser, type AppRole, type RolePermission, type AdminSession,
 } from '@/lib/api/settings'
-import { getSessions, revokeSession, type ActiveSession } from '@/lib/api/auth'
+import { sendPasswordReset } from '@/lib/api/auth'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab =
@@ -224,7 +225,8 @@ function OverviewPane() {
 // ══════════════════════════════════════════════════════════════════════════════
 type PortalUser = {
   name: string; email: string; role: string; status: 'active' | 'inactive'
-  mfa: boolean; sso: boolean; lastLogin: string; linked: string
+  mfa: boolean; lastLogin: string; linked: string
+  passwordChangedAt: string | null
   attrs: { scope: string; clearance: string; dept?: string }
 }
 
@@ -232,7 +234,9 @@ function mapToPortalUser(u: SystemUser): PortalUser {
   return {
     name: u.fullName, email: u.email, role: u.role,
     status: u.status === 'active' ? 'active' : 'inactive',
-    mfa: false, sso: u.email_verified, lastLogin: '—',
+    mfa: u.twoFactorEnabled ?? false,
+    lastLogin: u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '—',
+    passwordChangedAt: u.passwordChangedAt ?? null,
     linked: u.person_name ?? '—',
     attrs: { scope: 'All properties', clearance: 'L1' },
   }
@@ -472,28 +476,60 @@ function UserDrawerContent({ user, systemUser, roles, onRefresh }: {
   const [saving, setSaving] = useState(false)
   const [deactivating, setDeactivating] = useState(false)
   const [error, setError] = useState('')
-  const [sessions, setSessions] = useState<ActiveSession[]>([])
+  const [sessions, setSessions] = useState<AdminSession[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [revoking, setRevoking] = useState<string | null>(null)
+  const [mfaEnabled, setMfaEnabled] = useState(user.mfa)
+  const [mfaWorking, setMfaWorking] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [resetWorking, setResetWorking] = useState(false)
 
   useEffect(() => {
-    if (tab !== 'sessions') return
+    if (tab !== 'sessions' || !systemUser) return
     setSessionsLoading(true)
-    getSessions()
+    getUserSessions(systemUser.id)
       .then(data => setSessions(Array.isArray(data) ? data : []))
       .catch(() => setSessions([]))
       .finally(() => setSessionsLoading(false))
-  }, [tab])
+  }, [tab, systemUser])
 
   async function handleRevoke(sessionId: string) {
+    if (!systemUser) return
     setRevoking(sessionId)
     try {
-      await revokeSession(sessionId)
+      await adminRevokeSession(systemUser.id, sessionId)
       setSessions(prev => prev.filter(s => s.id !== sessionId))
     } catch {
       // silently ignore
     } finally {
       setRevoking(null)
+    }
+  }
+
+  async function handleToggleMfa() {
+    if (!systemUser) return
+    const next = !mfaEnabled
+    setMfaWorking(true)
+    try {
+      await adminToggle2fa(systemUser.id, next)
+      setMfaEnabled(next)
+    } catch {
+      // silently ignore
+    } finally {
+      setMfaWorking(false)
+    }
+  }
+
+  async function handleForceReset() {
+    if (!systemUser) return
+    setResetWorking(true)
+    try {
+      await sendPasswordReset(systemUser.email)
+      setResetSent(true)
+    } catch {
+      // silently ignore
+    } finally {
+      setResetWorking(false)
     }
   }
 
@@ -568,56 +604,70 @@ function UserDrawerContent({ user, systemUser, roles, onRefresh }: {
           {!sessionsLoading && sessions.length === 0 && (
             <p className="text-[12px] text-text-muted text-center py-4">No active sessions found.</p>
           )}
-          {sessions.map(s => {
-            const when = s.current ? 'Active now' : new Date(s.lastSeenAt).toLocaleString()
-            return (
-              <div key={s.id} className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <Smartphone className="size-4 text-text-muted" />
-                  <div>
-                    <div className="text-[13px] font-medium text-text">
-                      {s.deviceName}
-                      {s.current && <Badge variant="default" className="ml-1 h-4 px-1 text-[9px]">This session</Badge>}
-                    </div>
-                    <div className="text-[11px] text-text-muted">{s.ipAddress} · {when}</div>
+          {sessions.map(s => (
+            <div key={s.id} className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <Smartphone className="size-4 text-text-muted" />
+                <div>
+                  <div className="text-[13px] font-medium text-text">{s.deviceName}</div>
+                  <div className="text-[11px] text-text-muted">
+                    {s.ipAddress} · {new Date(s.lastSeenAt).toLocaleString()}
                   </div>
                 </div>
-                {!s.current && (
-                  <Button
-                    variant="ghost" size="sm"
-                    className="h-7 text-xs text-danger"
-                    disabled={revoking === s.id}
-                    onClick={() => handleRevoke(s.id)}
-                  >
-                    {revoking === s.id ? '…' : 'Revoke'}
-                  </Button>
-                )}
               </div>
-            )
-          })}
+              <Button
+                variant="ghost" size="sm"
+                className="h-7 text-xs text-danger"
+                disabled={revoking === s.id}
+                onClick={() => handleRevoke(s.id)}
+              >
+                {revoking === s.id ? '…' : 'Revoke'}
+              </Button>
+            </div>
+          ))}
         </div>
       )}
       {tab === 'security' && (
         <div className="space-y-3">
-          {[
-            { icon: ShieldCheck, label: 'Multi-factor authentication', state: user.mfa ? 'Enrolled (TOTP)' : 'Not enrolled', action: user.mfa ? 'Manage' : 'Enforce', good: user.mfa },
-            { icon: Lock, label: 'Password', state: 'Last changed 42 days ago', action: 'Force reset', good: true },
-            { icon: Globe, label: 'SSO', state: user.sso ? 'Linked (Google Workspace)' : 'Not linked', action: user.sso ? 'Unlink' : 'Link', good: user.sso },
-          ].map((r, i) => {
-            const Icon = r.icon
-            return (
-              <div key={i} className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <Icon className={cn('size-4', r.good ? 'text-emerald-600' : 'text-amber-600')} />
-                  <div>
-                    <div className="text-[13px] font-medium text-text">{r.label}</div>
-                    <div className="text-[11px] text-text-muted">{r.state}</div>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" className="h-7 text-xs">{r.action}</Button>
+          {/* MFA row */}
+          <div className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className={cn('size-4', mfaEnabled ? 'text-emerald-600' : 'text-amber-600')} />
+              <div>
+                <div className="text-[13px] font-medium text-text">Multi-factor authentication</div>
+                <div className="text-[11px] text-text-muted">{mfaEnabled ? 'Enrolled — OTP on login' : 'Not enrolled'}</div>
               </div>
-            )
-          })}
+            </div>
+            <Button
+              variant="outline" size="sm" className="h-7 text-xs"
+              disabled={mfaWorking}
+              onClick={handleToggleMfa}
+            >
+              {mfaWorking ? '…' : mfaEnabled ? 'Disable MFA' : 'Enforce MFA'}
+            </Button>
+          </div>
+
+          {/* Password row */}
+          <div className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <Lock className="size-4 text-emerald-600" />
+              <div>
+                <div className="text-[13px] font-medium text-text">Password</div>
+                <div className="text-[11px] text-text-muted">
+                  {user.passwordChangedAt
+                    ? `Last changed ${new Date(user.passwordChangedAt).toLocaleDateString()}`
+                    : 'Never changed'}
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="outline" size="sm" className="h-7 text-xs"
+              disabled={resetWorking || resetSent}
+              onClick={handleForceReset}
+            >
+              {resetSent ? 'Email sent ✓' : resetWorking ? '…' : 'Force reset'}
+            </Button>
+          </div>
         </div>
       )}
       {error && <p className="text-[12px] text-rose-600">{error}</p>}

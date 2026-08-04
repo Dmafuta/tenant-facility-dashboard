@@ -47,6 +47,9 @@ export interface SystemUser {
   person_id: string | null
   person_name: string | null
   email_verified: boolean
+  twoFactorEnabled: boolean
+  lastLoginAt: string | null
+  passwordChangedAt: string | null
 }
 
 export interface RolePermission {
@@ -150,6 +153,32 @@ export function updateRole(id: string, payload: { name?: string; description?: s
 
 export function deleteRole(id: string): Promise<void> {
   return apiFetch(`/roles/${id}`, { method: 'DELETE' })
+}
+
+// ── Admin: user sessions ───────────────────────────────────────────────────────
+
+export interface AdminSession {
+  id: string
+  deviceName: string
+  ipAddress: string
+  createdAt: string
+  lastSeenAt: string
+  current: false
+}
+
+export function getUserSessions(userId: string): Promise<AdminSession[]> {
+  return apiFetch<AdminSession[]>(`/settings/users/${userId}/sessions`)
+}
+
+export function adminRevokeSession(userId: string, sessionId: string): Promise<void> {
+  return apiFetch<void>(`/settings/users/${userId}/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+export function adminToggle2fa(userId: string, enabled: boolean): Promise<void> {
+  return apiFetch<void>(`/settings/users/${userId}/2fa`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  })
 }
 
 // ── Integration settings ───────────────────────────────────────────────────────
