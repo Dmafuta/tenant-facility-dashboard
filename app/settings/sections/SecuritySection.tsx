@@ -428,7 +428,6 @@ function UsersPane() {
                         <div className="flex items-center gap-1">
                           {u.mfa ? <ShieldCheck className="size-3.5 text-emerald-600" /> : <ShieldAlert className="size-3.5 text-amber-600" />}
                           <span className="text-[11.5px] text-text-muted">{u.mfa ? 'MFA' : 'No MFA'}</span>
-                          {u.sso && <Badge variant="default" className="ml-1 h-4 px-1 text-[9px]">SSO</Badge>}
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
