@@ -82,3 +82,20 @@ export async function logout(): Promise<void> {
   // Signout route clears cookies and revokes the refresh token server-side
   await fetch('/api/auth/signout', { method: 'POST' })
 }
+
+export interface ActiveSession {
+  id: string
+  deviceName: string
+  ipAddress: string
+  createdAt: string
+  lastSeenAt: string
+  current: boolean
+}
+
+export async function getSessions(): Promise<ActiveSession[]> {
+  return apiFetch<ActiveSession[]>('/auth/sessions')
+}
+
+export async function revokeSession(sessionId: string): Promise<void> {
+  await apiFetch<void>(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+}

@@ -17,6 +17,7 @@ import {
   listRoles, createRole, updateRole, deleteRole,
   type SystemUser, type AppRole, type RolePermission,
 } from '@/lib/api/settings'
+import { getSessions, revokeSession, type ActiveSession } from '@/lib/api/auth'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Tab =
@@ -471,6 +472,30 @@ function UserDrawerContent({ user, systemUser, roles, onRefresh }: {
   const [saving, setSaving] = useState(false)
   const [deactivating, setDeactivating] = useState(false)
   const [error, setError] = useState('')
+  const [sessions, setSessions] = useState<ActiveSession[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [revoking, setRevoking] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (tab !== 'sessions') return
+    setSessionsLoading(true)
+    getSessions()
+      .then(data => setSessions(Array.isArray(data) ? data : []))
+      .catch(() => setSessions([]))
+      .finally(() => setSessionsLoading(false))
+  }, [tab])
+
+  async function handleRevoke(sessionId: string) {
+    setRevoking(sessionId)
+    try {
+      await revokeSession(sessionId)
+      setSessions(prev => prev.filter(s => s.id !== sessionId))
+    } catch {
+      // silently ignore
+    } finally {
+      setRevoking(null)
+    }
+  }
 
   async function save() {
     if (!systemUser) return
@@ -537,21 +562,39 @@ function UserDrawerContent({ user, systemUser, roles, onRefresh }: {
       )}
       {tab === 'sessions' && (
         <div className="space-y-2">
-          {[
-            { dev: 'MacBook · Chrome 141', ip: '196.201.x.x · Nairobi', when: 'Active now', current: true },
-            { dev: 'iPhone · Safari',       ip: '196.201.x.x · Nairobi', when: '2h ago',    current: false },
-          ].map((s, i) => (
-            <div key={i} className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
-              <div className="flex items-center gap-2.5">
-                <Smartphone className="size-4 text-text-muted" />
-                <div>
-                  <div className="text-[13px] font-medium text-text">{s.dev} {s.current && <Badge variant="default" className="ml-1 h-4 px-1 text-[9px]">This session</Badge>}</div>
-                  <div className="text-[11px] text-text-muted">{s.ip} · {s.when}</div>
+          {sessionsLoading && (
+            <p className="text-[12px] text-text-muted text-center py-4">Loading sessions…</p>
+          )}
+          {!sessionsLoading && sessions.length === 0 && (
+            <p className="text-[12px] text-text-muted text-center py-4">No active sessions found.</p>
+          )}
+          {sessions.map(s => {
+            const when = s.current ? 'Active now' : new Date(s.lastSeenAt).toLocaleString()
+            return (
+              <div key={s.id} className="flex items-center justify-between rounded-md border border-surface-border dark:border-dark-border px-3 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="size-4 text-text-muted" />
+                  <div>
+                    <div className="text-[13px] font-medium text-text">
+                      {s.deviceName}
+                      {s.current && <Badge variant="default" className="ml-1 h-4 px-1 text-[9px]">This session</Badge>}
+                    </div>
+                    <div className="text-[11px] text-text-muted">{s.ipAddress} · {when}</div>
+                  </div>
                 </div>
+                {!s.current && (
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-7 text-xs text-danger"
+                    disabled={revoking === s.id}
+                    onClick={() => handleRevoke(s.id)}
+                  >
+                    {revoking === s.id ? '…' : 'Revoke'}
+                  </Button>
+                )}
               </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-danger">Revoke</Button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
       {tab === 'security' && (

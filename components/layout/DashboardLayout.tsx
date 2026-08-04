@@ -4,9 +4,25 @@ import { TopBarV2 } from './TopBarV2'
 import { StatusBar } from './AppFooter'
 import AiQueryPanel from '@/components/AiQueryPanel'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useIdleTimeout } from '@/lib/hooks/useIdleTimeout'
+import { IdleWarningDialog } from '@/components/ui/IdleWarningDialog'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [aiOpen, setAiOpen] = useState(false)
+  const router = useRouter()
+
+  const { showWarning, secondsLeft, extendSession } = useIdleTimeout({
+    onTimeout: async () => {
+      await fetch('/api/auth/signout', { method: 'POST' })
+      router.push('/login')
+    },
+  })
+
+  const handleLogoutNow = async () => {
+    await fetch('/api/auth/signout', { method: 'POST' })
+    router.push('/login')
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-steel-50 font-body text-steel-500">
@@ -36,6 +52,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </button>
 
       <AiQueryPanel open={aiOpen} onClose={() => setAiOpen(false)} />
+
+      {showWarning && (
+        <IdleWarningDialog
+          secondsLeft={secondsLeft}
+          onStayLoggedIn={extendSession}
+          onLogout={handleLogoutNow}
+        />
+      )}
     </div>
   )
 }
