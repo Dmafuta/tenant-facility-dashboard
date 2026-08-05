@@ -180,10 +180,12 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
   const [cancelling, setCancelling]     = useState<string | null>(null)
 
   // Pay installment modal
-  const [payTarget, setPayTarget] = useState<{ plan: PaymentPlanData; inst: PaymentPlanInstallment } | null>(null)
-  const [payAmount, setPayAmount] = useState('')
-  const [payNotes, setPayNotes]   = useState('')
-  const [paying, setPaying]       = useState(false)
+  const [payTarget, setPayTarget]   = useState<{ plan: PaymentPlanData; inst: PaymentPlanInstallment } | null>(null)
+  const [payAmount, setPayAmount]   = useState('')
+  const [payRef, setPayRef]         = useState('')
+  const [payMethod, setPayMethod]   = useState('')
+  const [payNotes, setPayNotes]     = useState('')
+  const [paying, setPaying]         = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -209,8 +211,13 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
       const updated = await payInstallment(
         payTarget.plan.id,
         payTarget.inst.id,
-        parseFloat(payAmount),
-        payNotes || undefined
+        {
+          amount:         parseFloat(payAmount),
+          payment_date:   new Date().toISOString().slice(0, 10),
+          payment_method: payMethod || undefined,
+          reference_no:   payRef    || undefined,
+          notes:          payNotes  || undefined,
+        }
       )
       setPlans(prev => prev.map(p => p.id === payTarget.plan.id ? updated : p))
       setPayTarget(null)
@@ -387,6 +394,8 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
                                     onClick={() => {
                                       setPayTarget({ plan, inst })
                                       setPayAmount(instBalance > 0 ? String(instBalance) : String(inst.amount))
+                                      setPayRef('')
+                                      setPayMethod('')
                                       setPayNotes('')
                                     }}>
                                     Pay
@@ -456,13 +465,39 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
               className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Payment Method</label>
+              <select
+                value={payMethod}
+                onChange={e => setPayMethod(e.target.value)}
+                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">— Select —</option>
+                <option value="mpesa">M-Pesa</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-muted mb-1">Reference No.</label>
+              <input
+                type="text"
+                value={payRef}
+                onChange={e => setPayRef(e.target.value)}
+                placeholder="e.g. QHX23ABCD"
+                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Reference / Notes (optional)</label>
+            <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
             <input
               type="text"
               value={payNotes}
               onChange={e => setPayNotes(e.target.value)}
-              placeholder="M-Pesa code, bank reference…"
+              placeholder="Any additional notes…"
               className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -1087,7 +1122,7 @@ export function BillingPageClient() {
         person_phone:           planTarget.person_phone ?? undefined,
         invoice_id:             planTarget.id,
         category_code:          planTarget.category_code,
-        total_amount:           planTarget.balance,
+        // total_amount omitted — backend auto-computes full outstanding across all periods
         number_of_installments: parseInt(planInstallments),
         start_date:             planStart,
         notes:                  planNotes || undefined,

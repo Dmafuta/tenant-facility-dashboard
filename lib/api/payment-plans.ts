@@ -8,6 +8,8 @@ export interface PaymentPlanInstallment {
   paid_amount: number
   status: 'pending' | 'paid' | 'partial' | 'overdue' | 'cancelled'
   paid_date: string | null
+  reference_no: string | null
+  payment_method: string | null
   notes: string | null
 }
 
@@ -58,7 +60,7 @@ export async function createPaymentPlan(payload: {
   person_phone?: string
   invoice_id?: string
   category_code?: string
-  total_amount: number
+  total_amount?: number
   number_of_installments: number
   start_date: string
   notes?: string
@@ -85,12 +87,17 @@ export async function createPaymentPlan(payload: {
 export async function payInstallment(
   planId: string,
   installmentId: string,
-  amount: number,
-  notes?: string
+  payload: {
+    amount: number
+    payment_date?: string
+    payment_method?: string
+    reference_no?: string
+    notes?: string
+  }
 ): Promise<PaymentPlanData> {
   return apiFetch<PaymentPlanData>(`/payment-plans/${planId}/installments/${installmentId}/pay`, {
     method: 'POST',
-    body: JSON.stringify({ amount, notes }),
+    body: JSON.stringify(payload),
   })
 }
 
