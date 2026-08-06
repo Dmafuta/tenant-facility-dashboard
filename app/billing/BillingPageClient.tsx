@@ -558,6 +558,7 @@ export function BillingPageClient() {
   const [payMethod, setPayMethod]     = useState('mpesa')
   const [payRef, setPayRef]           = useState('')
   const [payNotes, setPayNotes]       = useState('')
+  const [payTargetedOnly, setPayTargetedOnly] = useState(false)
   const [paying, setPaying]           = useState(false)
   const [payIdempotencyKey, setPayIdempotencyKey] = useState('')
 
@@ -905,6 +906,7 @@ export function BillingPageClient() {
         payment_method:  payMethod || undefined,
         reference_no:    payRef || undefined,
         notes:           payNotes || undefined,
+        targeted_only:   payTargetedOnly || undefined,
         idempotencyKey:  payIdempotencyKey || undefined,
       })
       // Update all affected invoices in the list (direct payments + cascaded previousBalance updates)
@@ -963,7 +965,7 @@ export function BillingPageClient() {
   }
 
   function resetPayForm() {
-    setPayAmount(''); setPayDate(''); setPayMethod('mpesa'); setPayRef(''); setPayNotes('')
+    setPayAmount(''); setPayDate(''); setPayMethod('mpesa'); setPayRef(''); setPayNotes(''); setPayTargetedOnly(false)
   }
 
   async function handleRunSC() {
@@ -2646,6 +2648,21 @@ export function BillingPageClient() {
               placeholder="Optional notes…"
             />
           </div>
+
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={payTargetedOnly}
+              onChange={e => setPayTargetedOnly(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-surface-border text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm">
+              <span className="font-medium">Apply to this invoice only</span>
+              <span className="block text-xs text-text-muted mt-0.5">
+                Overpayment will be held as unallocated credit, not distributed to other invoices.
+              </span>
+            </span>
+          </label>
 
           <div className="flex gap-2 pt-1">
             <Button variant="ghost" className="flex-1" onClick={() => { setPayTarget(null); resetPayForm() }}>

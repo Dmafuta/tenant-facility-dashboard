@@ -189,6 +189,7 @@ export async function applyPayment(
     payment_method?: string
     reference_no?: string
     notes?: string
+    targeted_only?: boolean
     idempotencyKey?: string
   }
 ): Promise<InvoiceData[]> {
@@ -198,11 +199,12 @@ export async function applyPayment(
     method: 'POST',
     headers,
     body: JSON.stringify({
-      amount:         payload.amount,
-      paymentDate:    payload.payment_date,
-      paymentMethod:  payload.payment_method,
-      referenceNo:    payload.reference_no,
-      notes:          payload.notes,
+      amount:        payload.amount,
+      paymentDate:   payload.payment_date,
+      paymentMethod: payload.payment_method,
+      referenceNo:   payload.reference_no,
+      notes:         payload.notes,
+      targetedOnly:  payload.targeted_only,
     }),
   })
 }
