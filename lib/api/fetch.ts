@@ -57,7 +57,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const json = await parseJson(res)
 
   if (!res.ok) {
-    throw new ApiError(json.message ?? `Request failed (${res.status})`, res.status)
+    const msg = json.message ?? (json as Record<string, unknown>).error
+    throw new ApiError(typeof msg === 'string' ? msg : `Request failed (${res.status})`, res.status)
   }
 
   // If the response is 200 OK but doesn't look like our API envelope
