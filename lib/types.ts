@@ -89,6 +89,7 @@ export interface Person {
   avatar?: string
   unit_ids: string[]
   home_unit_id?: string
+  home_unit_label?: string
   status: PersonStatus
   kyc_status: KycStatus
   phone_verified_at?: string

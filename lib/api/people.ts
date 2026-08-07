@@ -154,6 +154,7 @@ export function apiPersonToPerson(p: PersonData): Person {
     national_id: p.national_id ?? undefined,
     unit_ids: p.unit_ids ?? [],
     home_unit_id: p.home_unit_id ?? undefined,
+    home_unit_label: p.home_unit_label ?? undefined,
     status: (statusMap[p.status] ?? 'pending_verification') as PersonStatus,
     kyc_status: (p.kyc_status as KycStatus) ?? 'not_started',
     phone_verified_at: p.phone_verified_at ?? undefined,

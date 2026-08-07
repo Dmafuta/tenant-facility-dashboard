@@ -2328,8 +2328,11 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
 
 // ── PersonRow ──────────────────────────────────────────────────────────────
 
+const RESIDENTIAL_TYPES = new Set<PersonType>(['tenant', 'resident_owner', 'short_stay_guest'])
+
 function PersonRow({ person, selected, onClick }: { person: Person; selected: boolean; onClick: () => void }) {
   const initials = `${person.first_name[0]}${person.last_name[0]}`
+  const isResidential = RESIDENTIAL_TYPES.has(person.type)
 
   return (
     <div
@@ -2345,6 +2348,11 @@ function PersonRow({ person, selected, onClick }: { person: Person; selected: bo
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-text truncate">{person.first_name} {person.last_name}</p>
         <p className="text-xs text-text-muted truncate">{person.email || person.phone || '—'}</p>
+        {isResidential && (
+          person.home_unit_label
+            ? <p className="text-xs text-primary-600 dark:text-primary-400 truncate">Unit {person.home_unit_label}</p>
+            : <p className="text-xs text-warning font-medium">No unit assigned</p>
+        )}
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         <Badge variant={TYPE_BADGE[person.type].variant} className="text-[10px]">{TYPE_BADGE[person.type].label}</Badge>
