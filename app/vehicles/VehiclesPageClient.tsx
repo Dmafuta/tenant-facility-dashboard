@@ -1,12 +1,12 @@
 'use client'
 import { cn } from '@/lib/cn'
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useApiData } from '@/lib/hooks/useApiData'
+import { useVehicles, useInvalidateVehicles } from '@/lib/queries/vehicles'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { getAllVehicles, verifyVehicle, unverifyVehicle, updateVehicleSticker } from '@/lib/api/vehicles'
+import { verifyVehicle, unverifyVehicle, updateVehicleSticker } from '@/lib/api/vehicles'
 import type { VehicleData } from '@/lib/api/vehicles'
 import { PlateScanner } from '@/components/vehicles/PlateScanner'
 
@@ -430,7 +430,8 @@ function VehicleRegistry({ vehicles, loading }: { vehicles: VehicleData[]; loadi
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function VehiclesPageClient() {
-  const { data, loading, error, refetch } = useApiData(getAllVehicles)
+  const { data, isPending: loading, error } = useVehicles()
+  const invalidate = useInvalidateVehicles()
   const vehicles = data ?? []
   const [driveMode, setDriveMode] = useState(false)
 
@@ -443,7 +444,7 @@ export function VehiclesPageClient() {
       <main className="flex-1 overflow-hidden flex flex-col">
 
         {error && (
-          <p className="mx-6 mt-4 text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>
+          <p className="mx-6 mt-4 text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error instanceof Error ? error.message : 'Failed to load vehicles'}</p>
         )}
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0">
           {[
@@ -475,7 +476,7 @@ export function VehiclesPageClient() {
         <VerificationDrive
           vehicles={vehicles}
           onClose={() => setDriveMode(false)}
-          onRefresh={refetch}
+          onRefresh={invalidate}
         />
       )}
     </DashboardLayout>

@@ -1,12 +1,10 @@
 'use client'
 import { useState, useMemo } from 'react'
-import { useApiData } from '@/lib/hooks/useApiData'
+import { useOccupancyData } from '@/lib/queries/occupancy'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { cn } from '@/lib/cn'
-import { getUnitsFromApi } from '@/lib/api/units'
-import { getAllLeases } from '@/lib/api/leases'
 import type { UnitData } from '@/lib/api/units'
 import type { LeaseData } from '@/lib/api/leases'
 
@@ -55,10 +53,7 @@ function Skeleton({ className }: { className?: string }) {
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export function OccupancyPageClient() {
-  const { data, loading, error } = useApiData(() =>
-    Promise.all([getUnitsFromApi(), getAllLeases('active')])
-      .then(([units, leases]) => ({ units, leases }))
-  )
+  const { data, isPending: loading, error } = useOccupancyData()
   const units  = data?.units  ?? []
   const leases = data?.leases ?? []
 
@@ -117,7 +112,7 @@ export function OccupancyPageClient() {
       <main className="flex-1 overflow-hidden flex flex-col">
 
         {error && (
-          <p className="mx-6 mt-4 text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error}</p>
+          <p className="mx-6 mt-4 text-sm text-danger bg-danger/5 border border-danger/20 rounded-xl px-4 py-3">{error instanceof Error ? error.message : 'Failed to load occupancy data'}</p>
         )}
         {/* KPI strip */}
         <div className="flex gap-4 px-6 py-4 border-b border-surface-border dark:border-dark-border flex-shrink-0 overflow-x-auto">
