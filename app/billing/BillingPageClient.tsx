@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useInvoicesPaged, useInvoiceCategories, useUnallocatedCredits, useInvalidateInvoices } from '@/lib/queries/invoices'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -520,9 +521,6 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
 export function BillingPageClient() {
   const { subject } = useAbac()
   const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'>('WS')
-  const [invoices, setInvoices]       = useState<InvoiceData[]>([])
-  const [categories, setCategories]   = useState<InvoiceCategory[]>([])
-  const [loading, setLoading]         = useState(true)
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [periodFilter, setPeriodFilter] = useState('')
@@ -538,14 +536,28 @@ export function BillingPageClient() {
   const [colSortCol, setColSortCol]   = useState<'unit_label'|'person_name'|'statement_no'|'billed'|'collected'|'outstanding'|'status'>('outstanding')
   const [colSortDir, setColSortDir]   = useState<'asc'|'desc'>('desc')
   const [colPage, setColPage]         = useState(1)
-
-  // Server-side pagination state
-  const [totalElements, setTotalElements] = useState(0)
-  const [tabStats, setTabStats] = useState({ outstanding: 0, collected: 0, drafts: 0 })
-  const [periods, setPeriods]   = useState<string[]>([])
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [refreshKey, setRefreshKey] = useState(0)
-  const refresh = () => setRefreshKey(k => k + 1)
+
+  // TanStack Query — invoice list (replaces useState + useEffect boilerplate)
+  const { data: pagedResult, isPending: loading } = useInvoicesPaged({
+    categoryCode: activeTab,
+    status:  statusFilter !== 'all' ? statusFilter : undefined,
+    period:  periodFilter  || undefined,
+    search:  debouncedSearch || undefined,
+    page:    page - 1,
+    size:    15,
+    sortBy:  sortCol,
+    sortDir,
+  })
+  const invoices      = pagedResult?.content       ?? []
+  const totalElements = pagedResult?.totalElements ?? 0
+  const tabStats      = { outstanding: pagedResult?.tabOutstanding ?? 0, collected: pagedResult?.tabCollected ?? 0, drafts: pagedResult?.tabDrafts ?? 0 }
+  const periods       = pagedResult?.periods       ?? []
+
+  // Categories (staleTime: Infinity — never change)
+  const { data: categories = [] } = useInvoiceCategories()
+  const invalidateInvoices = useInvalidateInvoices()
+  const refresh = invalidateInvoices
 
   // Detail panel
   const [selected, setSelected]       = useState<InvoiceData | null>(null)
@@ -673,8 +685,11 @@ export function BillingPageClient() {
   const [reassigning, setReassigning]             = useState(false)
 
   // Available credits for selected invoice
-  const [availableCredits, setAvailableCredits] = useState<InvoicePayment[]>([])
-  const [creditsLoading, setCreditsLoading]     = useState(false)
+  const { data: availableCredits = [], isPending: creditsLoading } = useUnallocatedCredits(
+    selected?.unit_id,
+    selected?.category_code,
+    !!selected && ['issued', 'partial', 'paid'].includes(selected.status)
+  )
   const [applyingCredit, setApplyingCredit]     = useState<string | null>(null)
 
   // Credit notes ledger (Adjustments tab)
@@ -731,56 +746,11 @@ export function BillingPageClient() {
   const [actioning, setActioning]     = useState<string | null>(null)
   const [error, setError]             = useState<string | null>(null)
 
-  // Load categories once
-  useEffect(() => { getInvoiceCategories().then(setCategories).catch(() => {}) }, [])
-
   // Debounce search input
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350)
     return () => clearTimeout(t)
   }, [search])
-
-  // Main paginated fetch — reruns whenever any filter/sort/page/refresh changes
-  useEffect(() => {
-    if (!['WS', 'SC', 'OT', 'OB'].includes(activeTab as string)) return
-    let cancelled = false
-    setLoading(true)
-    getInvoicesPaged({
-      categoryCode: activeTab,
-      status:  statusFilter !== 'all' ? statusFilter : undefined,
-      period:  periodFilter  || undefined,
-      search:  debouncedSearch || undefined,
-      page:    page - 1,
-      size:    15,
-      sortBy:  sortCol,
-      sortDir,
-    }).then(result => {
-      if (!cancelled) {
-        setInvoices(result.content)
-        setTotalElements(result.totalElements)
-        setTabStats({ outstanding: result.tabOutstanding, collected: result.tabCollected, drafts: result.tabDrafts })
-        setPeriods(result.periods)
-      }
-    }).catch(e => {
-      if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load invoices')
-    }).finally(() => {
-      if (!cancelled) setLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [activeTab, statusFilter, periodFilter, debouncedSearch, page, sortCol, sortDir, refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch unallocated credits when an issued/partial/paid invoice is selected
-  useEffect(() => {
-    if (!selected || !['issued', 'partial', 'paid'].includes(selected.status)) {
-      setAvailableCredits([])
-      return
-    }
-    setCreditsLoading(true)
-    getUnallocatedCredits(selected.unit_id, selected.category_code)
-      .then(setAvailableCredits)
-      .catch(() => setAvailableCredits([]))
-      .finally(() => setCreditsLoading(false))
-  }, [selected?.id, selected?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleSort(col: typeof sortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -794,7 +764,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await issueInvoice(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === inv.id) setSelected(updated)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to issue invoice')
@@ -834,7 +804,7 @@ export function BillingPageClient() {
         person_phone: reassignPersonPhone || undefined,
         reason:       reassignReason,
       })
-      setInvoices(prev => prev.map(i => i.id === reassignTarget.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === reassignTarget.id) setSelected(updated)
       setReassignTarget(null)
     } catch (e: unknown) {
@@ -856,7 +826,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await requestVoidInvoice(voidTarget.id, { void_reason: voidReason, void_notes: voidNotes || undefined })
-      setInvoices(prev => prev.map(i => i.id === voidTarget.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === voidTarget.id) setSelected(updated)
       setVoidTarget(null)
     } catch (e: unknown) {
@@ -871,7 +841,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await approveVoidInvoice(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === inv.id) setSelected(updated)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to approve void')
@@ -885,7 +855,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await rejectVoidInvoice(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === inv.id) setSelected(updated)
       setRejectVoidTarget(null)
     } catch (e: unknown) {
@@ -911,7 +881,7 @@ export function BillingPageClient() {
       })
       // Update all affected invoices in the list (direct payments + cascaded previousBalance updates)
       const affectedMap = new Map(affected.map(i => [i.id, i]))
-      setInvoices(prev => prev.map(i => affectedMap.get(i.id) ?? i))
+      invalidateInvoices()
       // Reload full detail for the currently-selected invoice if it was affected
       if (selected && affectedMap.has(selected.id)) {
         const detail = await getInvoice(selected.id)
@@ -934,7 +904,7 @@ export function BillingPageClient() {
       if (selected) {
         const detail = await getInvoice(selected.id)
         setSelected(detail)
-        setInvoices(prev => prev.map(i => i.id === detail.id ? detail : i))
+        invalidateInvoices()
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to remove payment')
@@ -1035,7 +1005,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await requestWriteOffInvoice(writeOffTarget.id, writeOffNotes || undefined)
-      setInvoices(prev => prev.map(i => i.id === writeOffTarget.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === writeOffTarget.id) setSelected(updated)
       setWriteOffTarget(null)
       setWriteOffNotes('')
@@ -1051,7 +1021,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await approveWriteOffInvoice(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === inv.id) setSelected(updated)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to approve write-off')
@@ -1065,7 +1035,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await rejectWriteOffInvoice(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === inv.id) setSelected(updated)
       setRejectWriteOffTarget(null)
     } catch (e: unknown) {
@@ -1083,7 +1053,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await disputeInvoice(disputeTarget.id, disputeReason)
-      setInvoices(prev => prev.map(i => i.id === disputeTarget.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === disputeTarget.id) setSelected(updated)
       setDisputeTarget(null)
       setDisputeReason('')
@@ -1099,7 +1069,7 @@ export function BillingPageClient() {
     setError(null)
     try {
       const updated = await resolveDispute(inv.id)
-      setInvoices(prev => prev.map(i => i.id === inv.id ? updated : i))
+      invalidateInvoices()
       if (selected?.id === inv.id) setSelected(updated)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to resolve dispute')
@@ -2315,9 +2285,8 @@ export function BillingPageClient() {
                                 setApplyingCredit(cr.id)
                                 try {
                                   const updated = await applyCredit(selected.id, cr.id)
-                                  setInvoices(prev => prev.map(i => i.id === updated.id ? updated : i))
+                                  invalidateInvoices()
                                   setSelected(updated)
-                                  setAvailableCredits(prev => prev.filter(c => c.id !== cr.id))
                                 } catch (e: unknown) {
                                   setError(e instanceof Error ? e.message : 'Failed to apply credit')
                                 } finally {

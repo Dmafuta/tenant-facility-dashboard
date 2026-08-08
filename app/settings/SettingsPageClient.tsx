@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import { useSettings, useRoles, useSystemUsers, useInvalidateRoles, useInvalidateUsers } from '@/lib/queries/settings'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
@@ -98,6 +99,8 @@ function StickySaveBar({ dirty, saving, onSave, onDiscard }: {
 
 // ── General Settings ──────────────────────────────────────────────────────────
 function GeneralSettings() {
+  const { data: settingsData, isPending: loading } = useSettings()
+
   const [form, setForm] = useState({
     property_name:    '',
     management_email: '',
@@ -106,22 +109,21 @@ function GeneralSettings() {
     timezone:         'Africa/Nairobi',
   })
   const [savedForm, setSavedForm] = useState(form)
-  const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
 
+  // Initialise form once settings data arrives
   useEffect(() => {
-    getSettings().then(s => {
-      const initial = {
-        property_name:    s.property_name    ?? '',
-        management_email: s.management_email ?? '',
-        contact_phone:    s.contact_phone    ?? '',
-        currency:         s.currency         ?? 'KES',
-        timezone:         s.timezone         ?? 'Africa/Nairobi',
-      }
-      setForm(initial)
-      setSavedForm(initial)
-    }).finally(() => setLoading(false))
-  }, [])
+    if (!settingsData) return
+    const initial = {
+      property_name:    settingsData.property_name    ?? '',
+      management_email: settingsData.management_email ?? '',
+      contact_phone:    settingsData.contact_phone    ?? '',
+      currency:         settingsData.currency         ?? 'KES',
+      timezone:         settingsData.timezone         ?? 'Africa/Nairobi',
+    }
+    setForm(initial)
+    setSavedForm(initial)
+  }, [settingsData])
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(savedForm), [form, savedForm])
 
@@ -211,8 +213,9 @@ const ALL_RESOURCES = [
 
 // ── Roles & Permissions ───────────────────────────────────────────────────────
 function RolesSettings() {
-  const [roles, setRoles]         = useState<AppRole[]>([])
-  const [loading, setLoading]     = useState(true)
+  const { data: roles = [], isPending: loading } = useRoles()
+  const invalidateRoles = useInvalidateRoles()
+
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing]     = useState<AppRole | null>(null)
   const [saving, setSaving]       = useState(false)
@@ -222,8 +225,6 @@ function RolesSettings() {
   const [roleName, setRoleName]   = useState('')
   const [roleDesc, setRoleDesc]   = useState('')
   const [selected, setSelected]   = useState<Set<string>>(new Set())
-
-  useEffect(() => { listRoles().then(setRoles).finally(() => setLoading(false)) }, [])
 
   function openCreate() {
     setEditing(null); setRoleName(''); setRoleDesc(''); setSelected(new Set()); setError(''); setShowModal(true)
@@ -250,12 +251,11 @@ function RolesSettings() {
     })
     try {
       if (editing) {
-        const updated = await updateRole(editing.id, { name: roleName.trim(), description: roleDesc, permissions })
-        setRoles(prev => prev.map(r => r.id === updated.id ? updated : r))
+        await updateRole(editing.id, { name: roleName.trim(), description: roleDesc, permissions })
       } else {
-        const created = await createRole({ name: roleName.trim(), description: roleDesc, permissions })
-        setRoles(prev => [...prev, created])
+        await createRole({ name: roleName.trim(), description: roleDesc, permissions })
       }
+      invalidateRoles()
       setShowModal(false)
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save role.') }
     finally { setSaving(false) }
@@ -263,7 +263,7 @@ function RolesSettings() {
 
   async function handleDelete(role: AppRole) {
     if (!confirm(`Delete role "${role.name}"? Users with this role will lose access.`)) return
-    try { await deleteRole(role.id); setRoles(prev => prev.filter(r => r.id !== role.id)) }
+    try { await deleteRole(role.id); invalidateRoles() }
     catch (e) { alert(e instanceof Error ? e.message : 'Failed to delete role.') }
   }
 
@@ -382,17 +382,11 @@ type UserSortKey = 'fullName' | 'email' | 'role' | 'status'
 const USER_PAGE_SIZE = 20
 
 function UsersSettings() {
-  const [users, setUsers]           = useState<SystemUser[]>([])
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalElements, setTotalElements] = useState(0)
   const [page, setPage]             = useState(0)
-  const [roles, setRoles]           = useState<AppRole[]>([])
-  const [loading, setLoading]       = useState(true)
   const [showInvite, setShowInvite] = useState(false)
   const [editUser, setEditUser]     = useState<SystemUser | null>(null)
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState('')
-  const [refreshKey, setRefreshKey] = useState(0)
 
   // Search + sort + status filter
   const [search, setSearch]           = useState('')
@@ -411,32 +405,26 @@ function UsersSettings() {
   const [editRole,   setEditRole]   = useState('')
   const [editStatus, setEditStatus] = useState('')
 
+  // TanStack Query — users list + roles
+  const { data: usersPage, isPending: loading } = useSystemUsers({
+    search:  debouncedSearch || undefined,
+    status:  statusFilter    || undefined,
+    sortBy:  sortKey,
+    sortDir: sortAsc ? 'asc' : 'desc',
+    page,
+    size: USER_PAGE_SIZE,
+  })
+  const users         = usersPage?.content      ?? []
+  const totalPages    = usersPage?.totalPages    ?? 1
+  const totalElements = usersPage?.totalElements ?? 0
+  const { data: roles = [] } = useRoles()
+  const invalidateUsers = useInvalidateUsers()
+
   // Debounce search
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(search); setPage(0) }, 350)
     return () => clearTimeout(t)
   }, [search])
-
-  // Fetch users (server-side)
-  useEffect(() => {
-    setLoading(true)
-    listSystemUsersPaged({
-      search:  debouncedSearch || undefined,
-      status:  statusFilter    || undefined,
-      sortBy:  sortKey,
-      sortDir: sortAsc ? 'asc' : 'desc',
-      page,
-      size: USER_PAGE_SIZE,
-    })
-      .then(d => { setUsers(d.content); setTotalPages(d.totalPages); setTotalElements(d.totalElements) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [debouncedSearch, statusFilter, sortKey, sortAsc, page, refreshKey])
-
-  // Fetch roles once
-  useEffect(() => {
-    listRoles().then(setRoles).catch(() => {})
-  }, [])
 
   async function handleInvite() {
     if (!invEmail.trim() || !invRole) { setError('Email and role are required.'); return }
@@ -444,7 +432,7 @@ function UsersSettings() {
     try {
       await inviteUser({ email: invEmail.trim(), full_name: invName.trim(), role_id: invRole, person_type: invPersonType })
       setShowInvite(false); setInvEmail(''); setInvName(''); setInvRole(''); setInvPersonType('permanent_staff')
-      setRefreshKey(k => k + 1)
+      invalidateUsers()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to invite user.') }
     finally { setSaving(false) }
   }
@@ -458,7 +446,7 @@ function UsersSettings() {
         ...(editStatus ? { status:  editStatus.toLowerCase() }  : {}),
       })
       setEditUser(null)
-      setRefreshKey(k => k + 1)
+      invalidateUsers()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update user.') }
     finally { setSaving(false) }
   }
@@ -467,7 +455,7 @@ function UsersSettings() {
     if (!confirm(`Deactivate ${user.fullName}? They will lose portal access.`)) return
     try {
       await deactivateSystemUser(user.id)
-      setRefreshKey(k => k + 1)
+      invalidateUsers()
     } catch (e) { alert(e instanceof Error ? e.message : 'Failed to deactivate user.') }
   }
 
@@ -584,7 +572,7 @@ function UsersSettings() {
                         <button onClick={async () => {
                           try {
                             await updateSystemUser(u.id, { status: 'active' })
-                            setRefreshKey(k => k + 1)
+                            invalidateUsers()
                           } catch (e) { alert(e instanceof Error ? e.message : 'Failed to reactivate.') }
                         }} className="text-xs text-success hover:underline">Reactivate</button>
                       )}

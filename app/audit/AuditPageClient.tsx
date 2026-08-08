@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useMemo } from 'react'
+import { useAuditEvents } from '@/lib/queries/audit'
 import { cn } from '@/lib/cn'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import {
@@ -360,41 +361,24 @@ export function AuditPageClient() {
   const [actionFilter,setActionFilter]= useState('all')
   const [range,       setRange]       = useState('24h')
   const [selected,    setSelected]    = useState<AuditEventApi | null>(null)
-  const [events,      setEvents]      = useState<AuditEventApi[]>([])
-  const [total,       setTotal]       = useState(0)
-  const [page,        setPage]        = useState(0)
-  const [totalPages,  setTotalPages]  = useState(0)
-  const [loading,     setLoading]     = useState(true)
   const [exporting,   setExporting]   = useState(false)
-  const [lastPoll,    setLastPoll]    = useState<Date | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const load = useCallback(async (p = 0, silent = false) => {
-    if (!silent) setLoading(true)
-    try {
-      const res = await getAuditEvents({
-        module: moduleFilter !== 'all' ? moduleFilter : undefined,
-        action: actionFilter !== 'all' ? actionFilter : undefined,
-        q:      search || undefined,
-        page:   p,
-        size:   50,
-      })
-      if (p === 0) setEvents(res.items)
-      else         setEvents(prev => [...prev, ...res.items])
-      setTotal(res.total)
-      setPage(res.page)
-      setTotalPages(res.total_pages)
-      if (silent) setLastPoll(new Date())
-    } catch { /* ignore */ }
-    finally { if (!silent) setLoading(false) }
-  }, [moduleFilter, actionFilter, search])
+  const {
+    data,
+    isPending: loading,
+    fetchNextPage,
+    hasNextPage,
+    dataUpdatedAt,
+    refetch,
+  } = useAuditEvents({
+    module: moduleFilter !== 'all' ? moduleFilter : undefined,
+    action: actionFilter !== 'all' ? actionFilter : undefined,
+    q:      search || undefined,
+  })
 
-  useEffect(() => { load(0) }, [load])
-
-  useEffect(() => {
-    pollRef.current = setInterval(() => load(0, true), 30_000)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [load])
+  const events     = data?.pages.flatMap(p => p.items) ?? []
+  const total      = data?.pages[0]?.total ?? 0
+  const lastPoll   = dataUpdatedAt ? new Date(dataUpdatedAt) : null
 
   async function handleExport() {
     setExporting(true)
@@ -460,7 +444,7 @@ export function AuditPageClient() {
             </div>
             <div className="flex flex-col items-end gap-2">
               <div className="flex items-center gap-2">
-                <button onClick={() => load(0)} className="inline-flex items-center gap-1.5 rounded border border-steel-200 bg-white px-2.5 py-1.5 text-xs text-steel-600 hover:bg-steel-50">
+                <button onClick={() => refetch()} className="inline-flex items-center gap-1.5 rounded border border-steel-200 bg-white px-2.5 py-1.5 text-xs text-steel-600 hover:bg-steel-50">
                   <RefreshCw className="h-3.5 w-3.5" /> Refresh
                 </button>
                 <button onClick={handleExport} disabled={exporting} className="inline-flex items-center gap-1.5 rounded border border-steel-200 bg-white px-2.5 py-1.5 text-xs text-steel-600 hover:bg-steel-50 disabled:opacity-50">
@@ -624,9 +608,9 @@ export function AuditPageClient() {
                     </li>
                   )
                 })}
-                {!loading && page + 1 < totalPages && (
+                {!loading && hasNextPage && (
                   <li>
-                    <button onClick={() => load(page + 1)} className="w-full py-3 text-sm text-steel-500 hover:bg-steel-50">
+                    <button onClick={() => fetchNextPage()} className="w-full py-3 text-sm text-steel-500 hover:bg-steel-50">
                       Load more…
                     </button>
                   </li>
