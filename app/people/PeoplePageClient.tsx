@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import * as XLSX from 'xlsx'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -19,13 +20,11 @@ import {
   TenantExitModal,
   OwnerExitModal,
 } from '@/components/people/ExitModals'
-import { getLeases } from '@/lib/api/leases'
-import type { LeaseData } from '@/lib/api/leases'
-import { getHouseholdMembers, createHouseholdMember, updateHouseholdMember, deleteHouseholdMember, type HouseholdMemberData } from '@/lib/api/household'
-import { getVehicles, createVehicle, updateVehicle, deleteVehicle, updateVehicleSticker, type VehicleData } from '@/lib/api/vehicles'
+import { createHouseholdMember, updateHouseholdMember, deleteHouseholdMember, type HouseholdMemberData } from '@/lib/api/household'
+import { createVehicle, updateVehicle, deleteVehicle, updateVehicleSticker, type VehicleData } from '@/lib/api/vehicles'
 import { PlateScanner } from '@/components/vehicles/PlateScanner'
-import { getPersonalStaff, createPersonalStaff, updatePersonalStaff, deletePersonalStaff, type PersonalStaffData } from '@/lib/api/staff'
-import { getEmergencyContacts, createEmergencyContact, updateEmergencyContact, deleteEmergencyContact, type EmergencyContactData } from '@/lib/api/emergencyContacts'
+import { createPersonalStaff, updatePersonalStaff, deletePersonalStaff, type PersonalStaffData } from '@/lib/api/staff'
+import { createEmergencyContact, updateEmergencyContact, deleteEmergencyContact, type EmergencyContactData } from '@/lib/api/emergencyContacts'
 import {
   updatePerson as apiUpdatePerson,
   updatePersonStatus as apiUpdatePersonStatus,
@@ -35,7 +34,6 @@ import {
   resendWelcomeEmail,
   getPersonById,
   apiPersonToPerson,
-  getPeoplePaged,
   getPeopleFromApi,
   type PersonData,
 } from '@/lib/api/people'
@@ -44,9 +42,17 @@ import type {
   Vehicle, HouseholdMember, EmergencyContact, PersonalStaff,
 } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { getCrbStatus, requestCrbConsent, runCrbCheck, type CrbStatus } from '@/lib/api/crb'
-import { getKycStatus, initiateKyc, scanKycDocument, type KycStatus as KycApiStatus } from '@/lib/api/kyc'
-import { listSystemUsers, listRoles, inviteUser, updateSystemUser, deactivateSystemUser, resendInvite, type SystemUser, type AppRole } from '@/lib/api/settings'
+import { requestCrbConsent, runCrbCheck } from '@/lib/api/crb'
+import { initiateKyc, scanKycDocument } from '@/lib/api/kyc'
+import { inviteUser, updateSystemUser, deactivateSystemUser, resendInvite } from '@/lib/api/settings'
+import {
+  usePeoplePaged, useHouseholdMembers, usePersonVehicles, useEmergencyContacts,
+  usePersonalStaff, usePersonVisitors, useCrbStatus, useKycStatus, usePersonAccess,
+  usePersonActiveLeases, useInvalidatePeople, useInvalidateHousehold,
+  useInvalidatePersonVehicles, useInvalidateEmergencyContacts, useInvalidatePersonalStaff,
+} from '@/lib/queries/people'
+import { useRoles } from '@/lib/queries/settings'
+import { queryKeys } from '@/lib/queries/keys'
 
 // ── KYC status badge ───────────────────────────────────────────────────────
 
@@ -312,27 +318,21 @@ function HouseholdMemberModal({ personId, item, onClose, onSaved }: {
 }
 
 function HouseholdMembersPanel({ personId }: { personId: string }) {
-  const [members, setMembers] = useState<HouseholdMemberData[]>([])
-  const [loading, setLoading]   = useState(true)
+  const { data: members = [], isLoading: loading } = useHouseholdMembers(personId)
+  const invalidate = useInvalidateHousehold(personId)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState<HouseholdMemberData | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    getHouseholdMembers(personId).then(setMembers).catch(() => {}).finally(() => setLoading(false))
-  }, [personId])
-
   async function handleDelete(m: HouseholdMemberData) {
     if (!window.confirm(`Remove ${m.first_name} from household?`)) return
     setDeletingId(m.id)
-    try { await deleteHouseholdMember(personId, m.id); setMembers(prev => prev.filter(x => x.id !== m.id)) }
+    try { await deleteHouseholdMember(personId, m.id); invalidate() }
     catch { /* ignore */ }
     finally { setDeletingId(null) }
   }
 
-  function onSaved(m: HouseholdMemberData) {
-    setMembers(prev => prev.some(x => x.id === m.id) ? prev.map(x => x.id === m.id ? m : x) : [m, ...prev])
-  }
+  function onSaved() { invalidate() }
 
   if (loading) return <PanelSpinner />
 
@@ -343,7 +343,7 @@ function HouseholdMembersPanel({ personId }: { personId: string }) {
           personId={personId}
           item={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
-          onSaved={m => { onSaved(m); setShowForm(false); setEditing(null) }}
+          onSaved={() => { onSaved(); setShowForm(false); setEditing(null) }}
         />
       )}
       {members.length === 0 && <PanelEmpty text="No household members registered." />}
@@ -518,8 +518,8 @@ function VehicleModal({ personId, item, onClose, onSaved }: {
 }
 
 function VehiclesPanel({ personId }: { personId: string }) {
-  const [vehicles, setVehicles]           = useState<VehicleData[]>([])
-  const [loading, setLoading]             = useState(true)
+  const { data: vehicles = [], isLoading: loading } = usePersonVehicles(personId)
+  const invalidate = useInvalidatePersonVehicles(personId)
   const [showForm, setShowForm]           = useState(false)
   const [editing, setEditing]             = useState<VehicleData | null>(null)
   const [deletingId, setDeletingId]       = useState<string | null>(null)
@@ -527,21 +527,15 @@ function VehiclesPanel({ personId }: { personId: string }) {
   const [stickerValue, setStickerValue]   = useState('')
   const [savingSticker, setSavingSticker] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    getVehicles(personId).then(setVehicles).catch(() => {}).finally(() => setLoading(false))
-  }, [personId])
-
   async function handleDelete(v: VehicleData) {
     if (!window.confirm(`Remove vehicle ${v.plate_number}?`)) return
     setDeletingId(v.id)
-    try { await deleteVehicle(personId, v.id); setVehicles(prev => prev.filter(x => x.id !== v.id)) }
+    try { await deleteVehicle(personId, v.id); invalidate() }
     catch {}
     finally { setDeletingId(null) }
   }
 
-  function onSaved(v: VehicleData) {
-    setVehicles(prev => prev.some(x => x.id === v.id) ? prev.map(x => x.id === v.id ? v : x) : [v, ...prev])
-  }
+  function onSaved() { invalidate() }
 
   async function saveSticker(v: VehicleData) {
     if (savingSticker.has(v.id)) return
@@ -549,8 +543,8 @@ function VehiclesPanel({ personId }: { personId: string }) {
     if (trimmed === (v.sticker_number ?? null)) { setEditingStickerId(null); return }
     setSavingSticker(s => new Set(s).add(v.id))
     try {
-      const updated = await updateVehicleSticker(v.id, trimmed)
-      setVehicles(prev => prev.map(x => x.id === v.id ? updated : x))
+      await updateVehicleSticker(v.id, trimmed)
+      invalidate()
     } catch {}
     finally {
       setSavingSticker(s => { const n = new Set(s); n.delete(v.id); return n })
@@ -567,7 +561,7 @@ function VehiclesPanel({ personId }: { personId: string }) {
           personId={personId}
           item={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
-          onSaved={v => { onSaved(v); setShowForm(false); setEditing(null) }}
+          onSaved={() => { onSaved(); setShowForm(false); setEditing(null) }}
         />
       )}
 
@@ -753,27 +747,21 @@ function EmergencyContactModal({ personId, item, onClose, onSaved }: {
 }
 
 function EmergencyContactsPanel({ personId }: { personId: string }) {
-  const [contacts, setContacts] = useState<EmergencyContactData[]>([])
-  const [loading, setLoading]   = useState(true)
+  const { data: contacts = [], isLoading: loading } = useEmergencyContacts(personId)
+  const invalidate = useInvalidateEmergencyContacts(personId)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing]   = useState<EmergencyContactData | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    getEmergencyContacts(personId).then(setContacts).catch(() => {}).finally(() => setLoading(false))
-  }, [personId])
-
   async function handleDelete(c: EmergencyContactData) {
     if (!window.confirm(`Remove ${c.name} from emergency contacts?`)) return
     setDeletingId(c.id)
-    try { await deleteEmergencyContact(personId, c.id); setContacts(prev => prev.filter(x => x.id !== c.id)) }
+    try { await deleteEmergencyContact(personId, c.id); invalidate() }
     catch { /* ignore */ }
     finally { setDeletingId(null) }
   }
 
-  function onSaved(c: EmergencyContactData) {
-    setContacts(prev => prev.some(x => x.id === c.id) ? prev.map(x => x.id === c.id ? c : x) : [c, ...prev])
-  }
+  function onSaved() { invalidate() }
 
   if (loading) return <PanelSpinner />
 
@@ -784,7 +772,7 @@ function EmergencyContactsPanel({ personId }: { personId: string }) {
           personId={personId}
           item={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
-          onSaved={c => { onSaved(c); setShowForm(false); setEditing(null) }}
+          onSaved={() => { onSaved(); setShowForm(false); setEditing(null) }}
         />
       )}
       {contacts.length === 0 && <PanelEmpty text="No emergency contacts on file." />}
@@ -946,27 +934,21 @@ function PersonalStaffModal({ personId, item, onClose, onSaved }: {
 }
 
 function PersonalStaffPanel({ personId }: { personId: string }) {
-  const [staffList, setStaffList] = useState<PersonalStaffData[]>([])
-  const [loading, setLoading]     = useState(true)
+  const { data: staffList = [], isLoading: loading } = usePersonalStaff(personId)
+  const invalidate = useInvalidatePersonalStaff(personId)
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState<PersonalStaffData | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    getPersonalStaff(personId).then(setStaffList).catch(() => {}).finally(() => setLoading(false))
-  }, [personId])
-
   async function handleDelete(s: PersonalStaffData) {
     if (!window.confirm(`Remove ${s.first_name} ${s.last_name} from personal staff?`)) return
     setDeletingId(s.id)
-    try { await deletePersonalStaff(personId, s.id); setStaffList(prev => prev.filter(x => x.id !== s.id)) }
+    try { await deletePersonalStaff(personId, s.id); invalidate() }
     catch { /* ignore */ }
     finally { setDeletingId(null) }
   }
 
-  function onSaved(s: PersonalStaffData) {
-    setStaffList(prev => prev.some(x => x.id === s.id) ? prev.map(x => x.id === s.id ? s : x) : [s, ...prev])
-  }
+  function onSaved() { invalidate() }
 
   if (loading) return <PanelSpinner />
 
@@ -977,7 +959,7 @@ function PersonalStaffPanel({ personId }: { personId: string }) {
           personId={personId}
           item={editing}
           onClose={() => { setShowForm(false); setEditing(null) }}
-          onSaved={s => { onSaved(s); setShowForm(false); setEditing(null) }}
+          onSaved={() => { onSaved(); setShowForm(false); setEditing(null) }}
         />
       )}
       {staffList.length === 0 && <PanelEmpty text="No personal staff registered." />}
@@ -1060,25 +1042,15 @@ function ResendWelcomeEmailButton({ personId }: { personId: string }) {
 // ── CRB Panel ──────────────────────────────────────────────────────────────
 
 function CrbPanel({ personId }: { personId: string }) {
-  const [status,   setStatus]   = useState<CrbStatus | null>(null)
-  const [loading,  setLoading]  = useState(true)
+  const { data: status, isLoading: loading, refetch } = useCrbStatus(personId)
   const [working,  setWorking]  = useState(false)
   const [error,    setError]    = useState('')
-
-  useEffect(() => {
-    getCrbStatus(personId)
-      .then(s => { setStatus(s); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [personId])
 
   async function handleRequestConsent() {
     setWorking(true); setError('')
     try {
       await requestCrbConsent(personId)
-      setError('')
-      // Refresh status
-      const s = await getCrbStatus(personId)
-      setStatus(s)
+      refetch()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to send consent request')
     } finally { setWorking(false) }
@@ -1087,8 +1059,8 @@ function CrbPanel({ personId }: { personId: string }) {
   async function handleRunCheck() {
     setWorking(true); setError('')
     try {
-      const s = await runCrbCheck(personId)
-      setStatus(s)
+      await runCrbCheck(personId)
+      refetch()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'CRB check failed')
     } finally { setWorking(false) }
@@ -1250,10 +1222,10 @@ function StepBadge({ status }: { status: string | null }) {
 }
 
 function KycPanel({ personId, personType }: { personId: string; personType: string }) {
-  const [status,   setStatus]   = useState<KycApiStatus | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [working,  setWorking]  = useState(false)
-  const [error,    setError]    = useState('')
+  const { data: status, isLoading: loading, refetch } = useKycStatus(personId)
+  const [working,    setWorking]    = useState(false)
+  const [error,      setError]      = useState('')
+  const [redoStep1,  setRedoStep1]  = useState(false)
 
   // Step 1 override fields
   const [idType,   setIdType]   = useState('')
@@ -1265,20 +1237,15 @@ function KycPanel({ personId, personType }: { personId: string; personType: stri
   const isPassportType = ['non_resident_owner', 'short_stay_guest'].includes(personType)
   const defaultIdType  = isPassportType ? 'passport' : 'national_id'
 
-  useEffect(() => {
-    getKycStatus(personId)
-      .then(s => { setStatus(s); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [personId])
-
   async function handleStep1() {
     setWorking(true); setError('')
     try {
       const payload: { id_type?: string; id_number?: string } = {}
       if (idType)   payload.id_type   = idType
       if (idNumber) payload.id_number = idNumber
-      const s = await initiateKyc(personId, payload)
-      setStatus(s)
+      await initiateKyc(personId, payload)
+      setRedoStep1(false)
+      refetch()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'ID lookup failed')
     } finally { setWorking(false) }
@@ -1289,8 +1256,8 @@ function KycPanel({ personId, personType }: { personId: string; personType: stri
     setWorking(true); setError('')
     try {
       const base64 = await compressImageToBase64(docFile)
-      const s = await scanKycDocument(personId, base64)
-      setStatus(s)
+      await scanKycDocument(personId, base64)
+      refetch()
       setDocFile(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Document scan failed')
@@ -1307,8 +1274,8 @@ function KycPanel({ personId, personType }: { personId: string; personType: stri
   const badge   = KYC_STATUS_MAP[overall] ?? KYC_STATUS_MAP['not_started']
 
   const canStep1 = !['verified', 'in_progress', 'pending_docs'].includes(overall) || overall === 'failed'
-  const canStep2 = overall === 'in_progress' || overall === 'pending_docs' ||
-                   (overall === 'failed' && status?.kyc_step1_status === 'passed')
+  const canStep2 = !redoStep1 && (overall === 'in_progress' || overall === 'pending_docs' ||
+                   (overall === 'failed' && status?.kyc_step1_status === 'passed'))
 
   return (
     <div className="p-5 space-y-4">
@@ -1411,7 +1378,7 @@ function KycPanel({ personId, personType }: { personId: string; personType: stri
 
             <div className="flex gap-2">
               <button
-                onClick={() => { setStatus(s => s ? { ...s, kyc_status: 'not_started', kyc_step1_status: null } : s); setError('') }}
+                onClick={() => { setRedoStep1(true); setError('') }}
                 disabled={working}
                 className="flex-1 py-2 rounded-lg border border-surface-border dark:border-dark-border text-sm font-medium text-text hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors disabled:opacity-50"
               >
@@ -1456,17 +1423,7 @@ function KycPanel({ personId, personType }: { personId: string; personType: stri
 // ── Visitor History Panel ───────────────────────────────────────────────────
 
 function VisitorHistoryPanel({ personId }: { personId: string }) {
-  const [visitors, setVisitors] = useState<any[]>([])
-  const [loading,  setLoading]  = useState(true)
-
-  useEffect(() => {
-    setLoading(true)
-    fetch(`/api/backend/visitors?personId=${personId}&size=50`)
-      .then(r => r.json())
-      .then(d => setVisitors(d?.data?.content ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [personId])
+  const { data: visitors = [], isLoading: loading } = usePersonVisitors(personId)
 
   if (loading) return <PanelSpinner />
   if (visitors.length === 0) return <PanelEmpty text="No visitor records for this resident." />
@@ -1691,30 +1648,21 @@ function EmailVerifyButton({ personId, personEmail, onVerified }: {
 // ── ManageAccessModal ────────────────────────────────────────────────────
 
 function ManageAccessModal({ person, onClose }: { person: Person; onClose: () => void }) {
-  const [loading,    setLoading]    = useState(true)
-  const [portalUser, setPortalUser] = useState<SystemUser | null>(null)
-  const [roles,      setRoles]      = useState<AppRole[]>([])
+  const { data: portalUser = null, isLoading: loading } = usePersonAccess(person.id)
+  const { data: roles = [] } = useRoles()
+  const qc = useQueryClient()
   const [working,    setWorking]    = useState<string | null>(null)
   const [error,      setError]      = useState<string | null>(null)
   const [roleId,     setRoleId]     = useState('')
   const [showInvite, setShowInvite] = useState(false)
-
-  useEffect(() => {
-    Promise.all([listSystemUsers(), listRoles()])
-      .then(([users, r]) => {
-        setPortalUser(users.find(u => u.person_id === person.id) ?? null)
-        setRoles(r)
-      })
-      .catch(() => setError('Failed to load access data.'))
-      .finally(() => setLoading(false))
-  }, [person.id])
 
   async function handleInvite() {
     if (!roleId) return
     setWorking('invite'); setError(null)
     try {
       const user = await inviteUser({ email: person.email, full_name: `${person.first_name} ${person.last_name}`, role_id: roleId })
-      setPortalUser(user); setShowInvite(false)
+      qc.setQueryData(queryKeys.people.access(person.id), user)
+      setShowInvite(false)
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to send invite.') }
     finally { setWorking(null) }
   }
@@ -1733,7 +1681,7 @@ function ManageAccessModal({ person, onClose }: { person: Person; onClose: () =>
     setWorking('suspend'); setError(null)
     try {
       const updated = await updateSystemUser(portalUser.id, { status: newStatus })
-      setPortalUser(updated)
+      qc.setQueryData(queryKeys.people.access(person.id), updated)
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update status.') }
     finally { setWorking(null) }
   }
@@ -1741,7 +1689,7 @@ function ManageAccessModal({ person, onClose }: { person: Person; onClose: () =>
   async function handleDeactivate() {
     if (!portalUser || !confirm(`Remove portal access for ${person.first_name}? They will no longer be able to log in.`)) return
     setWorking('deactivate'); setError(null)
-    try { await deactivateSystemUser(portalUser.id); setPortalUser(null) }
+    try { await deactivateSystemUser(portalUser.id); qc.setQueryData(queryKeys.people.access(person.id), null) }
     catch (e) { setError(e instanceof Error ? e.message : 'Failed to remove access.') }
     finally { setWorking(null) }
   }
@@ -1891,20 +1839,10 @@ function PersonDetail({ person, onExit, onUpdate, allUnits }: {
   const [typeWorking, setTypeWorking]       = useState(false)
   const [typeError, setTypeError]           = useState('')
   const [removingUnit,      setRemovingUnit]      = useState<string | null>(null)
-  const [activeLeases,      setActiveLeases]      = useState<LeaseData[]>([])
   const [unitSortCol,       setUnitSortCol]       = useState<'number'|'use_type'|'status'>('number')
   const [unitSortDir,       setUnitSortDir]       = useState<'asc'|'desc'>('asc')
   const [showManageAccess,  setShowManageAccess]  = useState(false)
-
-  useEffect(() => {
-    const unitIds = person.unit_ids ?? []
-    if (!unitIds.length) { setActiveLeases([]); return }
-    Promise.all(unitIds.map(uid => getLeases(uid).catch(() => [] as LeaseData[])))
-      .then(results => {
-        const all = results.flat()
-        setActiveLeases(all.filter(l => l.tenant_id === person.id && l.status === 'active'))
-      })
-  }, [person.id, person.unit_ids])
+  const { data: activeLeases = [] } = usePersonActiveLeases(person.id, person.unit_ids ?? [])
 
   function requestReveal(field: MaskableFieldType, label: string) {
     setRevealTarget({ field, label })
@@ -2373,42 +2311,24 @@ function PersonRow({ person, selected, onClick }: { person: Person; selected: bo
 
 function useTabPeople(type: 'owner' | 'tenant', debouncedSearch: string) {
   const [page, setPage] = useState(0)
-  const [items, setItems] = useState<Person[]>([])
-  const [totalPages, setTotalPages] = useState(0)
-  const [totalElements, setTotalElements] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [prevSearch, setPrevSearch] = useState(debouncedSearch)
 
-  // Compute the effective page: reset to 0 when search changes
-  const searchRef = useRef(debouncedSearch)
-  const currentPage = searchRef.current !== debouncedSearch ? 0 : page
+  // Synchronously reset page when search changes (React derived-state pattern)
+  if (prevSearch !== debouncedSearch) {
+    setPrevSearch(debouncedSearch)
+    setPage(0)
+  }
 
-  useEffect(() => {
-    if (searchRef.current !== debouncedSearch) {
-      searchRef.current = debouncedSearch
-      setPage(0)
-    }
-  }, [debouncedSearch])
+  const { data, isPending: loading } = usePeoplePaged(type, debouncedSearch, page)
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    getPeoplePaged(type, debouncedSearch, currentPage)
-      .then(resp => {
-        if (cancelled) return
-        setItems(resp.content.map(apiPersonToPerson))
-        setTotalPages(resp.totalPages)
-        setTotalElements(resp.totalElements)
-      })
-      .catch(() => { if (!cancelled) setItems([]) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [type, debouncedSearch, currentPage, refreshKey])
-
-  const refetch    = useCallback(() => setRefreshKey(k => k + 1), [])
-  const updateItem = useCallback((p: Person) => setItems(prev => prev.map(x => x.id === p.id ? p : x)), [])
-
-  return { items, page: currentPage, setPage, totalPages, totalElements, loading, refetch, updateItem }
+  return {
+    items: data?.content.map(apiPersonToPerson) ?? [],
+    page,
+    setPage,
+    totalPages: data?.totalPages ?? 0,
+    totalElements: data?.totalElements ?? 0,
+    loading,
+  }
 }
 
 // ── Pagination controls ────────────────────────────────────────────────────
@@ -2463,6 +2383,7 @@ export function PeoplePageClient({ allUnits = [] }: { allUnits?: Unit[] } = {}) 
 
   const owners  = useTabPeople('owner',  search)
   const tenants = useTabPeople('tenant', search)
+  const invalidatePeople = useInvalidatePeople()
 
   async function exportExcel() {
     if (exporting) return
@@ -2502,17 +2423,12 @@ export function PeoplePageClient({ allUnits = [] }: { allUnits?: Unit[] } = {}) 
     }
   }
 
-  function addPerson(p: Person) {
-    if (p.type === 'resident_owner' || p.type === 'non_resident_owner') {
-      owners.refetch()
-    } else if (p.type === 'tenant' || p.type === 'short_stay_guest') {
-      tenants.refetch()
-    }
+  function addPerson(_p: Person) {
+    invalidatePeople()
   }
 
   function updatePerson(p: Person) {
-    owners.updateItem(p)
-    tenants.updateItem(p)
+    invalidatePeople()
     setSelected(p)
   }
 

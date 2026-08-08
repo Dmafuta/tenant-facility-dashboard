@@ -11,12 +11,16 @@ import { CanDo } from '@/components/ui/CanDo'
 import { AddUnitModal } from '@/components/property/AddUnitModal'
 import { UNITS } from '@/lib/mock-data'
 import type { Unit, UnitOwner, UnitUseType, UnitStatus, Person } from '@/lib/types'
-import { getLeases, createLease, updateLease, deleteLease } from '@/lib/api/leases'
+import { createLease, updateLease, deleteLease } from '@/lib/api/leases'
 import type { LeaseData } from '@/lib/api/leases'
-import { getMeters, createMeter, updateMeter, deleteMeter } from '@/lib/api/meters'
+import { createMeter, updateMeter, deleteMeter } from '@/lib/api/meters'
 import type { MeterData } from '@/lib/api/meters'
-import { getCharges, createCharge, updateCharge, deleteCharge } from '@/lib/api/charges'
+import { createCharge, updateCharge, deleteCharge } from '@/lib/api/charges'
 import type { ChargeData } from '@/lib/api/charges'
+import {
+  useUnitLeases, useUnitCharges, useUnitMeters, useUnitVisitors,
+  useInvalidateUnitLeases, useInvalidateUnitCharges, useInvalidateUnitMeters,
+} from '@/lib/queries/property'
 import { deleteUnit, patchUnitStatus, patchUnitType } from '@/lib/api/units'
 import type { UnitData } from '@/lib/api/units'
 import { addUnitToPerson, removeUnitFromPerson } from '@/lib/api/people'
@@ -535,23 +539,20 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
   const [markingResident,   setMarkingResident]   = useState<string | null>(null)
 
   // ── Sub-tab data ─────────────────────────────────────────────────────────────
-  const [unitLeases,      setUnitLeases]      = useState<LeaseData[]>([])
-  const [leasesLoading,   setLeasesLoading]   = useState(false)
   const [showLeaseModal,  setShowLeaseModal]  = useState(false)
   const [editLease,       setEditLease]       = useState<LeaseData | null>(null)
-
-  const [unitCharges,     setUnitCharges]     = useState<ChargeData[]>([])
-  const [chargesLoading,  setChargesLoading]  = useState(false)
   const [showChargeModal, setShowChargeModal] = useState(false)
   const [editCharge,      setEditCharge]      = useState<ChargeData | null>(null)
-
-  const [unitMeters,      setUnitMeters]      = useState<MeterData[]>([])
-  const [metersLoading,   setMetersLoading]   = useState(false)
   const [showMeterModal,  setShowMeterModal]  = useState(false)
   const [editMeter,       setEditMeter]       = useState<MeterData | null>(null)
 
-  const [unitVisitors,    setUnitVisitors]    = useState<any[]>([])
-  const [visitorsLoading, setVisitorsLoading] = useState(false)
+  const { data: unitLeases   = [], isLoading: leasesLoading   } = useUnitLeases(selected?.id)
+  const { data: unitCharges  = [], isLoading: chargesLoading  } = useUnitCharges(selected?.id)
+  const { data: unitMeters   = [], isLoading: metersLoading   } = useUnitMeters(selected?.id)
+  const { data: unitVisitors = [], isLoading: visitorsLoading } = useUnitVisitors(selected?.id)
+  const invalidateLeases  = useInvalidateUnitLeases(selected?.id ?? '')
+  const invalidateCharges = useInvalidateUnitCharges(selected?.id ?? '')
+  const invalidateMeters  = useInvalidateUnitMeters(selected?.id ?? '')
 
   function handleUnitSaved(unit: UnitData) {
     const mapped = apiUnitToUnit(unit)
@@ -633,29 +634,6 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
     setPendingOccupant('')
   }, [selected?.id])
 
-  // Fetch sub-tab data whenever selected unit changes
-  useEffect(() => {
-    if (!selected?.id) {
-      setUnitLeases([])
-      setUnitCharges([])
-      setUnitMeters([])
-      setUnitVisitors([])
-      return
-    }
-    const id = selected.id
-    setLeasesLoading(true)
-    getLeases(id).then(setUnitLeases).catch(() => {}).finally(() => setLeasesLoading(false))
-    setChargesLoading(true)
-    getCharges(id).then(setUnitCharges).catch(() => {}).finally(() => setChargesLoading(false))
-    setMetersLoading(true)
-    getMeters(id).then(setUnitMeters).catch(() => {}).finally(() => setMetersLoading(false))
-    setVisitorsLoading(true)
-    fetch(`/api/backend/visitors?unitId=${id}&size=50`)
-      .then(r => r.json())
-      .then(d => setUnitVisitors(d?.data?.content ?? []))
-      .catch(() => {})
-      .finally(() => setVisitorsLoading(false))
-  }, [selected?.id])
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -1641,11 +1619,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
             unitLabel={`${selected.block}-${selected.number}`}
             tenants={allPeople.filter(p => p.type === 'tenant')}
             initialData={editLease}
-            onSaved={lease => setUnitLeases(prev => {
-              const idx = prev.findIndex(l => l.id === lease.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = lease; return n }
-              return [lease, ...prev]
-            })}
+            onSaved={() => invalidateLeases()}
           />
           <ChargeModal
             open={showChargeModal}
@@ -1654,11 +1628,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
             unitLabel={`${selected.block}-${selected.number}`}
             people={allPeople}
             initialData={editCharge}
-            onSaved={charge => setUnitCharges(prev => {
-              const idx = prev.findIndex(c => c.id === charge.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = charge; return n }
-              return [charge, ...prev]
-            })}
+            onSaved={() => invalidateCharges()}
           />
           <MeterModal
             open={showMeterModal}
@@ -1667,11 +1637,7 @@ export default function PropertyPageClient({ initialUnits, allPeople = [] }: { i
             unitLabel={`${selected.block}-${selected.number}`}
             people={allPeople}
             initialData={editMeter}
-            onSaved={meter => setUnitMeters(prev => {
-              const idx = prev.findIndex(m => m.id === meter.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = meter; return n }
-              return [meter, ...prev]
-            })}
+            onSaved={() => invalidateMeters()}
           />
         </>
       )}

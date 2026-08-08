@@ -50,4 +50,34 @@ export const queryKeys = {
     events: (params: Record<string, unknown>) =>
       [...queryKeys.audit.all, 'events', params] as const,
   },
+  people: {
+    all: ['people'] as const,
+    paged: (type: string, search: string, page: number) =>
+      [...queryKeys.people.all, 'paged', type, search, page] as const,
+    householdMembers: (personId: string) =>
+      [...queryKeys.people.all, 'household', personId] as const,
+    vehicles: (personId: string) =>
+      [...queryKeys.people.all, 'vehicles', personId] as const,
+    emergencyContacts: (personId: string) =>
+      [...queryKeys.people.all, 'emergency-contacts', personId] as const,
+    personalStaff: (personId: string) =>
+      [...queryKeys.people.all, 'staff', personId] as const,
+    visitors: (personId: string) =>
+      [...queryKeys.people.all, 'visitors', personId] as const,
+    crbStatus: (personId: string) =>
+      [...queryKeys.people.all, 'crb', personId] as const,
+    kycStatus: (personId: string) =>
+      [...queryKeys.people.all, 'kyc', personId] as const,
+    access: (personId: string) =>
+      [...queryKeys.people.all, 'access', personId] as const,
+    activeLeases: (personId: string, unitIds: string[]) =>
+      [...queryKeys.people.all, 'active-leases', personId, ...unitIds] as const,
+  },
+  property: {
+    all: ['property'] as const,
+    leases: (unitId: string) => [...queryKeys.property.all, 'leases', unitId] as const,
+    charges: (unitId: string) => [...queryKeys.property.all, 'charges', unitId] as const,
+    meters: (unitId: string) => [...queryKeys.property.all, 'meters', unitId] as const,
+    visitors: (unitId: string) => [...queryKeys.property.all, 'visitors', unitId] as const,
+  },
 } as const
