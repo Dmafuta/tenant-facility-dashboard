@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -12,7 +12,13 @@ import type { FacilityStaffMember, Person } from '@/lib/types'
 import { cn } from '@/lib/cn'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { grantPortalAccess, offboardPerson, updatePerson, apiPersonToPerson } from '@/lib/api/people'
-import { listRoles, type AppRole } from '@/lib/api/settings'
+import {
+  useOnboarding, useLeave, useStaffDocs, useRoster, useDisciplinary,
+  useTraining, usePayroll, useInvalidateOnboarding, useInvalidateLeave,
+  useInvalidateStaffDocs, useInvalidateRoster, useInvalidateDisciplinary,
+  useInvalidateTraining, useInvalidatePayroll,
+} from '@/lib/queries/hr'
+import { useRoles } from '@/lib/queries/settings'
 import {
   createDepartment, updateDepartment, deleteDepartment,
   type DepartmentData,
@@ -22,31 +28,31 @@ import {
   type VendorData,
 } from '@/lib/api/vendors'
 import {
-  listLeave, createLeave, updateLeave, approveLeave, rejectLeave, deleteLeave,
+  createLeave, updateLeave, approveLeave, rejectLeave, deleteLeave,
   type LeaveData,
 } from '@/lib/api/leave'
 import {
-  listStaffDocs, uploadStaffDoc, patchStaffDoc, deleteStaffDoc, staffDocDownloadUrl,
+  uploadStaffDoc, patchStaffDoc, deleteStaffDoc, staffDocDownloadUrl,
   type StaffDocData,
 } from '@/lib/api/staffdocs'
 import {
-  listRoster, createRosterEntry, updateRosterEntry, deleteRosterEntry,
+  createRosterEntry, updateRosterEntry, deleteRosterEntry,
   type RosterEntry,
 } from '@/lib/api/roster'
 import {
-  listOnboarding, createOnboarding, toggleOnboardingItem, deleteOnboarding,
+  createOnboarding, toggleOnboardingItem, deleteOnboarding,
   type OnboardingChecklistData,
 } from '@/lib/api/onboarding'
 import {
-  listDisciplinary, createDisciplinary, updateDisciplinary, deleteDisciplinary,
+  createDisciplinary, updateDisciplinary, deleteDisciplinary,
   type DisciplinaryData,
 } from '@/lib/api/disciplinary'
 import {
-  listTraining, createTraining, updateTraining, deleteTraining,
+  createTraining, updateTraining, deleteTraining,
   type TrainingData,
 } from '@/lib/api/training'
 import {
-  listPayroll, savePayroll, deletePayroll,
+  savePayroll, deletePayroll,
   type PayrollData,
 } from '@/lib/api/payroll'
 
@@ -653,13 +659,11 @@ function EditStaffModal({ person, departments, onClose, onDone }: {
 // ── Grant Portal Access Modal ───────────────────────────────────────────────
 
 function GrantAccessModal({ person, onClose }: { person: Person; onClose: () => void }) {
-  const [roles, setRoles]   = useState<AppRole[]>([])
+  const { data: roles = [] } = useRoles()
   const [roleName, setRole] = useState('')
   const [saving, setSaving] = useState(false)
   const [done, setDone]     = useState(false)
   const [error, setError]   = useState('')
-
-  useMemo(() => { listRoles().then(setRoles) }, [])
 
   async function handle() {
     if (!roleName) { setError('Please select a role.'); return }
@@ -1202,15 +1206,11 @@ export function HRPageClient({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function OnboardingTab({ staff }: { staff: Person[] }) {
-  const [checklists, setChecklists] = useState<OnboardingChecklistData[]>([])
-  const [loading, setLoading]       = useState(true)
+  const { data: checklists = [], isLoading: loading } = useOnboarding()
+  const invalidate = useInvalidateOnboarding()
   const [personId, setPersonId]     = useState('')
   const [creating, setCreating]     = useState(false)
   const [expanded, setExpanded]     = useState<string | null>(null)
-
-  useEffect(() => {
-    listOnboarding().then(setChecklists).finally(() => setLoading(false))
-  }, [])
 
   const unstarted = staff.filter(p => !checklists.find(c => c.person_id === p.id) && p.status !== 'former')
 
@@ -1218,21 +1218,21 @@ function OnboardingTab({ staff }: { staff: Person[] }) {
     if (!personId) return
     setCreating(true)
     try {
-      const c = await createOnboarding(personId)
-      setChecklists(prev => [c, ...prev])
+      await createOnboarding(personId)
+      invalidate()
       setPersonId('')
     } finally { setCreating(false) }
   }
 
   async function toggle(itemId: string, completed: boolean) {
-    const updated = await toggleOnboardingItem(itemId, { completed })
-    setChecklists(prev => prev.map(c => c.id === updated.id ? updated : c))
+    await toggleOnboardingItem(itemId, { completed })
+    invalidate()
   }
 
   async function handleDelete(personId: string) {
     if (!confirm('Delete this checklist?')) return
     await deleteOnboarding(personId)
-    setChecklists(prev => prev.filter(c => c.person_id !== personId))
+    invalidate()
   }
 
   if (loading) return <div className="mt-4 p-6 text-sm text-text-muted">Loading…</div>
@@ -1327,14 +1327,12 @@ function OnboardingTab({ staff }: { staff: Person[] }) {
 const LEAVE_TYPES = ['annual','sick','emergency','maternity','paternity','compassionate','other']
 
 function LeaveTab({ staff }: { staff: Person[] }) {
-  const [leaves,    setLeaves]    = useState<LeaveData[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const { data: leaves = [], isLoading: loading } = useLeave()
+  const invalidate = useInvalidateLeave()
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState<LeaveData | null>(null)
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterPerson, setFilterPerson] = useState('')
-
-  useEffect(() => { listLeave().then(setLeaves).finally(() => setLoading(false)) }, [])
 
   const filtered = useMemo(() => leaves.filter(l =>
     (filterStatus === 'all' || l.status === filterStatus) &&
@@ -1343,18 +1341,18 @@ function LeaveTab({ staff }: { staff: Person[] }) {
 
   async function handleApprove(l: LeaveData) {
     const notes = prompt('Approval notes (optional):') ?? ''
-    const updated = await approveLeave(l.id, { approval_notes: notes })
-    setLeaves(prev => prev.map(x => x.id === updated.id ? updated : x))
+    await approveLeave(l.id, { approval_notes: notes })
+    invalidate()
   }
   async function handleReject(l: LeaveData) {
     const notes = prompt('Rejection reason:') ?? ''
-    const updated = await rejectLeave(l.id, { approval_notes: notes })
-    setLeaves(prev => prev.map(x => x.id === updated.id ? updated : x))
+    await rejectLeave(l.id, { approval_notes: notes })
+    invalidate()
   }
   async function handleDelete(id: string) {
     if (!confirm('Delete this leave request?')) return
     await deleteLeave(id)
-    setLeaves(prev => prev.filter(x => x.id !== id))
+    invalidate()
   }
 
   const statusBadge = (s: string) => {
@@ -1427,12 +1425,8 @@ function LeaveTab({ staff }: { staff: Person[] }) {
           staff={staff}
           leave={editing}
           onClose={() => { setShowModal(false); setEditing(null) }}
-          onDone={saved => {
-            setLeaves(prev => {
-              const idx = prev.findIndex(x => x.id === saved.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n }
-              return [saved, ...prev]
-            })
+          onDone={() => {
+            invalidate()
             setShowModal(false); setEditing(null)
           }}
         />
@@ -1443,7 +1437,7 @@ function LeaveTab({ staff }: { staff: Person[] }) {
 
 function LeaveModal({ staff, leave, onClose, onDone }: {
   staff: Person[]; leave: LeaveData | null
-  onClose: () => void; onDone: (l: LeaveData) => void
+  onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     person_id:  leave?.person_id  ?? '',
@@ -1461,10 +1455,9 @@ function LeaveModal({ staff, leave, onClose, onDone }: {
     setSaving(true); setError('')
     try {
       const payload = { ...form, days: Number(form.days) || undefined }
-      const saved = leave
-        ? await updateLeave(leave.id, payload)
-        : await createLeave(payload)
-      onDone(saved)
+      if (leave) await updateLeave(leave.id, payload)
+      else await createLeave(payload)
+      onDone()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
     finally { setSaving(false) }
   }
@@ -1537,12 +1530,10 @@ const DOC_TYPES = [
 ]
 
 function DocumentsTab({ staff }: { staff: Person[] }) {
-  const [docs,      setDocs]      = useState<StaffDocData[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const { data: docs = [], isLoading: loading } = useStaffDocs()
+  const invalidate = useInvalidateStaffDocs()
   const [showUpload, setShowUpload] = useState(false)
   const [filterPerson, setFilterPerson] = useState('')
-
-  useEffect(() => { listStaffDocs().then(setDocs).finally(() => setLoading(false)) }, [])
 
   const filtered = useMemo(() => filterPerson ? docs.filter(d => d.person_id === filterPerson) : docs, [docs, filterPerson])
 
@@ -1552,7 +1543,7 @@ function DocumentsTab({ staff }: { staff: Person[] }) {
   async function handleDelete(id: string, filename: string) {
     if (!confirm(`Delete "${filename}"?`)) return
     await deleteStaffDoc(id)
-    setDocs(prev => prev.filter(d => d.id !== id))
+    invalidate()
   }
 
   return (
@@ -1610,7 +1601,7 @@ function DocumentsTab({ staff }: { staff: Person[] }) {
         <UploadDocModal
           staff={staff}
           onClose={() => setShowUpload(false)}
-          onDone={doc => { setDocs(prev => [doc, ...prev]); setShowUpload(false) }}
+          onDone={() => { invalidate(); setShowUpload(false) }}
         />
       )}
     </div>
@@ -1618,7 +1609,7 @@ function DocumentsTab({ staff }: { staff: Person[] }) {
 }
 
 function UploadDocModal({ staff, onClose, onDone }: {
-  staff: Person[]; onClose: () => void; onDone: (d: StaffDocData) => void
+  staff: Person[]; onClose: () => void; onDone: () => void
 }) {
   const [personId, setPersonId]   = useState('')
   const [docType,  setDocType]    = useState('national_id')
@@ -1633,8 +1624,8 @@ function UploadDocModal({ staff, onClose, onDone }: {
     if (!personId || !file) { setError('Select a staff member and a file.'); return }
     setUploading(true); setError('')
     try {
-      const doc = await uploadStaffDoc({ person_id: personId, document_type: docType, file, expiry_date: expiry || undefined, notes: notes || undefined })
-      onDone(doc)
+      await uploadStaffDoc({ person_id: personId, document_type: docType, file, expiry_date: expiry || undefined, notes: notes || undefined })
+      onDone()
     } catch (e) { setError(e instanceof Error ? e.message : 'Upload failed.') }
     finally { setUploading(false) }
   }
@@ -1715,8 +1706,6 @@ function RosterTab({ staff, departments }: { staff: Person[]; departments: Depar
   }
 
   const [weekStart, setWeekStart] = useState(todayMonday)
-  const [entries,   setEntries]   = useState<RosterEntry[]>([])
-  const [loading,   setLoading]   = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState<RosterEntry | null>(null)
   const [deptFilter, setDeptFilter] = useState('')
@@ -1735,11 +1724,8 @@ function RosterTab({ staff, departments }: { staff: Person[]; departments: Depar
     })
   }, [weekStart])
 
-  useEffect(() => {
-    setLoading(true)
-    listRoster({ from: weekStart, to: weekEnd, department: deptFilter || undefined })
-      .then(setEntries).finally(() => setLoading(false))
-  }, [weekStart, weekEnd, deptFilter])
+  const { data: entries = [], isLoading: loading } = useRoster(weekStart, weekEnd, deptFilter)
+  const invalidate = useInvalidateRoster(weekStart, weekEnd, deptFilter)
 
   const entriesByDate = useMemo(() => {
     const m: Record<string, RosterEntry[]> = {}
@@ -1758,7 +1744,7 @@ function RosterTab({ staff, departments }: { staff: Person[]; departments: Depar
 
   async function handleDelete(id: string) {
     await deleteRosterEntry(id)
-    setEntries(prev => prev.filter(e => e.id !== id))
+    invalidate()
   }
 
   const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
@@ -1817,13 +1803,8 @@ function RosterTab({ staff, departments }: { staff: Person[]; departments: Depar
           entry={editing}
           defaultDate={weekStart}
           onClose={() => { setShowModal(false); setEditing(null) }}
-          onDone={saved => {
-            setEntries(prev => {
-              const idx = prev.findIndex(e => e.id === saved.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n }
-              if (saved.date >= weekStart && saved.date <= weekEnd) return [...prev, saved]
-              return prev
-            })
+          onDone={() => {
+            invalidate()
             setShowModal(false); setEditing(null)
           }}
         />
@@ -1835,7 +1816,7 @@ function RosterTab({ staff, departments }: { staff: Person[]; departments: Depar
 function RosterModal({ staff, departments, entry, defaultDate, onClose, onDone }: {
   staff: Person[]; departments: DepartmentData[]
   entry: RosterEntry | null; defaultDate: string
-  onClose: () => void; onDone: (e: RosterEntry) => void
+  onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     person_id:  entry?.person_id  ?? '',
@@ -1853,10 +1834,9 @@ function RosterModal({ staff, departments, entry, defaultDate, onClose, onDone }
     if (!form.person_id || !form.date) { setError('Staff and date are required.'); return }
     setSaving(true); setError('')
     try {
-      const saved = entry
-        ? await updateRosterEntry(entry.id, form)
-        : await createRosterEntry(form)
-      onDone(saved)
+      if (entry) await updateRosterEntry(entry.id, form)
+      else await createRosterEntry(form)
+      onDone()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
     finally { setSaving(false) }
   }
@@ -1938,20 +1918,18 @@ const DISC_COLORS: Record<string,string> = {
 }
 
 function DisciplinaryTab({ staff }: { staff: Person[] }) {
-  const [records,   setRecords]   = useState<DisciplinaryData[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const { data: records = [], isLoading: loading } = useDisciplinary()
+  const invalidate = useInvalidateDisciplinary()
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState<DisciplinaryData | null>(null)
   const [filterPerson, setFilterPerson] = useState('')
-
-  useEffect(() => { listDisciplinary().then(setRecords).finally(() => setLoading(false)) }, [])
 
   const filtered = useMemo(() => filterPerson ? records.filter(r => r.person_id === filterPerson) : records, [records, filterPerson])
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this disciplinary record? This action cannot be undone.')) return
     await deleteDisciplinary(id)
-    setRecords(prev => prev.filter(r => r.id !== id))
+    invalidate()
   }
 
   return (
@@ -2004,12 +1982,8 @@ function DisciplinaryTab({ staff }: { staff: Person[] }) {
           staff={staff}
           record={editing}
           onClose={() => { setShowModal(false); setEditing(null) }}
-          onDone={saved => {
-            setRecords(prev => {
-              const idx = prev.findIndex(r => r.id === saved.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n }
-              return [saved, ...prev]
-            })
+          onDone={() => {
+            invalidate()
             setShowModal(false); setEditing(null)
           }}
         />
@@ -2020,7 +1994,7 @@ function DisciplinaryTab({ staff }: { staff: Person[] }) {
 
 function DisciplinaryModal({ staff, record, onClose, onDone }: {
   staff: Person[]; record: DisciplinaryData | null
-  onClose: () => void; onDone: (r: DisciplinaryData) => void
+  onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     person_id:     record?.person_id     ?? '',
@@ -2038,10 +2012,9 @@ function DisciplinaryModal({ staff, record, onClose, onDone }: {
     if (!form.person_id || !form.description) { setError('Staff and description are required.'); return }
     setSaving(true); setError('')
     try {
-      const saved = record
-        ? await updateDisciplinary(record.id, form)
-        : await createDisciplinary(form)
-      onDone(saved)
+      if (record) await updateDisciplinary(record.id, form)
+      else await createDisciplinary(form)
+      onDone()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
     finally { setSaving(false) }
   }
@@ -2117,13 +2090,11 @@ function DisciplinaryModal({ staff, record, onClose, onDone }: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TrainingTab({ staff }: { staff: Person[] }) {
-  const [records,   setRecords]   = useState<TrainingData[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const { data: records = [], isLoading: loading } = useTraining()
+  const invalidate = useInvalidateTraining()
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState<TrainingData | null>(null)
   const [filterPerson, setFilterPerson] = useState('')
-
-  useEffect(() => { listTraining().then(setRecords).finally(() => setLoading(false)) }, [])
 
   const filtered = useMemo(() => filterPerson ? records.filter(r => r.person_id === filterPerson) : records, [records, filterPerson])
 
@@ -2133,7 +2104,7 @@ function TrainingTab({ staff }: { staff: Person[] }) {
   async function handleDelete(id: string) {
     if (!confirm('Delete this training record?')) return
     await deleteTraining(id)
-    setRecords(prev => prev.filter(r => r.id !== id))
+    invalidate()
   }
 
   return (
@@ -2193,12 +2164,8 @@ function TrainingTab({ staff }: { staff: Person[] }) {
           staff={staff}
           record={editing}
           onClose={() => { setShowModal(false); setEditing(null) }}
-          onDone={saved => {
-            setRecords(prev => {
-              const idx = prev.findIndex(r => r.id === saved.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n }
-              return [saved, ...prev]
-            })
+          onDone={() => {
+            invalidate()
             setShowModal(false); setEditing(null)
           }}
         />
@@ -2209,7 +2176,7 @@ function TrainingTab({ staff }: { staff: Person[] }) {
 
 function TrainingModal({ staff, record, onClose, onDone }: {
   staff: Person[]; record: TrainingData | null
-  onClose: () => void; onDone: (r: TrainingData) => void
+  onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     person_id:          record?.person_id          ?? '',
@@ -2227,10 +2194,9 @@ function TrainingModal({ staff, record, onClose, onDone }: {
     if (!form.person_id || !form.training_name) { setError('Staff and training name are required.'); return }
     setSaving(true); setError('')
     try {
-      const saved = record
-        ? await updateTraining(record.id, form)
-        : await createTraining(form)
-      onDone(saved)
+      if (record) await updateTraining(record.id, form)
+      else await createTraining(form)
+      onDone()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
     finally { setSaving(false) }
   }
@@ -2300,16 +2266,12 @@ function TrainingModal({ staff, record, onClose, onDone }: {
 
 function PayrollTab({ staff }: { staff: Person[] }) {
   const currentMonth = new Date().toISOString().slice(0, 7)
-  const [records,    setRecords]   = useState<PayrollData[]>([])
-  const [loading,    setLoading]   = useState(true)
   const [month,      setMonth]     = useState(currentMonth)
   const [showModal,  setShowModal] = useState(false)
   const [editing,    setEditing]   = useState<PayrollData | null>(null)
 
-  useEffect(() => {
-    setLoading(true)
-    listPayroll({ month }).then(setRecords).finally(() => setLoading(false))
-  }, [month])
+  const { data: records = [], isLoading: loading } = usePayroll(month)
+  const invalidate = useInvalidatePayroll(month)
 
   const fmt = (v: number | null) => v != null ? `KES ${Number(v).toLocaleString()}` : '—'
 
@@ -2322,7 +2284,7 @@ function PayrollTab({ staff }: { staff: Person[] }) {
   async function handleDelete(id: string) {
     if (!confirm('Delete this payroll record?')) return
     await deletePayroll(id)
-    setRecords(prev => prev.filter(r => r.id !== id))
+    invalidate()
   }
 
   return (
@@ -2394,13 +2356,8 @@ function PayrollTab({ staff }: { staff: Person[] }) {
           record={editing}
           month={month}
           onClose={() => { setShowModal(false); setEditing(null) }}
-          onDone={saved => {
-            setRecords(prev => {
-              const idx = prev.findIndex(r => r.id === saved.id)
-              if (idx >= 0) { const n = [...prev]; n[idx] = saved; return n }
-              if (saved.month === month) return [...prev, saved]
-              return prev
-            })
+          onDone={() => {
+            invalidate()
             setShowModal(false); setEditing(null)
           }}
         />
@@ -2411,7 +2368,7 @@ function PayrollTab({ staff }: { staff: Person[] }) {
 
 function PayrollModal({ staff, record, month, onClose, onDone }: {
   staff: Person[]; record: PayrollData | null; month: string
-  onClose: () => void; onDone: (r: PayrollData) => void
+  onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     person_id:        record?.person_id        ?? '',
@@ -2447,8 +2404,8 @@ function PayrollModal({ staff, record, month, onClose, onDone }: {
         net_salary:       form.net_salary       ? Number(form.net_salary)       : (autoNet > 0 ? autoNet : null),
         notes:            form.notes            || null,
       }
-      const saved = await savePayroll(payload)
-      onDone(saved)
+      await savePayroll(payload)
+      onDone()
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save.') }
     finally { setSaving(false) }
   }

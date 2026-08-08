@@ -80,4 +80,21 @@ export const queryKeys = {
     meters: (unitId: string) => [...queryKeys.property.all, 'meters', unitId] as const,
     visitors: (unitId: string) => [...queryKeys.property.all, 'visitors', unitId] as const,
   },
+  hr: {
+    all: ['hr'] as const,
+    onboarding: () => [...queryKeys.hr.all, 'onboarding'] as const,
+    leave: () => [...queryKeys.hr.all, 'leave'] as const,
+    staffDocs: () => [...queryKeys.hr.all, 'staff-docs'] as const,
+    roster: (from: string, to: string, dept: string) =>
+      [...queryKeys.hr.all, 'roster', from, to, dept] as const,
+    disciplinary: () => [...queryKeys.hr.all, 'disciplinary'] as const,
+    training: () => [...queryKeys.hr.all, 'training'] as const,
+    payroll: (month: string) => [...queryKeys.hr.all, 'payroll', month] as const,
+  },
+  financials: {
+    all: ['financials'] as const,
+    charges: () => [...queryKeys.financials.all, 'charges'] as const,
+    transactions: () => [...queryKeys.financials.all, 'transactions'] as const,
+    openInvoices: () => [...queryKeys.financials.all, 'open-invoices'] as const,
+  },
 } as const

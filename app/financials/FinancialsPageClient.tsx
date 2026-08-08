@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -11,11 +11,15 @@ import { PhoneInput } from '@/components/ui/PhoneInput'
 import { LEASES } from '@/lib/mock-data'
 import type { ChargeType, ChargeStatus, BillingCycle, BillingRunItem } from '@/lib/types'
 import { cn } from '@/lib/cn'
-import { getAllCharges, recordPayment } from '@/lib/api/charges'
+import { recordPayment } from '@/lib/api/charges'
 import type { ChargeData } from '@/lib/api/charges'
-import { initiateStkPush, getMpesaTransactions, reconcileTransaction } from '@/lib/api/mpesa'
+import { initiateStkPush, reconcileTransaction } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
-import { getInvoices, applyPayment as applyInvoicePayment, type InvoiceData } from '@/lib/api/invoices'
+import { applyPayment as applyInvoicePayment, type InvoiceData } from '@/lib/api/invoices'
+import {
+  useAllCharges, useMpesaTransactions, useOpenInvoices,
+  useInvalidateCharges, useInvalidateTransactions,
+} from '@/lib/queries/financials'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -434,17 +438,12 @@ function UnmatchedC2bSection({
   const [saving,   setSaving]  = useState<string | null>(null)
   const [error,    setError]   = useState<string | null>(null)
   const [page,     setPage]    = useState(0)
-  const [invoices, setInvoices] = useState<InvoiceData[]>([])
 
-  useEffect(() => {
-    getInvoices({ status: 'issued' }).then(setInvoices).catch(() => {})
-    getInvoices({ status: 'partial' }).then(more => setInvoices(prev => [...prev, ...more])).catch(() => {})
-  }, [])
+  const { data: outstandingInvoices = [] } = useOpenInvoices()
 
   if (unmatched.length === 0) return null
 
   const unpaidCharges = charges.filter(c => c.status === 'pending' || c.status === 'overdue' || c.status === 'partial')
-  const outstandingInvoices = invoices.filter(i => ['issued','partial'].includes(i.status))
 
   async function handleLink(txId: string, amount: number, mpesaRef: string | null) {
     const target = linking[txId]
@@ -950,38 +949,10 @@ export function FinancialsPageClient() {
   const [payTarget, setPayTarget]     = useState<ChargeData | null>(null)
   const [showPay, setShowPay]         = useState(false)
 
-  const [charges, setCharges]               = useState<ChargeData[]>([])
-  const [transactions, setTransactions]     = useState<MpesaTransactionData[]>([])
-  const [chargesLoading, setChargesLoading] = useState(true)
-
-  const fetchCharges = useCallback(async () => {
-    try {
-      const data = await getAllCharges()
-      setCharges(data)
-    } catch { /* silently fail */ }
-    finally { setChargesLoading(false) }
-  }, [])
-
-  const fetchTransactions = useCallback(async () => {
-    try {
-      const data = await getMpesaTransactions()
-      setTransactions(data)
-    } catch { /* silently fail */ }
-  }, [])
-
-  useEffect(() => { fetchCharges() }, [fetchCharges])
-  useEffect(() => { fetchTransactions() }, [fetchTransactions])
-
-  // Poll every 5 s while any transaction is pending so the UI updates automatically
-  useEffect(() => {
-    const hasPending = transactions.some(t => t.status === 'pending')
-    if (!hasPending) return
-    const id = setInterval(() => {
-      fetchTransactions()
-      fetchCharges()
-    }, 5000)
-    return () => clearInterval(id)
-  }, [transactions, fetchTransactions, fetchCharges])
+  const { data: charges = [], isLoading: chargesLoading } = useAllCharges()
+  const { data: transactions = [] } = useMpesaTransactions()
+  const invalidateCharges = useInvalidateCharges()
+  const invalidateTransactions = useInvalidateTransactions()
 
   // Unique periods for filter
   const periods = useMemo(() => {
@@ -1041,7 +1012,7 @@ export function FinancialsPageClient() {
         <PaymentsTabContent
           transactions={transactions}
           charges={charges}
-          onRefresh={() => { fetchCharges(); fetchTransactions() }}
+          onRefresh={() => { invalidateCharges(); invalidateTransactions() }}
         />
       )}
 
@@ -1212,7 +1183,7 @@ export function FinancialsPageClient() {
       {/* Modals */}
       <RunBillingCycleModal open={showBillingCycle} onClose={() => setShowBillingCycle(false)} />
       <AddChargeModal open={showAdd} onClose={() => setShowAdd(false)} />
-      <MarkPaidModal  charge={payTarget} open={showPay} onClose={() => setShowPay(false)} onSaved={() => { fetchCharges(); setShowPay(false) }} />
+      <MarkPaidModal  charge={payTarget} open={showPay} onClose={() => setShowPay(false)} onSaved={() => { invalidateCharges(); setShowPay(false) }} />
 
       </>}
     </div>
