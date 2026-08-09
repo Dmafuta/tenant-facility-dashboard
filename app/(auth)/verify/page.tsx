@@ -163,11 +163,7 @@ function VerifyForm() {
 
         <p className="text-center text-sm text-text-muted">
           Didn&apos;t receive a code?{' '}
-          {channel === '2fa' ? (
-            <Link href="/login" className="text-primary-600 font-medium hover:underline">
-              Sign in again
-            </Link>
-          ) : countdown > 0 ? (
+          {countdown > 0 ? (
             <span className="text-text-muted">Resend in {countdown}s</span>
           ) : (
             <button
@@ -175,7 +171,7 @@ function VerifyForm() {
               disabled={resending}
               className="text-primary-600 font-medium hover:underline disabled:opacity-50"
             >
-              {resending ? 'Sending…' : 'Resend code'}
+              {resending ? 'Sending…' : isSms ? 'Resend SMS' : 'Resend code'}
             </button>
           )}
         </p>
