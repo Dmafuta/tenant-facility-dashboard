@@ -1,14 +1,15 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { Select } from '@/components/ui/Select'
 import { LEASE_APPLICATIONS, ONBOARDING_APPLICATIONS } from '@/lib/mock-data'
-import { getAllLeases, updateLease } from '@/lib/api/leases'
+import { updateLease } from '@/lib/api/leases'
 import type { LeaseData } from '@/lib/api/leases'
+import { useLeases, useInvalidateLeases } from '@/lib/queries/leases'
 import type { LeaseApplication, OnboardingApplication, OnboardingStage, BillingCycle } from '@/lib/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -82,20 +83,14 @@ function KPIBar({ leases }: { leases: LeaseData[] }) {
 
 // ── Active Leases ─────────────────────────────────────────────────────────────
 function ActiveLeases({ initialLeases }: { initialLeases: LeaseData[] }) {
-  const [leases,       setLeases]       = useState<LeaseData[]>(initialLeases)
-  const [loading,      setLoading]      = useState(false)
+  const { data: leases = initialLeases, isLoading: loading } = useLeases()
+  const invalidate = useInvalidateLeases()
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [selected,     setSelected]     = useState<LeaseData | null>(null)
   const [renewTarget,  setRenewTarget]  = useState<LeaseData | null>(null)
   const [showRenew,    setShowRenew]    = useState(false)
   const [generating,   setGenerating]   = useState(false)
-
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try { setLeases(await getAllLeases()) } catch { /* keep current */ }
-    finally { setLoading(false) }
-  }, [])
 
   const filtered = leases.filter(l => {
     const q = search.toLowerCase()
@@ -320,10 +315,10 @@ function ActiveLeases({ initialLeases }: { initialLeases: LeaseData[] }) {
       lease={renewTarget}
       open={showRenew}
       onClose={() => setShowRenew(false)}
-      onRenewed={async (updated) => {
+      onRenewed={(updated) => {
         setShowRenew(false)
         setRenewTarget(null)
-        await refresh()
+        invalidate()
         setSelected(updated)
       }}
     />

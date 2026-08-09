@@ -1,8 +1,9 @@
 'use client'
 import { cn } from '@/lib/cn'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { getIssues, createIssue, updateIssue, updateIssueStatus, escalateIssue, deleteIssue, type IssueData } from '@/lib/api/issues'
+import { createIssue, updateIssue, updateIssueStatus, escalateIssue, deleteIssue, type IssueData } from '@/lib/api/issues'
+import { useIssues, useInvalidateIssues } from '@/lib/queries/issues'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -523,8 +524,9 @@ function OccurrenceDetail({ issue, onUpdated, onDeleted, onEdit, onEscalate }: {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export function IssuesPageClient() {
-  const [issues, setIssues]             = useState<IssueData[]>([])
-  const [loading, setLoading]           = useState(true)
+  const { data: rawIssues, isLoading: loading } = useIssues()
+  const issues = Array.isArray(rawIssues) ? rawIssues : []
+  const invalidate = useInvalidateIssues()
   const [selected, setSelected]         = useState<IssueData | null>(null)
   const [showForm, setShowForm]         = useState(false)
   const [editing, setEditing]           = useState<IssueData | null>(null)
@@ -536,23 +538,16 @@ export function IssuesPageClient() {
   const [priorityFilter, setPriorityFilter]   = useState('all')
   const [categoryFilter, setCategoryFilter]   = useState('all')
 
-  useEffect(() => {
-    getIssues()
-      .then(data => setIssues(Array.isArray(data) ? data : []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
   function onSaved(v: IssueData) {
-    setIssues(prev => prev.some(x => x.id === v.id) ? prev.map(x => x.id === v.id ? v : x) : [v, ...prev])
+    invalidate()
     setSelected(v)
   }
   function onUpdated(v: IssueData) {
-    setIssues(prev => prev.map(x => x.id === v.id ? v : x))
+    invalidate()
     setSelected(v)
   }
-  function onDeleted(id: string) {
-    setIssues(prev => prev.filter(x => x.id !== id))
+  function onDeleted(_id: string) {
+    invalidate()
     setSelected(null)
   }
 

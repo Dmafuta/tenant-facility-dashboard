@@ -1,13 +1,14 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Card } from '@/components/ui/Card'
 import {
-  listRuns, createRun, getRun, uploadAttendance,
+  createRun, getRun, uploadAttendance,
   patchEntry, updateRunStatus, exportKcb,
   submitForApproval, approveRun, rejectRun,
   type PayrollRun, type PayrollEntry,
 } from '@/lib/api/casualPayroll'
+import { useCasualPayrollRuns, useInvalidateCasualPayrollRuns } from '@/lib/queries/casualPayroll'
 import { useAbac } from '@/lib/abac/context'
 
 const fmt = (n: number | null | undefined) =>
@@ -543,14 +544,10 @@ function EntryRow({ entry, runStatus, saving, onPatch }: {
 
 // ── Page Root ─────────────────────────────────────────────────────────────────
 export default function CasualPayrollClient() {
-  const [runs,     setRuns]    = useState<PayrollRun[]>([])
-  const [loading,  setLoading] = useState(true)
+  const { data: runs = [], isLoading: loading } = useCasualPayrollRuns()
+  const invalidate = useInvalidateCasualPayrollRuns()
   const [showNew,  setShowNew] = useState(false)
   const [selected, setSelected]= useState<PayrollRun | null>(null)
-
-  useEffect(() => {
-    listRuns().then(setRuns).finally(() => setLoading(false))
-  }, [])
 
   async function openRun(r: PayrollRun) {
     const full = await getRun(r.id)
@@ -559,7 +556,7 @@ export default function CasualPayrollClient() {
 
   function onNewCreated(r: PayrollRun) {
     setShowNew(false)
-    setRuns(prev => [r, ...prev])
+    invalidate()
     setSelected(r)
   }
 

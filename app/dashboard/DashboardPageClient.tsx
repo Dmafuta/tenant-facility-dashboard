@@ -1,15 +1,12 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Card } from '@/components/ui/Card'
 import { useCountUp } from '@/hooks/useCountUp'
-import { getMpesaTransactions } from '@/lib/api/mpesa'
 import type { MpesaTransactionData } from '@/lib/api/mpesa'
-import { getMeterReadings } from '@/lib/api/meters'
 import type { MeterReadingData } from '@/lib/api/meters'
-import { getConsumableStock } from '@/lib/api/consumables'
 import type { ConsumableStockData } from '@/lib/api/consumables'
-import { getPendingExitCount } from '@/lib/api/exitRequests'
+import { useDashboardLiveData } from '@/lib/queries/dashboard'
 import type { DashboardData } from './page'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -90,42 +87,11 @@ export default function DashboardPageClient({ data }: { data: DashboardData | nu
   const today = new Date()
 
   // ── Client-side live data ─────────────────────────────────────────────────
-  const [mpesaTxns,     setMpesaTxns]     = useState<MpesaTransactionData[]>([])
-  const [liveStock,     setLiveStock]     = useState<ConsumableStockData[]>([])
-  const [pendingExits,  setPendingExits]  = useState(0)
-  const [recentReadings,setRecentReadings]= useState<MeterReadingData[]>([])
-
-  useEffect(() => {
-    const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
-    // since = 6 months ago (covers the revenue trend chart)
-    const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1)
-      .toISOString().slice(0, 10)
-
-    Promise.all([
-      getMpesaTransactions({ since: sixMonthsAgo }).catch(() => [] as MpesaTransactionData[]),
-      getConsumableStock().catch(() => [] as ConsumableStockData[]),
-      getPendingExitCount().catch(() => 0),
-      getMeterReadings({ period: currentPeriod, limit: 8 }).catch(() => [] as MeterReadingData[]),
-    ]).then(([txns, stock, exitCount, readings]) => {
-      setMpesaTxns(txns)
-      setLiveStock(stock)
-      setPendingExits(exitCount)
-      setRecentReadings(
-        readings
-          .filter(r => r.read_by)
-          .sort((a, b) => (b.reading_date ?? '').localeCompare(a.reading_date ?? ''))
-          .slice(0, 8)
-      )
-    })
-  }, [])
-
-  // Poll move-out clearances every 30 seconds
-  useEffect(() => {
-    const id = setInterval(() => {
-      getPendingExitCount().then(setPendingExits).catch(() => {})
-    }, 30_000)
-    return () => clearInterval(id)
-  }, [])
+  const { data: liveData } = useDashboardLiveData()
+  const mpesaTxns      = liveData?.mpesaTxns      ?? ([] as MpesaTransactionData[])
+  const liveStock      = liveData?.liveStock      ?? ([] as ConsumableStockData[])
+  const pendingExits   = liveData?.pendingExits   ?? 0
+  const recentReadings = liveData?.recentReadings ?? ([] as MeterReadingData[])
 
   // ── Occupancy ─────────────────────────────────────────────────────────────
   const total       = data?.unitStats.total       ?? 0

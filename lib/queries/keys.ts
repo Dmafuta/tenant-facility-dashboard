@@ -97,4 +97,27 @@ export const queryKeys = {
     transactions: () => [...queryKeys.financials.all, 'transactions'] as const,
     openInvoices: () => [...queryKeys.financials.all, 'open-invoices'] as const,
   },
+  issues: {
+    all: ['issues'] as const,
+    list: () => [...queryKeys.issues.all, 'list'] as const,
+  },
+  casualPayroll: {
+    all: ['casual-payroll'] as const,
+    runs: () => [...queryKeys.casualPayroll.all, 'runs'] as const,
+  },
+  consumables: {
+    all: ['consumables'] as const,
+    types: () => [...queryKeys.consumables.all, 'types'] as const,
+    stock: () => [...queryKeys.consumables.all, 'stock'] as const,
+    issuances: (period: string) => [...queryKeys.consumables.all, 'issuances', period] as const,
+  },
+  integrations: {
+    all: ['integrations'] as const,
+    settings: () => [...queryKeys.integrations.all, 'settings'] as const,
+    mpesaAccounts: () => [...queryKeys.integrations.all, 'mpesa-accounts'] as const,
+  },
+  dashboard: {
+    all: ['dashboard'] as const,
+    liveData: () => [...queryKeys.dashboard.all, 'live-data'] as const,
+  },
 } as const

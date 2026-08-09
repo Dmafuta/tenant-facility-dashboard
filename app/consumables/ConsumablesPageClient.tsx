@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -7,12 +7,16 @@ import { SearchInput } from '@/components/ui/SearchInput'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs'
 import { cn } from '@/lib/cn'
 import {
-  getConsumableTypes, createConsumableType, updateConsumableType, toggleConsumableType,
-  getIssuances, createIssuance, issueOne, bulkIssue, generateRun,
-  getConsumableStock, restockConsumable, updateStockSettings,
+  createConsumableType, updateConsumableType, toggleConsumableType,
+  createIssuance, issueOne, bulkIssue, generateRun,
+  restockConsumable, updateStockSettings,
   type ConsumableTypeData, type ConsumableIssuanceData, type ConsumableStockData,
 } from '@/lib/api/consumables'
 import { getUnitsFromApi, type UnitData } from '@/lib/api/units'
+import {
+  useConsumableTypes, useConsumableStock, useIssuances,
+  useInvalidateConsumableTypes, useInvalidateConsumableStock, useInvalidateIssuances,
+} from '@/lib/queries/consumables'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -361,25 +365,18 @@ function RecordIssuanceModal({
 
 // ── IssuanceRunTab ─────────────────────────────────────────────────────────
 
-function IssuanceRunTab({ types, onIssuanceChange }: { types: ConsumableTypeData[]; onIssuanceChange: () => void }) {
+function IssuanceRunTab({ types }: { types: ConsumableTypeData[] }) {
   const [period,     setPeriod]     = useState(currentPeriod())
   const [search,     setSearch]     = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
-  const [issuances,  setIssuances]  = useState<ConsumableIssuanceData[]>([])
-  const [loading,    setLoading]    = useState(true)
   const [showRecord, setShowRecord] = useState(false)
   const [issuing,    setIssuing]    = useState<string | null>(null)
   const [bulking,    setBulking]    = useState(false)
   const [generating, setGenerating] = useState(false)
   const [feedback,   setFeedback]   = useState('')
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try { setIssuances(await getIssuances(period)) } catch { /* ignore */ }
-    finally { setLoading(false) }
-  }, [period])
-
-  useEffect(() => { load() }, [load])
+  const { data: issuances = [], isLoading: loading } = useIssuances(period)
+  const invalidate = useInvalidateIssuances(period)
 
   const typeOptions = [
     { value: 'all', label: 'All Types' },
@@ -404,9 +401,8 @@ function IssuanceRunTab({ types, onIssuanceChange }: { types: ConsumableTypeData
   async function handleIssueOne(id: string) {
     setIssuing(id)
     try {
-      const updated = await issueOne(id)
-      setIssuances(prev => prev.map(r => r.id === id ? updated : r))
-      if (period === currentPeriod()) onIssuanceChange()
+      await issueOne(id)
+      invalidate()
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'Failed to issue')
       setTimeout(() => setFeedback(''), 4000)
@@ -424,8 +420,7 @@ function IssuanceRunTab({ types, onIssuanceChange }: { types: ConsumableTypeData
       const result = await bulkIssue(period, typeFilter)
       setFeedback(`Bulk issue complete: ${result.issued} issued, ${result.withheld} withheld.`)
       setTimeout(() => setFeedback(''), 5000)
-      await load()
-      if (period === currentPeriod()) onIssuanceChange()
+      invalidate()
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'Bulk issue failed')
       setTimeout(() => setFeedback(''), 4000)
@@ -443,8 +438,7 @@ function IssuanceRunTab({ types, onIssuanceChange }: { types: ConsumableTypeData
       const result = await generateRun(period, typeFilter)
       setFeedback(`Generated ${result.generated} pending record${result.generated !== 1 ? 's' : ''}.`)
       setTimeout(() => setFeedback(''), 5000)
-      await load()
-      if (period === currentPeriod()) onIssuanceChange()
+      invalidate()
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'Generate failed')
       setTimeout(() => setFeedback(''), 4000)
@@ -472,7 +466,7 @@ function IssuanceRunTab({ types, onIssuanceChange }: { types: ConsumableTypeData
           types={types}
           period={period}
           onClose={() => setShowRecord(false)}
-          onSaved={i => { setIssuances(prev => [i, ...prev]); setShowRecord(false); if (period === currentPeriod()) onIssuanceChange() }}
+          onSaved={() => { invalidate(); setShowRecord(false) }}
         />
       )}
 
@@ -1019,31 +1013,11 @@ function StockLevelsTab({
 // ── Main ───────────────────────────────────────────────────────────────────
 
 export function ConsumablesPageClient() {
-  const [types,        setTypes]        = useState<ConsumableTypeData[]>([])
-  const [typesLoading, setTypesLoading] = useState(true)
-  const [stocks,       setStocks]       = useState<ConsumableStockData[]>([])
-  const [stocksLoading, setStocksLoading] = useState(true)
-  const [issuances,    setIssuances]    = useState<ConsumableIssuanceData[]>([])
-
-  const loadTypes = useCallback(async () => {
-    setTypesLoading(true)
-    try { setTypes(await getConsumableTypes()) } catch { /* ignore */ }
-    finally { setTypesLoading(false) }
-  }, [])
-
-  const loadStocks = useCallback(async () => {
-    setStocksLoading(true)
-    try { setStocks(await getConsumableStock()) } catch { /* ignore */ }
-    finally { setStocksLoading(false) }
-  }, [])
-
-  const loadIssuances = useCallback(async () => {
-    try { setIssuances(await getIssuances(currentPeriod())) } catch { /* ignore */ }
-  }, [])
-
-  useEffect(() => { loadTypes() }, [loadTypes])
-  useEffect(() => { loadStocks() }, [loadStocks])
-  useEffect(() => { loadIssuances() }, [loadIssuances])
+  const { data: types  = [], isLoading: typesLoading  } = useConsumableTypes()
+  const { data: stocks = [], isLoading: stocksLoading } = useConsumableStock()
+  const { data: issuances = [] }                        = useIssuances(currentPeriod())
+  const invalidateTypes  = useInvalidateConsumableTypes()
+  const invalidateStocks = useInvalidateConsumableStock()
 
   const activeTypes    = types.filter(t => t.active).length
   const lowStockCount  = stocks.filter(s => s.current_stock < s.reorder_level).length
@@ -1087,13 +1061,13 @@ export function ConsumablesPageClient() {
         </TabsList>
 
         <TabsContent value="issuance" className="pt-5">
-          <IssuanceRunTab types={types} onIssuanceChange={loadIssuances} />
+          <IssuanceRunTab types={types} />
         </TabsContent>
         <TabsContent value="types" className="pt-5">
-          <ConsumableTypesTab types={types} loading={typesLoading} onRefresh={loadTypes} />
+          <ConsumableTypesTab types={types} loading={typesLoading} onRefresh={invalidateTypes} />
         </TabsContent>
         <TabsContent value="stock" className="pt-5">
-          <StockLevelsTab stocks={stocks} loading={stocksLoading} onRefresh={loadStocks} />
+          <StockLevelsTab stocks={stocks} loading={stocksLoading} onRefresh={invalidateStocks} />
         </TabsContent>
       </Tabs>
     </main>

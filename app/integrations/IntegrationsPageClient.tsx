@@ -1,16 +1,21 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
-  getIntegrations, saveEmailIntegration, saveAfricasTalkingIntegration,
+  saveEmailIntegration, saveAfricasTalkingIntegration,
   saveAfrinetIntegration,
   saveMpesaIntegration, saveTelegramIntegration, savePremblyIntegration, saveAnthropicIntegration,
   saveAmrIntegration,
   testEmailIntegration, testSmsIntegration, testTelegramIntegration, testMpesaIntegration,
-  listMpesaAccounts, createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
+  createMpesaAccount, updateMpesaAccount, deleteMpesaAccount,
   setDefaultMpesaAccount, testMpesaAccount, registerC2bUrls,
   type IntegrationSettings, type MpesaAccount,
 } from '@/lib/api/settings'
+import {
+  useIntegrationSettings, useMpesaAccounts, useInvalidateMpesaAccounts,
+} from '@/lib/queries/integrations'
+import { queryKeys } from '@/lib/queries/keys'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 
 // ── Shared UI atoms ───────────────────────────────────────────────────────────
@@ -617,8 +622,8 @@ function RegisterC2bModal({
 // ── MPesa Accounts List ───────────────────────────────────────────────────────
 
 function MpesaAccountsList() {
-  const [accounts, setAccounts]   = useState<MpesaAccount[]>([])
-  const [loading, setLoading]     = useState(true)
+  const { data: accounts = [], isLoading: loading } = useMpesaAccounts()
+  const invalidateAccounts = useInvalidateMpesaAccounts()
   const [editing, setEditing]     = useState<MpesaAccount | 'new' | null>(null)
   const [testPhone, setTestPhone] = useState('')
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -626,23 +631,16 @@ function MpesaAccountsList() {
   const [deletingId, setDeletingId]         = useState<string | null>(null)
   const [registerTarget, setRegisterTarget] = useState<MpesaAccount | null>(null)
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listMpesaAccounts().then(setAccounts).finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
   const handleSetDefault = async (id: string) => {
-    const updated = await setDefaultMpesaAccount(id)
-    setAccounts(updated)
+    await setDefaultMpesaAccount(id)
+    invalidateAccounts()
   }
 
   const handleDelete = async (id: string) => {
     setDeletingId(id)
     try {
       await deleteMpesaAccount(id)
-      setAccounts(prev => prev.filter(a => a.id !== id))
+      invalidateAccounts()
     } finally { setDeletingId(null) }
   }
 
@@ -658,11 +656,8 @@ function MpesaAccountsList() {
     } finally { setTestingId(null) }
   }
 
-  const handleDone = (saved: MpesaAccount) => {
-    setAccounts(prev => {
-      const idx = prev.findIndex(a => a.id === saved.id)
-      return idx >= 0 ? prev.map(a => a.id === saved.id ? saved : a) : [...prev, saved]
-    })
+  const handleDone = (_saved: MpesaAccount) => {
+    invalidateAccounts()
     setEditing(null)
   }
 
@@ -1107,25 +1102,15 @@ function AmrCard({ initial, onSave }: { initial: IntegrationSettings['amr']; onS
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function IntegrationsPageClient() {
-  const [settings, setSettings] = useState<IntegrationSettings | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    setLoading(true)
-    getIntegrations()
-      .then(setSettings)
-      .catch(e => setError(e?.message ?? 'Failed to load integration settings'))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => { load() }, [load])
+  const { data: settings, isLoading: loading, error } = useIntegrationSettings()
+  const queryClient = useQueryClient()
 
   if (loading) return <div className="p-8 text-sm text-gray-400">Loading integrations…</div>
-  if (error)   return <div className="p-8 text-sm text-red-500">{error}</div>
+  if (error)   return <div className="p-8 text-sm text-red-500">{(error as Error).message}</div>
   if (!settings) return null
 
-  const handleSave = (updated: IntegrationSettings) => setSettings(updated)
+  const handleSave = (updated: IntegrationSettings) =>
+    queryClient.setQueryData(queryKeys.integrations.settings(), updated)
 
   const configured = [
     settings.email.configured,
