@@ -4,7 +4,7 @@ export default function GlobalError({ reset }: { reset: () => void }) {
   return (
     <html lang="en">
       <head>
-        <title>Critical Error - Green Valley Estate</title>
+        <title>Critical Error - FacilityOS</title>
         <style dangerouslySetInnerHTML={{ __html: `
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
@@ -25,7 +25,7 @@ export default function GlobalError({ reset }: { reset: () => void }) {
         <div className="wrap">
           <div className="logo">
             <div className="logo-icon">G</div>
-            <span className="logo-name">Green Valley Estate</span>
+            <span className="logo-name">FacilityOS</span>
           </div>
           <div className="icon-box">
             <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" width="110" height="110">

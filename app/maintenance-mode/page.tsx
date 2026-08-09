@@ -6,7 +6,7 @@ export default function MaintenanceModePage() {
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-10">
           <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg shadow">G</div>
-          <span className="text-base font-semibold text-text">Green Valley Estate</span>
+          <span className="text-base font-semibold text-text">FacilityOS</span>
         </div>
 
         {/* Illustration */}
@@ -31,7 +31,7 @@ export default function MaintenanceModePage() {
 
         <h1 className="text-2xl font-bold text-text mb-3">We&apos;re tuning things up</h1>
         <p className="text-sm text-text-muted leading-relaxed mb-8 max-w-sm mx-auto">
-          Green Valley Estate portal is undergoing scheduled maintenance to improve your experience.
+          FacilityOS portal is undergoing scheduled maintenance to improve your experience.
           We&apos;ll be back shortly.
         </p>
 
@@ -69,7 +69,7 @@ export default function MaintenanceModePage() {
         </p>
 
         <p className="mt-8 text-xs text-text-muted">
-          Green Valley Estate · Portal v2.0
+          FacilityOS · Portal v2.0
         </p>
       </div>
     </div>

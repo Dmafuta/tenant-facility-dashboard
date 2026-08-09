@@ -1,15 +1,17 @@
 'use client'
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Building2, Lock, Mail, Eye, EyeOff, ShieldCheck, KeyRound,
-  Fingerprint, Globe2, CheckCircle2, ArrowRight, LifeBuoy,
+  Globe2, CheckCircle2, ArrowRight, LifeBuoy,
   ScrollText, AlertTriangle, BarChart3, Building, Users, Workflow,
   Sparkles,
 } from 'lucide-react'
 import { loginWithPassword, sendOtp } from '@/lib/api/auth'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [showPwd,   setShowPwd]   = useState(false)
   const [mode,      setMode]      = useState<'password' | 'sso'>('password')
   const [email,     setEmail]     = useState('')
@@ -18,6 +20,15 @@ export default function LoginPage() {
   const [error,     setError]     = useState('')
   const [magicSent, setMagicSent] = useState(false)
   const [magicMode, setMagicMode] = useState(false)
+
+  // Auto-navigate to verify page 1.5s after sign-in code is sent
+  useEffect(() => {
+    if (!magicSent) return
+    const t = setTimeout(() => {
+      router.push(`/verify?email=${encodeURIComponent(email)}`)
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [magicSent, email, router])
 
   async function onPasswordSubmit(e: FormEvent) {
     e.preventDefault()
@@ -247,23 +258,11 @@ export default function LoginPage() {
                       </div>
                     </FormField>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-steel-500">
-                        <input
-                          type="checkbox"
-                          className="size-3.5 rounded border-steel-300 text-emerald-600 focus:ring-emerald-600"
-                        />
-                        Keep me signed in on this device
-                      </label>
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-steel-400">
-                        <Fingerprint className="size-3" /> MFA required
-                      </span>
-                    </div>
                   </>
                 ) : (
                   /* Magic link mode */
                   <>
-                    <FormField label="Work email" hint="We'll send a one-time sign-in code — no password needed">
+                    <FormField label="Work email" hint="We'll email you a 6-digit sign-in code — no password needed">
                       <div className="flex items-stretch rounded-md ring-1 ring-steel-200 bg-white focus-within:ring-2 focus-within:ring-emerald-600/40">
                         <div className="grid place-items-center pl-3 pr-2 text-steel-400">
                           <Mail className="size-4" />
@@ -286,15 +285,7 @@ export default function LoginPage() {
                 {magicSent && (
                   <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-[11px] text-emerald-800">
                     <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
-                    <p>
-                      Code sent — check your inbox, then{' '}
-                      <Link
-                        href={`/verify?email=${encodeURIComponent(email)}`}
-                        className="font-semibold underline"
-                      >
-                        enter it here
-                      </Link>.
-                    </p>
+                    <p>Code sent to <strong>{email}</strong> — redirecting you now…</p>
                   </div>
                 )}
 
@@ -314,7 +305,7 @@ export default function LoginPage() {
                   >
                     {loading
                       ? (magicMode ? 'Sending code…' : 'Signing in…')
-                      : (magicMode ? 'Send magic link' : 'Continue')}
+                      : (magicMode ? 'Send sign-in code' : 'Continue')}
                     {!loading && <ArrowRight className="size-4" />}
                   </button>
                 )}
@@ -339,7 +330,7 @@ export default function LoginPage() {
                         onClick={() => { setMagicMode(true); setError('') }}
                         className="inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800"
                       >
-                        <Sparkles className="size-3" /> Send magic link
+                        <Sparkles className="size-3" /> Email me a code
                       </button>
                     </>
                   )}
@@ -347,37 +338,25 @@ export default function LoginPage() {
               </form>
             )}
 
-            {/* ── Enterprise SSO form ── */}
+            {/* ── Enterprise SSO — coming soon ── */}
             {mode === 'sso' && (
-              <form className="space-y-4" onSubmit={e => e.preventDefault()}>
-                <FormField label="Organisation domain" hint="We'll route you to your identity provider">
-                  <div className="flex items-stretch rounded-md ring-1 ring-steel-200 bg-white focus-within:ring-2 focus-within:ring-emerald-600/40">
-                    <div className="grid place-items-center pl-3 pr-2 text-steel-400">
-                      <Globe2 className="size-4" />
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="yourcompany.com"
-                      className="flex-1 bg-transparent py-2.5 pr-3 text-sm text-steel-900 outline-none placeholder:text-steel-300"
-                    />
-                  </div>
-                </FormField>
-                <div className="rounded-md border border-dashed border-steel-300 bg-white/60 p-3 text-[11px] text-steel-500">
-                  <p className="flex items-center gap-1.5 font-semibold text-steel-700">
-                    <ShieldCheck className="size-3.5 text-emerald-700" /> SAML 2.0 &amp; OIDC supported
-                  </p>
-                  <p className="mt-1">
-                    Okta, Azure AD, Google Workspace, Ping, JumpCloud and custom IdPs.
-                    SCIM provisioning available on Enterprise.
+              <div className="space-y-4">
+                <div className="rounded-md border border-dashed border-steel-300 bg-white/60 p-5 text-center text-[11px] text-steel-500">
+                  <ShieldCheck className="mx-auto mb-3 size-8 text-emerald-700 opacity-60" />
+                  <p className="font-semibold text-steel-700 mb-1">Enterprise SSO — Coming soon</p>
+                  <p className="leading-relaxed">
+                    SAML 2.0 &amp; OIDC support (Okta, Azure AD, Google Workspace) is in development.
+                    Contact your administrator to be notified when it&apos;s available.
                   </p>
                 </div>
                 <button
-                  type="submit"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-steel-900 py-2.5 text-sm font-semibold text-white transition hover:bg-steel-700"
+                  type="button"
+                  onClick={() => { setMode('password'); setError('') }}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-steel-200 bg-white py-2.5 text-sm font-semibold text-steel-700 transition hover:bg-steel-50"
                 >
-                  Continue with SSO <ArrowRight className="size-4" />
+                  ← Sign in with password instead
                 </button>
-              </form>
+              </div>
             )}
 
             {/* Request access */}

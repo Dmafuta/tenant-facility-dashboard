@@ -92,7 +92,7 @@ function VerifyForm() {
 
         <div className="flex items-center justify-center gap-2.5 mb-10">
           <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg shadow">G</div>
-          <span className="text-base font-semibold text-text">Green Valley Estate</span>
+          <span className="text-base font-semibold text-text">Great Wall Gardens</span>
         </div>
 
         <div className="mx-auto mb-6 w-20 h-20 rounded-2xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center text-4xl">
@@ -115,6 +115,7 @@ function VerifyForm() {
               Also sent to your email as backup.
             </p>
           )}
+          <p className="text-xs text-text-muted mt-2">This code expires in 2 minutes.</p>
         </div>
 
         <div className="flex gap-2.5 justify-center mb-6" onPaste={handlePaste}>

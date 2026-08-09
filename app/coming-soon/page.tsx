@@ -6,7 +6,7 @@ export default function ComingSoonPage() {
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-10">
           <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg shadow">G</div>
-          <span className="text-base font-semibold text-text">Green Valley Estate</span>
+          <span className="text-base font-semibold text-text">FacilityOS</span>
         </div>
 
         {/* Illustration */}
@@ -39,7 +39,7 @@ export default function ComingSoonPage() {
 
         <h1 className="text-2xl font-bold text-text mb-3">This feature is launching soon</h1>
         <p className="text-sm text-text-muted leading-relaxed mb-8 max-w-sm mx-auto">
-          We&apos;re building something great for Green Valley Estate. This module will be available in an upcoming release.
+          We&apos;re building something great for FacilityOS. This module will be available in an upcoming release.
         </p>
 
         {/* What to expect */}
@@ -71,7 +71,7 @@ export default function ComingSoonPage() {
         </a>
 
         <p className="mt-10 text-xs text-text-muted">
-          Green Valley Estate · Portal v2.0
+          FacilityOS · Portal v2.0
         </p>
       </div>
     </div>

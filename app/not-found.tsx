@@ -8,7 +8,7 @@ export default function NotFound() {
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-10">
           <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-white font-bold text-lg shadow">G</div>
-          <span className="text-base font-semibold text-text">Green Valley Estate</span>
+          <span className="text-base font-semibold text-text">FacilityOS</span>
         </div>
 
         {/* Illustration */}
