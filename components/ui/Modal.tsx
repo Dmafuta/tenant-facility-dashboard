@@ -33,7 +33,7 @@ export function Modal({ open, onClose, title, children, size = 'md', className, 
           {title && (
             <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-surface-border dark:border-dark-border">
               <h2 className="text-base font-semibold text-text">{title}</h2>
-              <button onClick={onClose} className="text-text-muted hover:text-text transition">
+              <button onClick={onClose} aria-label="Close" className="text-text-muted hover:text-text transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>

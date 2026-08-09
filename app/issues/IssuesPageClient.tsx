@@ -176,7 +176,7 @@ function OccurrenceModal({ item, onClose, onSaved }: {
           <h2 className="flex-1 font-heading text-base font-semibold text-steel-900">
             {isNew ? 'Log Occurrence' : 'Edit Occurrence'}
           </h2>
-          <button onClick={onClose} className="p-1 text-steel-400 hover:text-steel-900">
+          <button onClick={onClose} aria-label="Close" className="p-1 text-steel-400 hover:text-steel-900">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -294,7 +294,7 @@ function EscalateModal({ issue, onClose, onUpdated }: {
         <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-950/5 flex-shrink-0">
           <span className="text-xl">🚨</span>
           <h2 className="flex-1 font-heading text-base font-semibold text-steel-900">Escalate to P1 · Critical</h2>
-          <button onClick={onClose} className="p-1 text-steel-400 hover:text-steel-900">
+          <button onClick={onClose} aria-label="Close" className="p-1 text-steel-400 hover:text-steel-900">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
             </svg>

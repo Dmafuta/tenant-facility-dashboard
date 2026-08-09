@@ -124,6 +124,7 @@ function ReviewModal({ request, onClose, onDone }: {
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

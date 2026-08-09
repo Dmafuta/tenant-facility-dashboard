@@ -125,6 +125,7 @@ export default function AiQueryPanel({ open, onClose }: AiQueryPanelProps) {
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="h-8 w-8 flex items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted dark:hover:bg-dark-hover transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
