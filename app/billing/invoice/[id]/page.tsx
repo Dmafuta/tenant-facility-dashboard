@@ -86,6 +86,8 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
 
   const isWS = inv.category_code === 'WS'
   const balanceFwd = n(inv.opening_balance) + n(inv.previous_balance) - n(inv.paid_amount)
+  // Total the tenant must pay: all prior outstanding (previousBalance) + this period's standalone balance
+  const totalDue   = n(inv.previous_balance) + n(inv.balance)
   const chartMax   = recentReadings.length > 0
     ? Math.max(...recentReadings.map(r => n(r.units_consumed)), 1)
     : 1
@@ -179,7 +181,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
               </div>
               <div style={{background:'oklch(0.34 0.05 250)',borderRadius:'4px',padding:'12px 28px',minWidth:'260px',textAlign:'right',flexShrink:0}}>
                 <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.1em',color:'oklch(0.80 0.04 250)',textTransform:'uppercase'}}>Total Amount Due</div>
-                <div style={{fontSize:'33px',fontWeight:800,color:'#fff',letterSpacing:'-0.02em',fontVariantNumeric:'tabular-nums',lineHeight:1.1,marginTop:'4px'}}>{fmt(n(inv.balance))}</div>
+                <div style={{fontSize:'33px',fontWeight:800,color:'#fff',letterSpacing:'-0.02em',fontVariantNumeric:'tabular-nums',lineHeight:1.1,marginTop:'4px'}}>{fmt(totalDue)}</div>
                 {!!inv.due_date && <div style={{fontSize:'11.5px',color:'oklch(0.82 0.04 250)',marginTop:'6px'}}>Pay by {fmtDate(inv.due_date as string)} to avoid a late fee</div>}
               </div>
             </div>
@@ -234,10 +236,14 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 {lineItems.map((li, i) => {
                   let detail = ''
                   if (showDetails && mr) {
-                    if (li.charge_type === 'water') {
-                      detail = `${n(mr.units_consumed).toFixed(1)} m³ @ KES ${n(mr.unit_cost).toFixed(2)}`
-                    } else if (li.charge_type === 'sewerage') {
-                      detail = '75% of water charge'
+                    if (li.charge_type === 'water' && n(mr.units_consumed) > 0) {
+                      // Effective all-in rate (base + mgmt fee) so rate × units = charge amount
+                      const effectiveRate = n(li.amount) / n(mr.units_consumed)
+                      detail = `${n(mr.units_consumed).toFixed(1)} m³ @ KES ${effectiveRate.toFixed(2)}`
+                    } else if (li.charge_type === 'sewerage' && n(mr.units_consumed) > 0) {
+                      // Per-unit sewerage rate so rate × units = sewerage charge amount
+                      const sewerageRate = n(li.amount) / n(mr.units_consumed)
+                      detail = `${n(mr.units_consumed).toFixed(1)} m³ @ KES ${sewerageRate.toFixed(2)}`
                     }
                   } else if (li.description) {
                     detail = String(li.description)
@@ -268,7 +274,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                     Total amount due
                     <span style={{fontWeight:500,color:'oklch(0.55 0.02 250)',fontSize:'12px'}}> (balance forward + current charges)</span>
                   </span>
-                  <span style={{fontSize:'22px',fontWeight:800,fontVariantNumeric:'tabular-nums',color:'oklch(0.34 0.05 250)'}}>{fmt(n(inv.balance))}</span>
+                  <span style={{fontSize:'22px',fontWeight:800,fontVariantNumeric:'tabular-nums',color:'oklch(0.34 0.05 250)'}}>{fmt(totalDue)}</span>
                 </div>
               </div>
             )}
@@ -392,7 +398,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 </div>
                 <div style={{textAlign:'right'}}>
                   <div className="lbl">Amount Due</div>
-                  <div style={{fontSize:'22px',fontWeight:800,fontVariantNumeric:'tabular-nums',color:'oklch(0.34 0.05 250)',marginTop:'2px'}}>{fmt(n(inv.balance))}</div>
+                  <div style={{fontSize:'22px',fontWeight:800,fontVariantNumeric:'tabular-nums',color:'oklch(0.34 0.05 250)',marginTop:'2px'}}>{fmt(totalDue)}</div>
                 </div>
               </div>
             </div>
