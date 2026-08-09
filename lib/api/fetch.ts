@@ -13,6 +13,7 @@ function friendlyStatus(status: number): string {
   if (status === 404) return 'The requested item was not found.'
   if (status === 409) return 'This action conflicts with existing data. Please refresh the page and try again.'
   if (status === 429) return 'Too many requests. Please wait a moment and try again.'
+  if (status === 503) return 'The service is temporarily unavailable. Please try again in a few minutes.'
   if (status >= 500)  return 'Something went wrong on our end. Please try again in a moment.'
   return 'An unexpected error occurred. Please try again.'
 }
