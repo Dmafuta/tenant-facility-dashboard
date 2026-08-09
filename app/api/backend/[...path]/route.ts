@@ -34,6 +34,13 @@ async function proxy(
   headers['Accept'] = 'application/json'
   const incoming = request.headers.get('cookie') ?? ''
   if (incoming) headers['Cookie'] = incoming
+  // Forward real client IP so the backend rate limiter and audit logs see the actual
+  // visitor IP rather than the Next.js container IP. Cloudflare sets CF-Connecting-IP;
+  // nginx sets X-Real-IP for non-Cloudflare traffic.
+  const clientIp = request.headers.get('cf-connecting-ip')
+                ?? request.headers.get('x-real-ip')
+                ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (clientIp) headers['X-Real-IP'] = clientIp
   // Forward idempotency key so backend can deduplicate retried requests
   const idempotencyKey = request.headers.get('Idempotency-Key')
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
