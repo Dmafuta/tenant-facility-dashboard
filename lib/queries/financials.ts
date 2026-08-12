@@ -8,6 +8,7 @@ export function useAllCharges() {
   return useQuery({
     queryKey: queryKeys.financials.charges(),
     queryFn: () => getAllCharges(),
+    staleTime: 2 * 60 * 1000,
   })
 }
 
@@ -33,6 +34,7 @@ export function useOpenInvoices() {
       ])
       return [...issued, ...partial]
     },
+    staleTime: 30 * 1000,
   })
 }
 

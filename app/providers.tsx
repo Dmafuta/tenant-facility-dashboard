@@ -13,6 +13,7 @@ export function Providers({ subject, children }: { subject: Subject; children: R
           queries: {
             staleTime: 60 * 1000, // 1 minute
             retry: 1,
+            refetchOnWindowFocus: false,
           },
         },
       })
