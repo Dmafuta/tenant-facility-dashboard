@@ -19,6 +19,7 @@ function VerifyForm() {
   const [resending, setResend]    = useState(false)
   const [resent, setResent]       = useState(false)
   const [countdown, setCountdown] = useState(30)
+  const [codeSending, setCodeSending] = useState(channel === '2fa')
   const inputs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
@@ -26,6 +27,12 @@ function VerifyForm() {
     const t = setTimeout(() => setCountdown(c => c - 1), 1000)
     return () => clearTimeout(t)
   }, [countdown])
+
+  useEffect(() => {
+    if (!codeSending) return
+    const t = setTimeout(() => setCodeSending(false), 3000)
+    return () => clearTimeout(t)
+  }, [])
 
   function handleDigit(index: number, value: string) {
     setError('')
@@ -110,7 +117,12 @@ function VerifyForm() {
                 ? <>Enter the 6-digit code sent to <strong className="text-text">{email}</strong>.</>
                 : 'Enter the 6-digit code sent to you.'}
           </p>
-          {isSms && (
+          {codeSending && (
+            <p className="text-xs text-primary-600 dark:text-primary-400 mt-2 animate-pulse">
+              Your code is on its way&hellip;
+            </p>
+          )}
+          {!codeSending && isSms && (
             <p className="text-xs text-text-muted mt-1">
               Also sent to your email as backup.
             </p>
