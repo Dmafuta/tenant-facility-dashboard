@@ -521,6 +521,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
 export function BillingPageClient() {
   const { subject, can } = useAbac()
   const canIssue = can('charge.create', { type: 'charge' })
+  const canWaive = can('charge.waive', { type: 'charge' })
   const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'>('WS')
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -1955,7 +1956,7 @@ export function BillingPageClient() {
                             Pay
                           </Button>
                         )}
-                        {['draft', 'issued', 'partial'].includes(inv.status) && (
+                        {['draft', 'issued', 'partial'].includes(inv.status) && canIssue && (
                           <Button
                             size="sm" variant="danger"
                             disabled={actioning === inv.id}
@@ -1964,7 +1965,7 @@ export function BillingPageClient() {
                             Request Void
                           </Button>
                         )}
-                        {['issued', 'partial'].includes(inv.status) && (
+                        {['issued', 'partial'].includes(inv.status) && canWaive && (
                           <Button
                             size="sm" variant="danger"
                             disabled={actioning === inv.id}
@@ -2331,7 +2332,7 @@ export function BillingPageClient() {
                     Record Payment
                   </Button>
                 )}
-                {['draft', 'issued', 'partial'].includes(selected.status) && (
+                {['draft', 'issued', 'partial'].includes(selected.status) && canIssue && (
                   <Button
                     size="sm" variant="danger"
                     disabled={actioning === selected.id}
@@ -2340,7 +2341,7 @@ export function BillingPageClient() {
                     Request Void
                   </Button>
                 )}
-                {['draft', 'issued', 'partial'].includes(selected.status) && (
+                {['draft', 'issued', 'partial'].includes(selected.status) && canWaive && (
                   <Button
                     size="sm" variant="outline"
                     onClick={() => openReassign(selected)}
@@ -2381,7 +2382,7 @@ export function BillingPageClient() {
                     Send Notice
                   </Button>
                 )}
-                {['issued', 'partial'].includes(selected.status) && (
+                {['issued', 'partial'].includes(selected.status) && canWaive && (
                   <Button
                     size="sm" variant="danger"
                     disabled={actioning === selected.id}
