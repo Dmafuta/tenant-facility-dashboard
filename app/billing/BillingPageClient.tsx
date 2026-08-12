@@ -519,7 +519,8 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function BillingPageClient() {
-  const { subject } = useAbac()
+  const { subject, can } = useAbac()
+  const canIssue = can('charge.create', { type: 'charge' })
   const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'>('WS')
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -744,6 +745,7 @@ export function BillingPageClient() {
 
   // Action states
   const [actioning, setActioning]     = useState<string | null>(null)
+  const [isAnyIssuing, setIsAnyIssuing] = useState(false)
   const [error, setError]             = useState<string | null>(null)
 
   // Debounce search input
@@ -760,7 +762,9 @@ export function BillingPageClient() {
   // ── Actions ──────────────────────────────────────────────────────────────
 
   async function handleIssue(inv: InvoiceData) {
+    if (isAnyIssuing) return  // block concurrent issues
     setActioning(inv.id)
+    setIsAnyIssuing(true)
     setError(null)
     try {
       const updated = await issueInvoice(inv.id)
@@ -770,6 +774,7 @@ export function BillingPageClient() {
       setError(e instanceof Error ? e.message : 'Failed to issue invoice')
     } finally {
       setActioning(null)
+      setIsAnyIssuing(false)
     }
   }
 
@@ -1311,7 +1316,7 @@ export function BillingPageClient() {
         <Button variant="ghost" size="sm" onClick={() => { setShowLateModal(true); setLateFeeResult(null) }}>
           Late Fees
         </Button>
-        {tabStats.drafts > 0 && (
+        {tabStats.drafts > 0 && canIssue && (
           <Button variant="ghost" size="sm" onClick={() => { setShowBulkModal(true); setBulkResult(null) }}>
             Issue All Drafts ({tabStats.drafts})
           </Button>
@@ -1322,7 +1327,7 @@ export function BillingPageClient() {
         <Button variant="ghost" size="sm" className="text-danger hover:bg-danger/5" onClick={() => { setShowDeleteVoidedModal(true); setDeleteVoidedResult(null) }}>
           Delete Voided
         </Button>
-        {activeTab === 'SC' && (
+        {activeTab === 'SC' && canIssue && (
           <Button variant="primary" size="sm" onClick={() => { setShowRunModal(true); setRunResult(null) }}>
             Run SC Billing
           </Button>
@@ -1932,13 +1937,13 @@ export function BillingPageClient() {
                     </td>
                     <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        {inv.status === 'draft' && (
+                        {inv.status === 'draft' && canIssue && (
                           <Button
                             size="sm" variant="primary"
-                            disabled={actioning === inv.id}
+                            disabled={actioning === inv.id || isAnyIssuing}
                             onClick={() => handleIssue(inv)}
                           >
-                            Issue
+                            {actioning === inv.id ? 'Issuing…' : 'Issue'}
                           </Button>
                         )}
                         {['issued', 'partial'].includes(inv.status) && (
@@ -2309,13 +2314,13 @@ export function BillingPageClient() {
 
               {/* Detail actions */}
               <div className="flex flex-wrap gap-2 pt-1">
-                {selected.status === 'draft' && (
+                {selected.status === 'draft' && canIssue && (
                   <Button
                     size="sm" variant="primary" className="flex-1"
-                    disabled={actioning === selected.id}
+                    disabled={actioning === selected.id || isAnyIssuing}
                     onClick={() => handleIssue(selected)}
                   >
-                    Issue Invoice
+                    {actioning === selected.id ? 'Issuing…' : 'Issue Invoice'}
                   </Button>
                 )}
                 {['issued', 'partial'].includes(selected.status) && (
@@ -2487,7 +2492,7 @@ export function BillingPageClient() {
       {/* Bulk Issue modal */}
       <Modal
         open={showBulkModal}
-        onClose={() => { setShowBulkModal(false); setBulkResult(null) }}
+        onClose={() => { if (!bulkIssuing) { setShowBulkModal(false); setBulkResult(null) } }}
         title={`Issue All ${activeTab} Drafts`}
         size="sm"
       >
