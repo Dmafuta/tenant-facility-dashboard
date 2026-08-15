@@ -201,6 +201,10 @@ function ReadingEntryModal({
   async function handleSave() {
     if (!reading) { setError('Current reading is required.'); return }
     if (!meter) return
+    if (!isPrepaid && Number(reading) < prev) {
+      setError(`Reading (${Number(reading)}) cannot be less than the previous reading (${prev}).`)
+      return
+    }
     setSaving(true)
     setError(null)
     try {
