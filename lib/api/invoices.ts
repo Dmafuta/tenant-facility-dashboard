@@ -518,6 +518,50 @@ export async function deleteVoidedInvoice(id: string): Promise<void> {
   return apiFetch(`/invoices/${id}`, { method: 'DELETE' })
 }
 
+// ── Payments ledger ───────────────────────────────────────────────────────────
+
+export interface PaymentLedgerRow {
+  id: string
+  invoice_id: string | null
+  statement_no: string | null
+  unit_id: string | null
+  unit_label: string | null
+  category_code: string
+  amount: number
+  payment_date: string | null
+  payment_method: string | null
+  reference_no: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface PaymentLedgerPage {
+  content: PaymentLedgerRow[]
+  totalElements: number
+  totalPages: number
+  totalAmount: number
+}
+
+export async function getPaymentsLedger(params: {
+  categoryCode?: string
+  allocated?: 'all' | 'true' | 'false'
+  search?: string
+  fromDate?: string
+  toDate?: string
+  page?: number
+  size?: number
+}): Promise<PaymentLedgerPage> {
+  const qs = new URLSearchParams()
+  if (params.categoryCode) qs.set('categoryCode', params.categoryCode)
+  if (params.allocated)    qs.set('allocated',    params.allocated)
+  if (params.search)       qs.set('search',       params.search)
+  if (params.fromDate)     qs.set('fromDate',     params.fromDate)
+  if (params.toDate)       qs.set('toDate',       params.toDate)
+  qs.set('page', String(params.page ?? 0))
+  qs.set('size', String(params.size ?? 50))
+  return apiFetch<PaymentLedgerPage>(`/invoices/payments/ledger?${qs}`)
+}
+
 export async function deleteBulkVoidedInvoices(params?: { period?: string; categoryCode?: string }): Promise<{ deleted: number }> {
   const qs = new URLSearchParams()
   if (params?.period)       qs.set('period',       params.period)

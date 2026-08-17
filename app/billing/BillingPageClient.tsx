@@ -33,6 +33,7 @@ import { getSettings } from '@/lib/api/settings'
 import { useAbac } from '@/lib/abac/context'
 import { PrepaidTab } from './PrepaidTab'
 import { ArrearsTab } from './ArrearsTab'
+import { PaymentsLedgerTab } from './PaymentsLedgerTab'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -522,7 +523,7 @@ export function BillingPageClient() {
   const { subject, can } = useAbac()
   const canIssue = can('charge.create', { type: 'charge' })
   const canWaive = can('charge.waive', { type: 'charge' })
-  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'>('WS')
+  const [activeTab, setActiveTab]     = useState<'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears' | 'Payments'>('WS')
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [periodFilter, setPeriodFilter] = useState('')
@@ -1200,7 +1201,7 @@ export function BillingPageClient() {
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
 
-  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears'; label: string }[] = [
+  const tabs: { code: 'WS' | 'SC' | 'OT' | 'OB' | 'Reports' | 'Adjustments' | 'Plans' | 'Prepaid' | 'Arrears' | 'Payments'; label: string }[] = [
     { code: 'WS',          label: 'Water & Sewerage' },
     { code: 'SC',          label: 'Service Charge' },
     { code: 'OT',          label: 'Other Charges' },
@@ -1209,6 +1210,7 @@ export function BillingPageClient() {
     { code: 'Plans',       label: 'Payment Plans' },
     { code: 'Adjustments', label: 'Adjustments' },
     { code: 'Arrears',     label: 'Arrears' },
+    { code: 'Payments',    label: 'Payments Ledger' },
     { code: 'Reports',     label: 'Reports' },
   ]
 
@@ -1263,8 +1265,12 @@ export function BillingPageClient() {
         <ArrearsTab category="WS" />
       )}
 
+      {activeTab === 'Payments' && (
+        <PaymentsLedgerTab />
+      )}
+
       {/* Stats row */}
-      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && activeTab !== 'Prepaid' && activeTab !== 'Arrears' && (
+      {activeTab !== 'Reports' && activeTab !== 'Adjustments' && activeTab !== 'Plans' && activeTab !== 'Prepaid' && activeTab !== 'Arrears' && activeTab !== 'Payments' && (
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4">
           <p className="text-xs text-text-muted mb-1">Outstanding</p>
