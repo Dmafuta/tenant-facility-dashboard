@@ -708,12 +708,21 @@ export function BillingPageClient() {
   const [resolvingDispute, setResolvingDispute] = useState<string | null>(null)
 
   // Payment plan
-  const [planTarget, setPlanTarget]         = useState<InvoiceData | null>(null)
+  const [planTarget, setPlanTarget]           = useState<InvoiceData | null>(null)
+  const [planMode, setPlanMode]               = useState<'auto' | 'custom'>('auto')
   const [planInstallments, setPlanInstallments] = useState('3')
-  const [planStart, setPlanStart]           = useState('')
-  const [planNotes, setPlanNotes]           = useState('')
-  const [creatingPlan, setCreatingPlan]     = useState(false)
-  const [planResult, setPlanResult]         = useState<PaymentPlanData | null>(null)
+  const [planStart, setPlanStart]             = useState('')
+  const [planNotes, setPlanNotes]             = useState('')
+  const [creatingPlan, setCreatingPlan]       = useState(false)
+  const [planResult, setPlanResult]           = useState<PaymentPlanData | null>(null)
+  // Immediate payment
+  const [planImmediatePay, setPlanImmediatePay]       = useState(false)
+  const [planImmediateAmount, setPlanImmediateAmount] = useState('')
+  const [planImmediateDate, setPlanImmediateDate]     = useState('')
+  const [planImmediateMethod, setPlanImmediateMethod] = useState('mpesa')
+  const [planImmediateRef, setPlanImmediateRef]       = useState('')
+  // Custom schedule rows
+  const [planCustomRows, setPlanCustomRows] = useState<{ date: string; amount: string }[]>([{ date: '', amount: '' }])
 
   // Opening balances (Adjustments tab)
   const [openingBals, setOpeningBals]         = useState<OpeningBalance[]>([])
@@ -1087,26 +1096,64 @@ export function BillingPageClient() {
 
   // ── Payment plan ─────────────────────────────────────────────────────────
 
+  function openPlanModal(inv: InvoiceData) {
+    setPlanMode('auto')
+    setPlanInstallments('3')
+    setPlanStart('')
+    setPlanNotes('')
+    setPlanResult(null)
+    setPlanImmediatePay(false)
+    setPlanImmediateAmount('')
+    setPlanImmediateDate(new Date().toISOString().slice(0, 10))
+    setPlanImmediateMethod('mpesa')
+    setPlanImmediateRef('')
+    setPlanCustomRows([{ date: '', amount: '' }])
+    setPlanTarget(inv)
+  }
+
   async function handleCreatePlan() {
-    if (!planTarget || parseInt(planInstallments) < 2 || !planStart) return
+    if (!planTarget) return
     setCreatingPlan(true)
     setError(null)
     try {
-      const plan = await createPaymentPlan({
-        unit_id:                planTarget.unit_id,
-        unit_label:             planTarget.unit_label ?? undefined,
-        person_id:              planTarget.person_id ?? undefined,
-        person_name:            planTarget.person_name ?? undefined,
-        person_email:           planTarget.person_email ?? undefined,
-        person_phone:           planTarget.person_phone ?? undefined,
-        invoice_id:             planTarget.id,
-        category_code:          planTarget.category_code,
-        // total_amount omitted — backend auto-computes full outstanding across all periods
-        number_of_installments: parseInt(planInstallments),
-        start_date:             planStart,
-        notes:                  planNotes || undefined,
-      })
+      const outstanding = planTarget.unit_total_outstanding ?? planTarget.balance
+      const immediateAmt = planImmediatePay ? (parseFloat(planImmediateAmount) || 0) : 0
+      const toSchedule   = Math.max(0, outstanding - immediateAmt)
+
+      const payload: Parameters<typeof createPaymentPlan>[0] = {
+        unit_id:       planTarget.unit_id,
+        unit_label:    planTarget.unit_label ?? undefined,
+        person_id:     planTarget.person_id ?? undefined,
+        person_name:   planTarget.person_name ?? undefined,
+        person_email:  planTarget.person_email ?? undefined,
+        person_phone:  planTarget.person_phone ?? undefined,
+        invoice_id:    planTarget.id,
+        category_code: planTarget.category_code,
+        total_amount:  toSchedule > 0 ? toSchedule : undefined,
+        notes:         planNotes || undefined,
+      }
+
+      if (planImmediatePay && immediateAmt > 0) {
+        payload.immediate_payment = {
+          amount:         immediateAmt,
+          payment_date:   planImmediateDate || undefined,
+          payment_method: planImmediateMethod || undefined,
+          reference_no:   planImmediateRef   || undefined,
+        }
+      }
+
+      if (planMode === 'custom') {
+        payload.installments = planCustomRows
+          .filter(r => r.date && parseFloat(r.amount) > 0)
+          .map(r => ({ amount: parseFloat(r.amount), due_date: r.date }))
+      } else {
+        payload.number_of_installments = parseInt(planInstallments)
+        payload.start_date             = planStart
+      }
+
+      const plan = await createPaymentPlan(payload)
       setPlanResult(plan)
+      await refresh()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create payment plan')
     } finally {
@@ -2439,13 +2486,7 @@ export function BillingPageClient() {
                 {['issued', 'partial'].includes(selected.status) && selected.balance > 0 && (
                   <Button
                     size="sm" variant="outline"
-                    onClick={() => {
-                      setPlanTarget(selected)
-                      setPlanInstallments('3')
-                      setPlanStart(new Date().toISOString().slice(0, 10))
-                      setPlanNotes('')
-                      setPlanResult(null)
-                    }}
+                    onClick={() => openPlanModal(selected)}
                   >
                     Payment Plan
                   </Button>
@@ -3280,87 +3321,261 @@ export function BillingPageClient() {
       <Modal
         open={!!planTarget}
         onClose={() => { setPlanTarget(null); setPlanResult(null) }}
-        title={`Payment Plan — ${planTarget?.statement_no ?? ''}`}
-        size="sm"
+        title={`Payment Plan — ${planTarget?.unit_label ?? planTarget?.statement_no ?? ''}`}
+        size="md"
       >
         <div className="p-5 space-y-4">
           {planResult ? (
+            /* ── Success screen ── */
             <div className="space-y-3">
               <div className="bg-success/10 text-success rounded-lg p-4 text-sm">
                 <p className="font-semibold mb-1">Payment Plan Created</p>
-                <p>{planResult.installments.length} installments starting {fmtDate(planResult.installments[0]?.due_date ?? null)}.</p>
+                {planResult.upfront_paid > 0 && (
+                  <p>Upfront payment of {fmt(planResult.upfront_paid)} applied to invoice.</p>
+                )}
+                {planResult.installments.length > 0
+                  ? <p>{planResult.installments.length} instalment{planResult.installments.length > 1 ? 's' : ''} scheduled, first due {fmtDate(planResult.installments[0]?.due_date ?? null)}.</p>
+                  : <p>Balance fully cleared — no further instalments needed.</p>
+                }
               </div>
-              <div className="divide-y divide-surface-border dark:divide-dark-border">
-                {planResult.installments.map(inst => (
-                  <div key={inst.id} className="flex justify-between text-sm py-2">
-                    <span className="text-text-muted">#{inst.installment_no} · {fmtDate(inst.due_date)}</span>
-                    <span className="font-medium">{fmt(inst.amount)}</span>
-                  </div>
-                ))}
-              </div>
+              {planResult.installments.length > 0 && (
+                <div className="divide-y divide-surface-border dark:divide-dark-border text-sm">
+                  {planResult.installments.map(inst => (
+                    <div key={inst.id ?? inst.installment_no} className="flex justify-between py-2">
+                      <span className="text-text-muted">#{inst.installment_no} · {fmtDate(inst.due_date)}</span>
+                      <span className="font-medium">{fmt(inst.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <Button variant="primary" className="w-full" onClick={() => { setPlanTarget(null); setPlanResult(null) }}>
                 Done
               </Button>
             </div>
           ) : (
             <>
-              {planTarget && (
-                <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Total outstanding</span>
-                    <span className="font-semibold text-danger">{fmt(planTarget.balance)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Tenant</span>
-                    <span>{planTarget.person_name ?? '—'}</span>
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-text-muted mb-1">Installments *</label>
-                  <input
-                    type="number" min="2" max="24" step="1"
-                    value={planInstallments}
-                    onChange={e => setPlanInstallments(e.target.value)}
-                    className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-muted mb-1">First Due Date *</label>
-                  <input
-                    type="date"
-                    value={planStart}
-                    onChange={e => setPlanStart(e.target.value)}
-                    className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-              </div>
-              {planTarget && parseInt(planInstallments) >= 2 && planTarget.balance > 0 && (
-                <p className="text-xs text-text-muted bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg px-3 py-2">
-                  ≈ {fmt(Math.ceil(planTarget.balance / parseInt(planInstallments)))} per installment (last may differ slightly)
-                </p>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
-                <textarea
-                  value={planNotes}
-                  onChange={e => setPlanNotes(e.target.value)}
-                  rows={2}
-                  className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-                  placeholder="e.g. Agreed with tenant on 25 Jun 2026"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" className="flex-1" onClick={() => setPlanTarget(null)}>Cancel</Button>
-                <Button
-                  variant="primary" className="flex-1"
-                  disabled={creatingPlan || !planStart || parseInt(planInstallments) < 2}
-                  onClick={handleCreatePlan}
-                >
-                  {creatingPlan ? 'Creating…' : `Create ${planInstallments}-Part Plan`}
-                </Button>
-              </div>
+              {/* ── Account summary ── */}
+              {planTarget && (() => {
+                const outstanding = planTarget.unit_total_outstanding ?? planTarget.balance
+                const immediateAmt = planImmediatePay ? (parseFloat(planImmediateAmount) || 0) : 0
+                const toSchedule = Math.max(0, outstanding - immediateAmt)
+                const scheduledAmt = planMode === 'custom'
+                  ? planCustomRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                  : 0
+                const remaining = planMode === 'custom' ? toSchedule - scheduledAmt : null
+
+                return (
+                  <>
+                    <div className="bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg p-3 text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-text-muted">Account balance</span>
+                        <span className="font-semibold text-danger">{fmt(outstanding)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-muted">Tenant</span>
+                        <span>{planTarget.person_name ?? '—'}</span>
+                      </div>
+                    </div>
+
+                    {/* ── Immediate payment section ── */}
+                    <div className="border border-surface-border dark:border-dark-border rounded-lg overflow-hidden">
+                      <label className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none bg-surface dark:bg-dark-surface">
+                        <input
+                          type="checkbox"
+                          checked={planImmediatePay}
+                          onChange={e => setPlanImmediatePay(e.target.checked)}
+                          className="rounded"
+                        />
+                        <span className="text-sm font-medium">Payment received now (pay partial today)</span>
+                      </label>
+                      {planImmediatePay && (
+                        <div className="px-3 pb-3 pt-1 space-y-2 border-t border-surface-border dark:border-dark-border">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-text-muted mb-1">Amount *</label>
+                              <input
+                                type="number" min="1" step="1"
+                                value={planImmediateAmount}
+                                onChange={e => setPlanImmediateAmount(e.target.value)}
+                                placeholder="e.g. 4000"
+                                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-text-muted mb-1">Date</label>
+                              <input
+                                type="date"
+                                value={planImmediateDate}
+                                onChange={e => setPlanImmediateDate(e.target.value)}
+                                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-text-muted mb-1">Method</label>
+                              <select
+                                value={planImmediateMethod}
+                                onChange={e => setPlanImmediateMethod(e.target.value)}
+                                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              >
+                                <option value="mpesa">M-Pesa</option>
+                                <option value="cash">Cash</option>
+                                <option value="bank">Bank</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-text-muted mb-1">Reference No.</label>
+                              <input
+                                type="text"
+                                value={planImmediateRef}
+                                onChange={e => setPlanImmediateRef(e.target.value)}
+                                placeholder="e.g. QB5X7AMRWP"
+                                className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              />
+                            </div>
+                          </div>
+                          {immediateAmt > 0 && (
+                            <p className="text-xs text-success font-medium">
+                              Remaining to schedule: {fmt(toSchedule)}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Schedule mode toggle ── */}
+                    {toSchedule > 0 && (
+                      <>
+                        <div className="flex rounded-lg border border-surface-border dark:border-dark-border overflow-hidden text-sm">
+                          {(['auto', 'custom'] as const).map(m => (
+                            <button
+                              key={m}
+                              onClick={() => setPlanMode(m)}
+                              className={cn('flex-1 py-2 font-medium transition-colors',
+                                planMode === m
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-surface dark:bg-dark-surface text-text-muted hover:text-text'
+                              )}
+                            >
+                              {m === 'auto' ? 'Equal split' : 'Custom schedule'}
+                            </button>
+                          ))}
+                        </div>
+
+                        {planMode === 'auto' ? (
+                          /* ── Auto mode ── */
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-text-muted mb-1">Instalments *</label>
+                                <input
+                                  type="number" min="1" max="24" step="1"
+                                  value={planInstallments}
+                                  onChange={e => setPlanInstallments(e.target.value)}
+                                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-text-muted mb-1">First Due Date *</label>
+                                <input
+                                  type="date"
+                                  value={planStart}
+                                  onChange={e => setPlanStart(e.target.value)}
+                                  className="w-full h-9 px-3 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                              </div>
+                            </div>
+                            {parseInt(planInstallments) >= 1 && toSchedule > 0 && (
+                              <p className="text-xs text-text-muted bg-surface dark:bg-dark-surface border border-surface-border dark:border-dark-border rounded-lg px-3 py-2">
+                                ≈ {fmt(Math.ceil(toSchedule / parseInt(planInstallments)))} per instalment · monthly cadence
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          /* ── Custom schedule mode ── */
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium text-text-muted flex justify-between">
+                              <span>Instalment schedule</span>
+                              <span className={cn('font-semibold', remaining !== null && Math.abs(remaining) < 0.5 ? 'text-success' : 'text-danger')}>
+                                {remaining !== null && (remaining > 0.5
+                                  ? `${fmt(remaining)} unallocated`
+                                  : remaining < -0.5
+                                    ? `${fmt(Math.abs(remaining))} over`
+                                    : 'Balanced'
+                                )}
+                              </span>
+                            </div>
+                            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                              {planCustomRows.map((row, i) => (
+                                <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                                  <input
+                                    type="date"
+                                    value={row.date}
+                                    onChange={e => setPlanCustomRows(rows => rows.map((r, j) => j === i ? { ...r, date: e.target.value } : r))}
+                                    className="h-9 px-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                  />
+                                  <input
+                                    type="number" min="1" step="1"
+                                    placeholder="Amount"
+                                    value={row.amount}
+                                    onChange={e => setPlanCustomRows(rows => rows.map((r, j) => j === i ? { ...r, amount: e.target.value } : r))}
+                                    className="h-9 px-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                  />
+                                  <button
+                                    onClick={() => setPlanCustomRows(rows => rows.length > 1 ? rows.filter((_, j) => j !== i) : rows)}
+                                    className="text-danger hover:text-danger/70 text-lg leading-none px-1"
+                                    title="Remove"
+                                  >×</button>
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => setPlanCustomRows(rows => [...rows, {
+                                date: '',
+                                amount: remaining !== null && remaining > 0 ? String(Math.round(remaining)) : ''
+                              }])}
+                              className="text-xs text-primary-600 hover:underline"
+                            >
+                              + Add instalment
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* ── Notes ── */}
+                    <div>
+                      <label className="block text-xs font-medium text-text-muted mb-1">Notes (optional)</label>
+                      <textarea
+                        value={planNotes}
+                        onChange={e => setPlanNotes(e.target.value)}
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-surface-border dark:border-dark-border rounded-lg bg-white dark:bg-dark-surface text-text focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                        placeholder="e.g. Agreed with tenant on 18 Aug 2026"
+                      />
+                    </div>
+
+                    {/* ── Actions ── */}
+                    {(() => {
+                      const autoValid  = planMode === 'auto' && parseInt(planInstallments) >= 1 && !!planStart
+                      const customRows = planCustomRows.filter(r => r.date && parseFloat(r.amount) > 0)
+                      const customValid = planMode === 'custom' && customRows.length > 0
+                        && remaining !== null && Math.abs(remaining) < 0.5
+                      const upfrontOnly = planImmediatePay && immediateAmt >= outstanding && toSchedule <= 0
+                      const canSubmit  = !creatingPlan && (autoValid || customValid || upfrontOnly)
+                      return (
+                        <div className="flex gap-2">
+                          <Button variant="ghost" className="flex-1" onClick={() => setPlanTarget(null)}>Cancel</Button>
+                          <Button variant="primary" className="flex-1" disabled={!canSubmit} onClick={handleCreatePlan}>
+                            {creatingPlan ? 'Creating…' : upfrontOnly ? 'Record Payment' : 'Create Plan'}
+                          </Button>
+                        </div>
+                      )
+                    })()}
+                  </>
+                )
+              })()}
             </>
           )}
         </div>

@@ -14,8 +14,8 @@ export interface PaymentPlanInstallment {
 }
 
 export interface PaymentPlanData {
-  id: string
-  unit_id: string
+  id: string | null
+  unit_id: string | null
   unit_label: string | null
   person_id: string | null
   person_name: string | null
@@ -25,6 +25,7 @@ export interface PaymentPlanData {
   category_code: string | null
   total_amount: number
   paid_amount: number
+  upfront_paid: number
   start_date: string
   status: 'active' | 'completed' | 'defaulted' | 'cancelled'
   notes: string | null
@@ -51,6 +52,19 @@ export async function getPaymentPlan(id: string): Promise<PaymentPlanData> {
   return apiFetch<PaymentPlanData>(`/payment-plans/${id}`)
 }
 
+export interface ImmediatePayment {
+  amount: number
+  payment_date?: string
+  payment_method?: string
+  reference_no?: string
+  notes?: string
+}
+
+export interface CustomInstallment {
+  amount: number
+  due_date: string
+}
+
 export async function createPaymentPlan(payload: {
   unit_id: string
   unit_label?: string
@@ -61,26 +75,18 @@ export async function createPaymentPlan(payload: {
   invoice_id?: string
   category_code?: string
   total_amount?: number
-  number_of_installments: number
-  start_date: string
+  // Auto mode
+  number_of_installments?: number
+  start_date?: string
+  // Custom mode
+  installments?: CustomInstallment[]
+  // Upfront payment (both modes)
+  immediate_payment?: ImmediatePayment
   notes?: string
 }): Promise<PaymentPlanData> {
   return apiFetch<PaymentPlanData>('/payment-plans', {
     method: 'POST',
-    body: JSON.stringify({
-      unit_id:                 payload.unit_id,
-      unit_label:              payload.unit_label,
-      person_id:               payload.person_id,
-      person_name:             payload.person_name,
-      person_email:            payload.person_email,
-      person_phone:            payload.person_phone,
-      invoice_id:              payload.invoice_id,
-      category_code:           payload.category_code,
-      total_amount:            payload.total_amount,
-      number_of_installments:  payload.number_of_installments,
-      start_date:              payload.start_date,
-      notes:                   payload.notes,
-    }),
+    body: JSON.stringify(payload),
   })
 }
 
