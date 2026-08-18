@@ -197,7 +197,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
                   <span style={{color:'oklch(0.50 0.02 250)'}}>
                     Bal B/F
-                    {inv.issue_date && <span style={{fontSize:'11px',marginLeft:'6px',color:'oklch(0.62 0.02 250)'}}>(at {fmtDate(inv.issue_date as string | null)})</span>}
+                    {!!(inv.issue_date) && <span style={{fontSize:'11px',marginLeft:'6px',color:'oklch(0.62 0.02 250)'}}>(at {fmtDate(inv.issue_date as string | null)})</span>}
                   </span>
                   <span style={{fontWeight:600,fontVariantNumeric:'tabular-nums',color:'oklch(0.50 0.02 250)'}}>{fmt(n(inv.previous_balance))}</span>
                 </div>
@@ -231,7 +231,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
               </div>
 
               {/* Total account balance (live, all periods) — shown when it differs from this invoice */}
-              {inv.unit_total_outstanding != null && Math.abs(n(inv.unit_total_outstanding) - n(inv.balance)) > 0.005 && (
+              {(inv.unit_total_outstanding as number | null) != null && Math.abs(n(inv.unit_total_outstanding) - n(inv.balance)) > 0.005 && (
                 <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',fontSize:'13px',background:'oklch(0.97 0.008 250)',margin:'4px -4px 0',borderRadius:'3px',paddingLeft:'8px',paddingRight:'8px'}}>
                   <span style={{color:'oklch(0.38 0.04 250)',fontWeight:600}}>Total account balance (all invoices)</span>
                   <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums',color:'oklch(0.38 0.04 250)'}}>{fmt(n(inv.unit_total_outstanding))}</span>
