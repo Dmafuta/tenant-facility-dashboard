@@ -85,9 +85,11 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
   const bankBranch   = (cat?.bank_branch  as string) || ''
 
   const isWS = inv.category_code === 'WS'
-  const balanceFwd = n(inv.opening_balance) + n(inv.previous_balance) - n(inv.paid_amount)
-  // Total the tenant must pay: all prior outstanding (previousBalance) + this period's standalone balance
-  const totalDue   = n(inv.previous_balance) + n(inv.balance)
+  // Live account balance: sum of all outstanding invoices for this unit (all categories).
+  // previous_balance is a display-only snapshot taken at issue time — it goes stale as
+  // other invoices get paid. unit_total_outstanding reflects the true current position.
+  const unitTotalOutstanding = n(inv.unit_total_outstanding ?? inv.balance)
+  const totalDue = unitTotalOutstanding
   const chartMax   = recentReadings.length > 0
     ? Math.max(...recentReadings.map(r => n(r.units_consumed)), 1)
     : 1
@@ -190,6 +192,17 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
             <div style={{padding:'2px 48px 0'}}>
               <div style={{fontSize:'12px',fontWeight:700,letterSpacing:'0.1em',color:'oklch(0.45 0.05 250)',textTransform:'uppercase',paddingBottom:'6px',borderBottom:'2px solid oklch(0.40 0.06 250)'}}>Statement Summary</div>
 
+              {/* Bal B/F — snapshot at issue date (informational; may differ from live balance) */}
+              {n(inv.previous_balance) > 0 && (
+                <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
+                  <span style={{color:'oklch(0.50 0.02 250)'}}>
+                    Bal B/F
+                    {inv.issue_date && <span style={{fontSize:'11px',marginLeft:'6px',color:'oklch(0.62 0.02 250)'}}>(at {fmtDate(inv.issue_date as string | null)})</span>}
+                  </span>
+                  <span style={{fontWeight:600,fontVariantNumeric:'tabular-nums',color:'oklch(0.50 0.02 250)'}}>{fmt(n(inv.previous_balance))}</span>
+                </div>
+              )}
+
               {n(inv.opening_balance) > 0 && (
                 <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
                   <span style={{color:'oklch(0.40 0.02 250)'}}>Opening balance</span>
@@ -197,11 +210,7 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 </div>
               )}
 
-              <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
-                <span style={{color:'oklch(0.40 0.02 250)'}}>Previous balance</span>
-                <span style={{fontWeight:600,fontVariantNumeric:'tabular-nums'}}>{fmt(n(inv.previous_balance))}</span>
-              </div>
-
+              {/* Payments applied to THIS invoice */}
               {payments.map((p, i) => (
                 <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'1px solid oklch(0.93 0.008 250)',fontSize:'13px'}}>
                   <span style={{color:'oklch(0.40 0.02 250)'}}>
@@ -213,10 +222,21 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 </div>
               ))}
 
+              {/* This invoice's standalone balance */}
               <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',borderBottom:'2px solid oklch(0.88 0.01 250)',fontSize:'13px'}}>
-                <span style={{color:'oklch(0.30 0.03 250)',fontWeight:600}}>Balance brought forward</span>
-                <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{fmt(balanceFwd)}</span>
+                <span style={{color:'oklch(0.30 0.03 250)',fontWeight:600}}>Balance — this invoice</span>
+                <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums',color: n(inv.balance) <= 0 ? 'oklch(0.50 0.10 150)' : undefined}}>
+                  {n(inv.balance) <= 0 ? 'PAID' : fmt(n(inv.balance))}
+                </span>
               </div>
+
+              {/* Total account balance (live, all periods) — shown when it differs from this invoice */}
+              {inv.unit_total_outstanding != null && Math.abs(n(inv.unit_total_outstanding) - n(inv.balance)) > 0.005 && (
+                <div style={{display:'flex',justifyContent:'space-between',padding:'5px 4px',fontSize:'13px',background:'oklch(0.97 0.008 250)',margin:'4px -4px 0',borderRadius:'3px',paddingLeft:'8px',paddingRight:'8px'}}>
+                  <span style={{color:'oklch(0.38 0.04 250)',fontWeight:600}}>Total account balance (all invoices)</span>
+                  <span style={{fontWeight:700,fontVariantNumeric:'tabular-nums',color:'oklch(0.38 0.04 250)'}}>{fmt(n(inv.unit_total_outstanding))}</span>
+                </div>
+              )}
             </div>
 
             {/* ── CURRENT CHARGES ── */}
@@ -271,8 +291,8 @@ export default async function InvoicePrintPage({ params }: { params: { id: strin
                 {/* Grand total highlight box */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'oklch(0.96 0.012 250)',borderRadius:'4px',padding:'7px 14px',marginTop:'5px'}}>
                   <span style={{fontSize:'14px',fontWeight:700,color:'oklch(0.30 0.04 250)'}}>
-                    Total amount due
-                    <span style={{fontWeight:500,color:'oklch(0.55 0.02 250)',fontSize:'12px'}}> (balance forward + current charges)</span>
+                    Total account balance
+                    <span style={{fontWeight:500,color:'oklch(0.55 0.02 250)',fontSize:'12px'}}> (all outstanding invoices)</span>
                   </span>
                   <span style={{fontSize:'22px',fontWeight:800,fontVariantNumeric:'tabular-nums',color:'oklch(0.34 0.05 250)'}}>{fmt(totalDue)}</span>
                 </div>

@@ -68,6 +68,7 @@ export interface InvoiceData {
   dispute_resolved_by: string | null
   created_at: string
   updated_at: string
+  unit_total_outstanding: number | null
   line_items: InvoiceLineItem[] | null
   payments: InvoicePayment[] | null
 }

@@ -2194,10 +2194,23 @@ export function BillingPageClient() {
 
               {/* Balance summary */}
               <div className="bg-surface dark:bg-dark-surface rounded-lg p-3 space-y-1.5 text-xs border border-surface-border dark:border-dark-border">
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Previous Balance</span>
-                  <span>{fmt(selected.previous_balance)}</span>
-                </div>
+                {/* Bal B/F — snapshot at issue time, informational only */}
+                {selected.previous_balance > 0 && (
+                  <div className="flex justify-between text-text-muted">
+                    <span>Bal B/F (at issue)</span>
+                    <span>{fmt(selected.previous_balance)}</span>
+                  </div>
+                )}
+                {selected.previous_balance > 0 && (
+                  <div className="border-t border-surface-border dark:border-dark-border pt-1.5" />
+                )}
+                {/* This invoice's standalone calculation */}
+                {selected.opening_balance > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Opening Balance</span>
+                    <span>{fmt(selected.opening_balance)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-text-muted">Current Charges</span>
                   <span>{fmt(selected.current_charges)}</span>
@@ -2207,11 +2220,21 @@ export function BillingPageClient() {
                   <span className="text-success">− {fmt(selected.paid_amount)}</span>
                 </div>
                 <div className="flex justify-between font-semibold border-t border-surface-border dark:border-dark-border pt-1.5 mt-1.5 text-sm">
-                  <span>Balance Due</span>
+                  <span>This Invoice</span>
                   <span className={selected.balance > 0 ? 'text-danger' : 'text-success'}>
                     {fmt(selected.balance)}
                   </span>
                 </div>
+                {/* Live account total — shown when other invoices are also outstanding */}
+                {selected.unit_total_outstanding != null &&
+                  Math.abs(selected.unit_total_outstanding - selected.balance) > 0.005 && (
+                  <div className="flex justify-between font-semibold text-sm border-t border-surface-border dark:border-dark-border pt-1.5 mt-0.5">
+                    <span>Account Balance</span>
+                    <span className={selected.unit_total_outstanding > 0 ? 'text-danger' : 'text-success'}>
+                      {fmt(selected.unit_total_outstanding)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Line items */}
