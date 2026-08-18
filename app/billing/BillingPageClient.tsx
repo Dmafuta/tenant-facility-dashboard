@@ -207,7 +207,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
   useEffect(() => { load() }, [load])
 
   async function handlePayInstallment() {
-    if (!payTarget || !payAmount || parseFloat(payAmount) <= 0) return
+    if (!payTarget || !payTarget.plan.id || !payAmount || parseFloat(payAmount) <= 0) return
     setPaying(true)
     try {
       const updated = await payInstallment(
@@ -317,7 +317,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
             const overdueCount = plan.installments.filter(i => i.status === 'overdue').length
 
             return (
-              <Card key={plan.id} className="overflow-hidden">
+              <Card key={plan.id ?? plan.unit_label} className="overflow-hidden">
                 {/* Plan header row */}
                 <div
                   className="flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-surface-hover dark:hover:bg-dark-hover transition-colors"
@@ -415,7 +415,7 @@ function PlansTab({ categoryCode }: { categoryCode: string }) {
                       <div className="px-4 py-3 border-t border-surface-border dark:border-dark-border flex justify-end">
                         <Button size="sm" variant="danger"
                           disabled={cancelling === plan.id}
-                          onClick={() => handleCancel(plan.id)}>
+                          onClick={() => plan.id && handleCancel(plan.id)}>
                           {cancelling === plan.id ? 'Cancelling…' : 'Cancel Plan'}
                         </Button>
                       </div>
