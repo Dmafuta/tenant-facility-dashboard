@@ -3360,7 +3360,7 @@ export function BillingPageClient() {
                 const immediateAmt = planImmediatePay ? (parseFloat(planImmediateAmount) || 0) : 0
                 const toSchedule = Math.max(0, outstanding - immediateAmt)
                 const scheduledAmt = planMode === 'custom'
-                  ? planCustomRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                  ? planCustomRows.filter(r => r.date && parseFloat(r.amount) > 0).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
                   : 0
                 const remaining = planMode === 'custom' ? toSchedule - scheduledAmt : null
 
@@ -3497,10 +3497,10 @@ export function BillingPageClient() {
                           <div className="space-y-2">
                             <div className="text-xs font-medium text-text-muted flex justify-between">
                               <span>Instalment schedule</span>
-                              <span className={cn('font-semibold', remaining !== null && Math.abs(remaining) < 0.5 ? 'text-success' : 'text-danger')}>
-                                {remaining !== null && (remaining > 0.5
+                              <span className={cn('font-semibold', remaining !== null && Math.abs(remaining) < 2 ? 'text-success' : 'text-danger')}>
+                                {remaining !== null && (remaining > 2
                                   ? `${fmt(remaining)} unallocated`
-                                  : remaining < -0.5
+                                  : remaining < -2
                                     ? `${fmt(Math.abs(remaining))} over`
                                     : 'Balanced'
                                 )}
@@ -3561,7 +3561,7 @@ export function BillingPageClient() {
                       const autoValid  = planMode === 'auto' && parseInt(planInstallments) >= 1 && !!planStart
                       const customRows = planCustomRows.filter(r => r.date && parseFloat(r.amount) > 0)
                       const customValid = planMode === 'custom' && customRows.length > 0
-                        && remaining !== null && Math.abs(remaining) < 0.5
+                        && remaining !== null && Math.abs(remaining) < 2
                       const upfrontOnly = planImmediatePay && immediateAmt >= outstanding && toSchedule <= 0
                       const canSubmit  = !creatingPlan && (autoValid || customValid || upfrontOnly)
                       return (
