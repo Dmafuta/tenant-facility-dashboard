@@ -715,6 +715,7 @@ export function BillingPageClient() {
   const [planNotes, setPlanNotes]             = useState('')
   const [creatingPlan, setCreatingPlan]       = useState(false)
   const [planResult, setPlanResult]           = useState<PaymentPlanData | null>(null)
+  const [planError, setPlanError]             = useState<string | null>(null)
   // Immediate payment
   const [planImmediatePay, setPlanImmediatePay]       = useState(false)
   const [planImmediateAmount, setPlanImmediateAmount] = useState('')
@@ -1108,13 +1109,14 @@ export function BillingPageClient() {
     setPlanImmediateMethod('mpesa')
     setPlanImmediateRef('')
     setPlanCustomRows([{ date: '', amount: '' }])
+    setPlanError(null)
     setPlanTarget(inv)
   }
 
   async function handleCreatePlan() {
     if (!planTarget) return
     setCreatingPlan(true)
-    setError(null)
+    setPlanError(null)
     try {
       const outstanding = planTarget.unit_total_outstanding ?? planTarget.balance
       const immediateAmt = planImmediatePay ? (parseFloat(planImmediateAmount) || 0) : 0
@@ -1155,7 +1157,7 @@ export function BillingPageClient() {
       setPlanResult(plan)
       await refresh()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create payment plan')
+      setPlanError(e instanceof Error ? e.message : 'Failed to create payment plan')
     } finally {
       setCreatingPlan(false)
     }
@@ -3320,7 +3322,7 @@ export function BillingPageClient() {
       {/* Payment Plan modal */}
       <Modal
         open={!!planTarget}
-        onClose={() => { setPlanTarget(null); setPlanResult(null) }}
+        onClose={() => { setPlanTarget(null); setPlanResult(null); setPlanError(null) }}
         title={`Payment Plan — ${planTarget?.unit_label ?? planTarget?.statement_no ?? ''}`}
         size="md"
       >
@@ -3555,6 +3557,13 @@ export function BillingPageClient() {
                         placeholder="e.g. Agreed with tenant on 18 Aug 2026"
                       />
                     </div>
+
+                    {/* ── Error ── */}
+                    {planError && (
+                      <div className="bg-danger/10 text-danger text-sm px-3 py-2 rounded-lg">
+                        {planError}
+                      </div>
+                    )}
 
                     {/* ── Actions ── */}
                     {(() => {
